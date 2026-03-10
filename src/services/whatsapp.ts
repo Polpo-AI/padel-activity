@@ -122,7 +122,23 @@ export async function connectToWhatsApp() {
 /** Raw send with no simulation (used for group messages) */
 export async function sendMessage(jid: string, text: string) {
     if (!sock) throw new Error('WhatsApp socket not initialized');
-    await sock.sendMessage(formatJid(jid), { text });
+    const formattedJid = formatJid(jid);
+    await sock.sendMessage(formattedJid, { text });
+
+    // Persist to DB
+    try {
+        const { prisma } = await import('./db');
+        await prisma.whatsAppMessage.create({
+            data: {
+                chatId: formattedJid,
+                sender: 'BOT',
+                role: 'BOT',
+                content: text,
+            },
+        });
+    } catch (err) {
+        logger.error({ err }, 'Failed to persist outgoing raw message');
+    }
 }
 
 /**
@@ -202,6 +218,21 @@ export async function humanSend(
     await sock.sendMessage(formattedJid, { text: part1 });
     logger.info(`[HUMAN SEND] → ${jid}: "${part1}"`);
 
+    // Persist part 1 to DB
+    try {
+        const { prisma } = await import('./db');
+        await prisma.whatsAppMessage.create({
+            data: {
+                chatId: formattedJid,
+                sender: 'BOT',
+                role: 'BOT',
+                content: part1,
+            },
+        });
+    } catch (err) {
+        logger.error({ err }, 'Failed to persist outgoing human message (part 1)');
+    }
+
     if (part2) {
         // Brief "afterthought" delay before second bubble
         await jitteredSleep(randomInt(1200, 3000), 400);
@@ -211,6 +242,21 @@ export async function humanSend(
         await jitteredSleep(200, 100);
         await sock.sendMessage(formattedJid, { text: part2 });
         logger.info(`[HUMAN SEND] → ${jid}: "${part2}" (chunk 2)`);
+
+        // Persist part 2 to DB
+        try {
+            const { prisma } = await import('./db');
+            await prisma.whatsAppMessage.create({
+                data: {
+                    chatId: formattedJid,
+                    sender: 'BOT',
+                    role: 'BOT',
+                    content: part2,
+                },
+            });
+        } catch (err) {
+            logger.error({ err }, 'Failed to persist outgoing human message (part 2)');
+        }
     }
 }
 

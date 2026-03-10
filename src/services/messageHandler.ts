@@ -22,6 +22,20 @@ export async function handleIncomingMessage(msg: WAMessage) {
 
     logger.info(`Received message from ${phoneNumber}: ${text}`);
 
+    // Persist incoming message to DB
+    try {
+        await prisma.whatsAppMessage.create({
+            data: {
+                chatId: senderJid!,
+                sender: phoneNumber,
+                role: 'USER',
+                content: text,
+            },
+        });
+    } catch (err) {
+        logger.error({ err }, 'Failed to persist incoming message');
+    }
+
     // 1. Find if this player exists and has a PENDING invitation
     const player = await prisma.player.findUnique({ where: { phoneNumber } });
     if (!player) return;

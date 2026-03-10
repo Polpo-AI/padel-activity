@@ -68,3 +68,14 @@ enum InvitationStatus {
   REJECTED
   IGNORED
 }
+
+model WhatsAppMessage {
+  id        String   @id @default(uuid())
+  chatId    String   // JID of the sender or group
+  sender    String   // Phone number or name
+  role      String   // 'BOT' or 'USER'
+  content   String   @db.Text
+  timestamp DateTime @default(now())
+
+  @@index([chatId])
+}
