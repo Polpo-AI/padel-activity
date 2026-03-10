@@ -121,6 +121,10 @@ export async function connectToWhatsApp() {
 
 /** Raw send with no simulation (used for group messages) */
 export async function sendMessage(jid: string, text: string) {
+    if (process.env.DRY_RUN === 'true') {
+        logger.info(`[DRY RUN] Would send raw message to ${jid}: ${text}`);
+        return;
+    }
     if (!sock) throw new Error('WhatsApp socket not initialized');
     const formattedJid = formatJid(jid);
     await sock.sendMessage(formattedJid, { text });
@@ -159,6 +163,10 @@ export async function humanSend(
     text: string,
     incomingMsgKey?: proto.IMessageKey
 ): Promise<void> {
+    if (process.env.DRY_RUN === 'true') {
+        logger.info(`[DRY RUN] Would send human-simulated message to ${jid}: ${text}`);
+        return;
+    }
     if (!sock) throw new Error('WhatsApp socket not initialized');
     const formattedJid = formatJid(jid);
 
@@ -272,6 +280,10 @@ export async function createGroupAndAddPlayers(
     playerJids: string[],
     confirmationMessage: string
 ): Promise<string> {
+    if (process.env.DRY_RUN === 'true') {
+        logger.info(`[DRY RUN] Would create group "${groupName}" with players: ${playerJids.join(', ')}`);
+        return 'dry-run-group-id';
+    }
     if (!sock) throw new Error('WhatsApp socket not initialized');
     try {
         const group = await sock.groupCreate(groupName, playerJids.map(formatJid));
