@@ -1,0 +1,49 @@
+{
+  "name": "padel-activity",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "npx tsx src/index.ts",
+    "dev": "nodemon src/index.ts",
+    "db:push": "npx prisma db push",
+    "worker": "npx tsx src/workers/wave.worker.ts"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://davidedecupis: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@github.com/Polpo-AI/padel-activity.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/Polpo-AI/padel-activity/issues"
+  },
+  "homepage": "https://github.com/Polpo-AI/padel-activity#readme",
+  "devDependencies": {
+    "@types/express": "^5.0.6",
+    "@types/node": "^25.4.0",
+    "@types/pg": "^8.18.0",
+    "@types/qrcode-terminal": "^0.12.2",
+    "nodemon": "^3.1.14",
+    "ts-node": "^10.9.2",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.78.0",
+    "@prisma/adapter-pg": "^7.4.2",
+    "@prisma/client": "^7.4.2",
+    "@whiskeysockets/baileys": "^7.0.0-rc.9",
+    "bullmq": "^5.70.4",
+    "dotenv": "^17.3.1",
+    "express": "^5.2.1",
+    "ioredis": "^5.10.0",
+    "pg": "^8.20.0",
+    "pino": "^10.3.1",
+    "prisma": "^7.4.2",
+    "qrcode-terminal": "^0.12.0"
+  }
+}

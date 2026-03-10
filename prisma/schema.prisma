@@ -1,0 +1,70 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Player {
+  id                 String         @id @default(uuid())
+  phoneNumber        String         @unique
+  skillLevel         SkillLevel
+  reliabilityScore   Int            @default(100)
+  lastContactedAt    DateTime?
+  dailyMessagesCount Int            @default(0)
+  invitations        Invitation[]
+  MatchPlayer        MatchPlayer[]
+}
+
+model Match {
+  id            String        @id @default(uuid())
+  court         String
+  startTime     DateTime
+  skillLevel    SkillLevel
+  playersNeeded Int           @default(4)
+  status        MatchStatus   @default(OPEN)
+  groupId       String?
+  invitations   Invitation[]
+  MatchPlayer   MatchPlayer[]
+}
+
+model Invitation {
+  id       String           @id @default(uuid())
+  matchId  String
+  playerId String
+  status   InvitationStatus @default(PENDING)
+  sentAt   DateTime         @default(now())
+  match    Match            @relation(fields: [matchId], references: [id])
+  player   Player           @relation(fields: [playerId], references: [id])
+}
+
+model MatchPlayer {
+  id       String   @id @default(uuid())
+  matchId  String
+  playerId String
+  joinedAt DateTime @default(now())
+  match    Match    @relation(fields: [matchId], references: [id])
+  player   Player   @relation(fields: [playerId], references: [id])
+
+  @@unique([matchId, playerId])
+}
+
+enum SkillLevel {
+  BEGINNER
+  INTERMEDIATE
+  ADVANCED
+}
+
+enum MatchStatus {
+  OPEN
+  LOCKED
+  CANCELED
+}
+
+enum InvitationStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+  IGNORED
+}
