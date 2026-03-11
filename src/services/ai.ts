@@ -1,83 +1,254 @@
+/**
+ * AI SERVICE
+ *
+ * Wrapper per Anthropic Claude e OpenAI Whisper.
+ * Ogni chiamata ha:
+ * - Retry esponenziale (3 tentativi, backoff 1s/2s/4s)
+ * - Fallback deterministico se tutti i tentativi falliscono
+ * - Timeout esplicito per evitare hanging
+ */
+
 import Anthropic from '@anthropic-ai/sdk';
-import dotenv from 'dotenv';
+import OpenAI from 'openai';
+import { withRetry, isTransientNetworkError } from '../utils/retry';
 import pino from 'pino';
 
-dotenv.config();
 const logger = pino({ level: 'info' });
 
-// We require ANTHROPIC_API_KEY to be set in .env
 export const anthropic = new Anthropic({
     apiKey: process.env.ANTHROPIC_API_KEY,
+    timeout: 30000,
+    maxRetries: 0, // gestiamo noi
 });
 
-export async function generateInvitation(playerName: string, time: string, court: string): Promise<string> {
-    const prompt = `
-Sei un organizzatore di partite di padel. Scrivi un brevissimo messaggio WhatsApp in italiano informale (max 2 frasi) per invitare "${playerName}" a giocare.
-Contesto: Partita confermata alle ore ${time} presso ${court}. Nessun form di registrazione da compilare.
+export const openai = new OpenAI({
+    apiKey: process.env.OPENAI_API_KEY,
+    timeout: 60000,
+    maxRetries: 0,
+});
 
-REGOLE TASSATIVE ANTI-BOT:
-1. Sembra un umano, usa un registro colloquiale, quasi pigro.
-2. Inserisci intenzionalmente piccole imperfezioni (es. niente maiuscola dopo il ciao, punteggiatura minima).
-3. Non ripetere mai lo stesso schema. Usa sinonimi per "padel" (partitella, gabbia, etc.) oppure omettilo se si capisce.
-4. Ogni tanto (20% probabilita') usa un piccolo slang locale o dialetto (es. "daje", "ci sei?", "sei dei nostri?").
-5. Finisci sempre con una chiamata all'azione sotto forma di domanda per incentivare una risposta (es. "Ci sei?", "Batti un colpo", "Ti intabello?").
-6. Solo 1 emoji massimo, a volte zero.
-  `;
+// ─────────────────────────────────────────────
+// INTENT CLASSIFICATION
+// ─────────────────────────────────────────────
+
+export type Intent =
+    | 'YES' | 'NO' | 'CANCEL' | 'BRING_FRIEND' | 'BRING_GROUP'
+    | 'WHOLE_COURT' | 'OPT_OUT' | 'QUESTION' | 'BOOK' | 'UNKNOWN';
+
+export async function classifyIntent(
+    text: string,
+    context?: string
+): Promise<{ intent: Intent; confident: boolean }> {
+    try {
+        const result = await withRetry(
+            () => anthropic.messages.create({
+                model: 'claude-haiku-4-5-20251001',
+                max_tokens: 30,
+                temperature: 0.1,
+                messages: [{
+                    role: 'user',
+                    content: `Classifica questa risposta WhatsApp (matchmaking padel).
+${context ? `Contesto: ${context}` : ''}
+Rispondi SOLO con JSON: {"intent":"VALORE","confident":true/false}
+Valori: YES, NO, CANCEL, BRING_FRIEND, BRING_GROUP, WHOLE_COURT, OPT_OUT, QUESTION, BOOK, UNKNOWN
+confident: true solo se molto sicuro.
+Messaggio: "${text}"`,
+                }],
+            }),
+            {
+                maxAttempts: 3,
+                baseDelayMs: 1000,
+                shouldRetry: isTransientNetworkError,
+                context: 'classifyIntent',
+            }
+        );
+
+        const content = result.content[0];
+        if (content.type === 'text') {
+            const parsed = JSON.parse(content.text.trim());
+            return { intent: parsed.intent as Intent, confident: parsed.confident === true };
+        }
+    } catch (err) {
+        logger.error({ err }, 'classifyIntent failed after retries — UNKNOWN fallback');
+    }
+
+    return { intent: 'UNKNOWN', confident: false };
+}
+
+// ─────────────────────────────────────────────
+// GENERA INVITO
+// ─────────────────────────────────────────────
+
+export async function generateInvitation(
+    playerName: string,
+    matchTime: Date,
+    court: string,
+    clubId?: string,
+    isFriend = false
+): Promise<string> {
+    const timeStr = matchTime.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
+    const dateStr = matchTime.toLocaleDateString('it-IT', { weekday: 'long', day: 'numeric', month: 'long' });
+
+    const fallback = isFriend
+        ? `Ciao ${playerName}! Un amico ti ha invitato a giocare a padel ${dateStr} alle ${timeStr} (${court}). Sei disponibile? 🎾`
+        : `Ciao ${playerName}! C'è una partita di padel ${dateStr} alle ${timeStr} (${court}). Sei dei nostri? 🎾`;
 
     try {
-        const response = await anthropic.messages.create({
-            model: 'claude-3-5-sonnet-20241022',
-            max_tokens: 150,
-            temperature: 0.9, // High creativity
-            messages: [{ role: 'user', content: prompt }],
-        });
-
-        const content = response.content[0];
-        if (content.type === 'text') {
-            return content.text;
+        let aiTone = '';
+        if (clubId) {
+            const { prisma } = await import('./db');
+            const club = await prisma.club.findUnique({ where: { id: clubId }, select: { aiTone: true } });
+            aiTone = club?.aiTone || '';
         }
-        throw new Error('Unexpected response type from Anthropic');
-    } catch (error) {
-        logger.error({ error }, 'Error generating invitation with Anthropic');
-        return `Ciao, manchi solo tu per il padel alle ${time} al ${court}. Ci sei?`;
+
+        const result = await withRetry(
+            () => anthropic.messages.create({
+                model: 'claude-haiku-4-5-20251001',
+                max_tokens: 150,
+                temperature: 0.7,
+                system: aiTone || 'Sei il bot di un circolo padel. Scrivi messaggi brevi e amichevoli in italiano.',
+                messages: [{
+                    role: 'user',
+                    content: `Scrivi un invito WhatsApp breve (max 2 righe) per ${playerName} per una partita ${dateStr} alle ${timeStr} al ${court}. ${isFriend ? 'È stato invitato da un amico.' : ''} Solo il testo del messaggio.`,
+                }],
+            }),
+            {
+                maxAttempts: 3,
+                baseDelayMs: 1000,
+                shouldRetry: isTransientNetworkError,
+                context: 'generateInvitation',
+            }
+        );
+
+        const content = result.content[0];
+        if (content.type === 'text') return content.text.trim();
+    } catch (err) {
+        logger.error({ err }, 'generateInvitation failed — using fallback');
+    }
+
+    return fallback;
+}
+
+// ─────────────────────────────────────────────
+// TRASCRIVI AUDIO (Whisper)
+// ─────────────────────────────────────────────
+
+export class TranscriptionError extends Error {
+    constructor(message: string) {
+        super(message);
+        this.name = 'TranscriptionError';
     }
 }
 
-export type Intent = 'YES' | 'NO' | 'QUESTION' | 'UNKNOWN';
-
-export async function classifyIntent(messageText: string): Promise<Intent> {
-    const prompt = `
-Classifica ESATTAMENTE questa risposta WhatsApp ricevuta in seguito ad un invito a giocare a padel.
-
-Rispondere SOLO con una di queste quattro parole, e nient'altro:
-- YES (se l'utente accetta, acconsente o conferma la presenza).
-- NO (se declina, si scusa o dice che non può).
-- QUESTION (se fa una domanda su orari, costi, chi gioca etc. senza ancora confermare).
-- UNKNOWN (se la risposta è incomprensibile o non rientra nei casi sopra).
-
-NON aggiungere premesse, NON usare testo aggiuntivo.
-
-Messaggio da valutare: "${messageText}"
-  `;
-
+export async function transcribeAudio(
+    audioBuffer: Buffer,
+    format: string = 'ogg'
+): Promise<string> {
     try {
-        const response = await anthropic.messages.create({
-            model: 'claude-3-haiku-20240307', // Haiku is faster and cheaper for classification
-            max_tokens: 10,
-            temperature: 0.1, // Low temp for strictly formatted classification
-            messages: [{ role: 'user', content: prompt }],
-        });
-
-        const content = response.content[0];
-        if (content.type === 'text') {
-            const text = content.text.trim().toUpperCase();
-            if (['YES', 'NO', 'QUESTION', 'UNKNOWN'].includes(text)) {
-                return text as Intent;
+        const result = await withRetry(
+            async () => {
+                const file = new File([audioBuffer], `audio.${format}`, { type: `audio/${format}` });
+                return openai.audio.transcriptions.create({
+                    file,
+                    model: 'whisper-1',
+                    language: 'it',
+                });
+            },
+            {
+                maxAttempts: 3,
+                baseDelayMs: 2000,
+                shouldRetry: isTransientNetworkError,
+                context: 'transcribeAudio',
             }
-        }
-        return 'UNKNOWN';
-    } catch (error) {
-        logger.error({ error }, 'Error classifying intent with Anthropic');
-        return 'UNKNOWN';
+        );
+        return result.text.trim();
+    } catch (err) {
+        logger.error({ err }, 'transcribeAudio failed after retries');
+        throw new TranscriptionError('Trascrizione audio non disponibile');
     }
+}
+
+// ─────────────────────────────────────────────
+// ESTRAI NUMERO TELEFONO
+// ─────────────────────────────────────────────
+
+export async function extractPhoneNumber(text: string): Promise<string | null> {
+    // Regex deterministico prima (zero costi, zero latenza)
+    const phoneRegex = /(\+?39)?[\s.-]?3\d{2}[\s.-]?\d{6,7}/g;
+    const match = text.match(phoneRegex);
+    if (match) {
+        const cleaned = match[0].replace(/[\s.-]/g, '');
+        return cleaned.startsWith('+') ? cleaned : `+39${cleaned.replace(/^39/, '')}`;
+    }
+
+    // Fallback AI per formati non standard
+    try {
+        const result = await withRetry(
+            () => anthropic.messages.create({
+                model: 'claude-haiku-4-5-20251001',
+                max_tokens: 20,
+                temperature: 0,
+                messages: [{
+                    role: 'user',
+                    content: `Estrai il numero di telefono. Rispondi SOLO con +39XXXXXXXXXX o NULL. Testo: "${text}"`,
+                }],
+            }),
+            { maxAttempts: 2, context: 'extractPhoneNumber' }
+        );
+        const content = result.content[0];
+        if (content.type === 'text') {
+            const val = content.text.trim();
+            return val === 'NULL' ? null : val;
+        }
+    } catch (err) {
+        logger.error({ err }, 'extractPhoneNumber AI failed');
+    }
+
+    return null;
+}
+
+// ─────────────────────────────────────────────
+// ESTRAI LIVELLO DI GIOCO
+// ─────────────────────────────────────────────
+
+export async function extractSkillLevel(
+    text: string,
+    maxLevel: number = 3
+): Promise<number | null> {
+    // Deterministico prima
+    const numMatch = text.match(/\b([1-5])\b/);
+    if (numMatch) {
+        const val = parseInt(numMatch[1]);
+        if (val >= 1 && val <= maxLevel) return val;
+    }
+
+    const lower = text.toLowerCase();
+    if (lower.includes('principiante') || lower.includes('base')) return 1;
+    if (lower.includes('avanzato') || lower.includes('alto')) return maxLevel;
+    if (lower.includes('intermedio') || lower.includes('medio')) return Math.ceil(maxLevel / 2);
+
+    // Fallback AI
+    try {
+        const result = await withRetry(
+            () => anthropic.messages.create({
+                model: 'claude-haiku-4-5-20251001',
+                max_tokens: 5,
+                temperature: 0,
+                messages: [{
+                    role: 'user',
+                    content: `Livello padel 1-${maxLevel}. Rispondi SOLO con un numero o NULL. Testo: "${text}"`,
+                }],
+            }),
+            { maxAttempts: 2, context: 'extractSkillLevel' }
+        );
+        const content = result.content[0];
+        if (content.type === 'text') {
+            const val = parseInt(content.text.trim());
+            if (!isNaN(val) && val >= 1 && val <= maxLevel) return val;
+        }
+    } catch (err) {
+        logger.error({ err }, 'extractSkillLevel AI failed');
+    }
+
+    return null;
 }

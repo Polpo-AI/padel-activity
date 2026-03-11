@@ -1,189 +1,745 @@
-import { WAMessage } from '@whiskeysockets/baileys';
+/**
+ * MESSAGE HANDLER — versione finale
+ *
+ * Riceve batch dalla inbound-queue (finestra 5s per JID).
+ * Gestisce in ordine:
+ * 1. Stati conversazionali attivi (onboarding, awaiting, booking, redirect, clarification)
+ * 2. Giocatore sconosciuto → onboarding
+ * 3. Classificazione intent con confidenza
+ * 4. Routing verso handler specifici
+ *
+ * ✅ FIX CRITICITÀ B (Redis State):
+ *    getStateByRole ora legge da Redis invece di query WhatsAppMessage su DB.
+ *    Chiavi Redis: `state:role:{jid}:{role}` con TTL 24h.
+ *
+ * ✅ FIX CRITICITÀ A (Multi-Tenancy):
+ *    prisma.club.findFirst() → lookup per clubId estratto dal JID giocatore.
+ */
+
+import { proto } from '@whiskeysockets/baileys';
 import { prisma } from './db';
-import { classifyIntent } from './ai';
+import { getRedis } from './queue';
+import { transcribeAudio } from './ai';
+import { increaseReliability } from './scoring';
+import {
+    handleBringFriend,
+    handleBringGroup,
+    handleWholeCourt,
+    handleOptOut,
+    processFriendPhone,
+    processFriendLevel,
+    getAwaitingState,
+} from './onboarding';
+import { handleCancellation } from './recovery';
+import { registerBatchHandler, NormalizedMessage } from './inbound-queue';
+import { getOnboardingState, continueOnboarding, startSingleOnboarding } from './onboarding-flow';
+import {
+    classifyWithConfidence,
+    handleUnclearIntent,
+    getUnclearState,
+    clearUnclearState,
+    setUnclearState,
+} from './intent-resolver';
+import {
+    startBookingFlow,
+    continueBookingFlow,
+    getBookingState,
+} from './booking';
+import {
+    confirmRedirectChoice,
+} from './redirect';
 import pino from 'pino';
-import { createGroupAndAddPlayers, simulateTypingAndSend } from './whatsapp';
+import { simulateTypingAndSend, createGroupAndAddPlayers, downloadMediaMessage } from './whatsapp';
 import { reminderQueue } from './queue';
 
 const logger = pino({ level: 'info' });
-
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 const randomInt = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1)) + min;
-
-// Use Prisma's inferred type for the transaction client
 type PrismaTransactionClient = Parameters<Parameters<typeof prisma.$transaction>[0]>[0];
 
-export async function handleIncomingMessage(msg: WAMessage) {
-    const senderJid = msg.key.remoteJid;
-    const phoneNumber = senderJid?.split('@')[0];
-    const text = msg.message?.conversation || msg.message?.extendedTextMessage?.text;
+// ─────────────────────────────────────────────
+// REGISTRA HANDLER
+// ─────────────────────────────────────────────
 
-    if (!phoneNumber || !text) return;
+registerBatchHandler(handleBatch);
 
-    logger.info(`Received message from ${phoneNumber}: ${text}`);
+// ─────────────────────────────────────────────
+// BATCH HANDLER
+// ─────────────────────────────────────────────
 
-    // Persist incoming message to DB
+export async function handleBatch(jid: string, messages: NormalizedMessage[]): Promise<void> {
+    const firstMessageKey = messages[0]?.raw?.key;
     try {
-        await prisma.whatsAppMessage.create({
-            data: {
-                chatId: senderJid!,
-                sender: phoneNumber,
-                role: 'USER',
-                content: text,
-            },
-        });
+        await _handleBatchInner(jid, messages);
     } catch (err) {
-        logger.error({ err }, 'Failed to persist incoming message');
+        // REGOLA FEEDBACK: qualunque errore, l'utente riceve sempre una risposta.
+        logger.error({ err }, `Unhandled error in handleBatch for ${jid}`);
+        try {
+            await simulateTypingAndSend(jid, "Scusa, ho avuto un piccolo problema tecnico 😅 Puoi ripetere?", firstMessageKey);
+        } catch {}
+    }
+}
+
+async function _handleBatchInner(jid: string, messages: NormalizedMessage[]): Promise<void> {
+    const phoneNumber = jid.split('@')[0];
+    logger.info(`Batch: ${messages.length} msg from ${phoneNumber}`);
+
+    // ── Persisti ─────────────────────────────────────────────────
+    for (const msg of messages) {
+        try {
+            await prisma.whatsAppMessage.create({
+                data: {
+                    chatId: jid,
+                    sender: phoneNumber,
+                    role: 'USER',
+                    content: msg.type === 'contact'
+                        ? `[Contatto] ${msg.contactName || ''} ${msg.contactPhone || ''}`
+                        : msg.type === 'audio' ? '[Audio]' : msg.text || '',
+                },
+            });
+        } catch (err) {
+            logger.error({ err }, 'Failed to persist message');
+        }
     }
 
-    // 1. Find if this player exists and has a PENDING invitation
-    const player = await prisma.player.findUnique({ where: { phoneNumber } });
-    if (!player) return;
+    // ── Trascrivi audio ──────────────────────────────────────────
+    for (const msg of messages) {
+        if (msg.type === 'audio' && msg.raw.message?.audioMessage) {
+            try {
+                const buffer = await downloadMediaMessage(msg.raw, 'buffer', {}, {
+                    logger: pino({ level: 'silent' }) as any,
+                    reuploadRequest: (m: proto.IWebMessageInfo) => Promise.resolve(m as any),
+                });
+                msg.text = await transcribeAudio(buffer as Buffer, 'ogg');
+                msg.type = 'text';
+            } catch (err: any) {
+                logger.error({ err }, 'Failed to transcribe audio');
+                if (err?.name === 'TranscriptionError') {
+                    await simulateTypingAndSend(
+                        jid,
+                        "Non riesco ad ascoltare il messaggio vocale al momento 😅 Puoi scrivermi?",
+                        firstMessageKey
+                    );
+                    return;
+                }
+            }
+        }
+    }
 
-    const activeInvitations = await prisma.invitation.findMany({
-        where: {
-            playerId: player.id,
-            status: 'PENDING',
-            match: { status: 'OPEN' },
-        },
-        include: { match: true },
-        orderBy: { sentAt: 'desc' },
-    });
+    // ── Estrai contesto dal batch ─────────────────────────────────
+    const contactCards = messages.filter(m => m.type === 'contact' && m.contactPhone);
+    const firstCard = contactCards[0];
+    const textMessages = messages.filter(m => m.type === 'text' && m.text);
+    const combinedText = textMessages.map(m => m.text).join(' ').trim();
+    // firstMessageKey è definito nel wrapper esterno handleBatch e usato nel fallback
+    // qui usiamo quello del batch corrente per i messaggi normali
+    const batchFirstKey = messages[0]?.raw?.key;
 
-    if (activeInvitations.length === 0) return;
-    const invitation = activeInvitations[0];
-    const matchId = invitation.matchId;
+    // ─────────────────────────────────────────
+    // STEP 1: stati conversazionali attivi
+    // (priorità assoluta su tutto il resto)
+    // ─────────────────────────────────────────
 
-    // 2. Classify intent via Anthropic
-    const intent = await classifyIntent(text);
-    logger.info(`Intent classified as ${intent} for message: "${text}"`);
-
-    // [ANTI-BAN & HUMAN SIMULATION]
-    // 15% chance of a long "I was busy" delay (60-240 seconds) — extremely human.
-    // Otherwise: random 8-35 seconds of reaction time.
-    const isBusy = Math.random() < 0.15;
-    const thoughtfulDelay = isBusy ? randomInt(60, 240) * 1000 : randomInt(8, 35) * 1000;
-    logger.info(`Waiting ${Math.round(thoughtfulDelay / 1000)}s (busy=${isBusy}) to mimic human reaction time...`);
-    await sleep(thoughtfulDelay);
-
-    if (intent === 'QUESTION') {
-        await simulateTypingAndSend(senderJid!, "Aspetta, controllo e ti dico! (Sono un'intelligenza artificiale in test 🤖)", msg.key);
+    // 1a. Onboarding nuovo giocatore
+    const onboardingState = await getOnboardingState(jid);
+    if (onboardingState) {
+        const input = combinedText || contactCards.map(c => `${c.contactName || ''} ${c.contactPhone || ''}`).join(' ').trim();
+        if (input) await continueOnboarding(jid, input, onboardingState.step, onboardingState.data, firstMessageKey);
         return;
     }
 
-    if (intent === 'NO') {
-        await prisma.invitation.update({
-            where: { id: invitation.id },
-            data: { status: 'REJECTED' },
+    // 1b. Redirect in attesa di conferma scelta
+    const redirectState = await getStateByRole(jid, 'AWAITING_REDIRECT_CHOICE');
+    if (redirectState && combinedText) {
+        await confirmRedirectChoice(jid, combinedText, redirectState);
+        return;
+    }
+
+    // 1c. Booking flow attivo
+    const bookingState = await getBookingState(jid);
+    if (bookingState) {
+        const contactInfo = firstCard ? { phone: firstCard.contactPhone, name: firstCard.contactName } : null;
+        await continueBookingFlow(jid, combinedText, contactInfo, bookingState, firstMessageKey);
+        return;
+    }
+
+    // 1d. Awaiting friend phone/level
+    const awaitingState = await getAwaitingState(jid);
+    if (awaitingState) {
+        if (awaitingState.role === 'AWAITING_FRIEND_PHONE' || awaitingState.role === 'AWAITING_GROUP_PHONES') {
+            if (contactCards.length > 0) {
+                // Processa TUTTE le card ricevute in sequenza
+                for (const card of contactCards) {
+                    await processFriendPhone(
+                        jid,
+                        `${card.contactPhone} ${card.contactName || ''}`.trim(),
+                        awaitingState.data,
+                        firstMessageKey,
+                        { phone: card.contactPhone!, name: card.contactName }
+                    );
+                }
+
+                // Se Mario aveva detto N amici ma ha mandato meno card, notificalo
+                const expectedCount = awaitingState.data.expectedFriendCount || 1;
+                const receivedCount = contactCards.length;
+                if (receivedCount < expectedCount) {
+                    const missing = expectedCount - receivedCount;
+                    await simulateTypingAndSend(
+                        jid,
+                        `Ho ricevuto ${receivedCount} contatt${receivedCount === 1 ? 'o' : 'i'} su ${expectedCount}. Mancano ancora ${missing} — intanto ho segnato quelli che mi hai mandato, il posto per ${missing} è riservato sotto tua responsabilità 👍`,
+                        firstMessageKey
+                    );
+                }
+            } else if (combinedText) {
+                await processFriendPhone(jid, combinedText, awaitingState.data, firstMessageKey);
+            }
+            return;
+        }
+
+        if (awaitingState.role === 'AWAITING_FRIEND_LEVEL' && combinedText) {
+            await processFriendLevel(jid, combinedText, awaitingState.data, firstMessageKey);
+            return;
+        }
+    }
+
+    // 1e. Clarification (intent poco chiaro, tentativi in corso)
+    const unclearState = await getUnclearState(jid);
+    if (unclearState && combinedText) {
+        const result = await classifyWithConfidence(combinedText, unclearState.context);
+        if (result.confident && result.intent !== 'UNKNOWN') {
+            await clearUnclearState(jid);
+            // Riprocessa con intent chiaro
+            await routeIntent(jid, phoneNumber, result.intent, combinedText, contactCards, firstMessageKey);
+        } else {
+            await handleUnclearIntent(
+                jid,
+                combinedText,
+                unclearState.attempt,
+                unclearState.context,
+                unclearState.availableIntents,
+                firstMessageKey
+            );
+        }
+        return;
+    }
+
+    // ─────────────────────────────────────────
+    // STEP 2: giocatore sconosciuto
+    // ─────────────────────────────────────────
+
+    const player = await prisma.player.findUnique({ where: { phoneNumber } });
+
+    if (!player) {
+        // ✅ FIX A: invece di findFirst() generico, tentiamo di risalire al club
+        // dal gruppo WhatsApp di provenienza del messaggio (se presente).
+        // Fallback sicuro: se c'è 1 solo club nel sistema, usa quello.
+        let club = null;
+        const clubCount = await prisma.club.count();
+        if (clubCount === 1) {
+            club = await prisma.club.findFirst();
+        } else {
+            // Cerca club che ha questo JID nei suoi groupJids
+            club = await prisma.club.findFirst({
+                where: { groupJids: { has: jid } },
+            });
+        }
+
+        await startSingleOnboarding(jid, {
+            clubId: club?.id || '',
+            botName: club?.name || 'Padel Bot',
+            askAvailability: false,
+            askTimePreference: false,
+            allowMixedLevels: false,
+            maxDailyMessages: 2,
+            notifyAdminOnNewPlayer: !!club?.adminPhone,
         });
-        await simulateTypingAndSend(senderJid!, "Tranquillo! Sarà per la prossima volta 💪", msg.key);
+        return;
+    }
+
+    // ─────────────────────────────────────────
+    // STEP 3: classifica intent
+    // ─────────────────────────────────────────
+
+    let intent: string;
+    let confident: boolean;
+
+    if (contactCards.length > 0 && !combinedText) {
+        // Solo card senza testo → BRING_FRIEND diretto
+        intent = 'BRING_FRIEND';
+        confident = true;
+    } else if (combinedText) {
+        const result = await classifyWithConfidence(combinedText);
+        intent = result.intent;
+        confident = result.confident;
+    } else {
+        return;
+    }
+
+    // Intent non confident → avvia clarification
+    if (!confident || intent === 'UNKNOWN') {
+        const availableIntents = getAvailableIntents(player);
+        await setUnclearState(jid, 1, buildContext(intent, combinedText), availableIntents as any);
+        await handleUnclearIntent(jid, combinedText, 0, buildContext(intent, combinedText), availableIntents as any, firstMessageKey);
+        return;
+    }
+
+    // Delay umano
+    await sleep(randomInt(8, 35) * 1000);
+
+    await routeIntent(jid, phoneNumber, intent as any, combinedText, contactCards, firstMessageKey);
+}
+
+// ─────────────────────────────────────────────
+// ROUTING INTENT
+// ─────────────────────────────────────────────
+
+async function routeIntent(
+    jid: string,
+    phoneNumber: string,
+    intent: string,
+    combinedText: string,
+    contactCards: NormalizedMessage[],
+    firstMessageKey: any
+): Promise<void> {
+    const player = await prisma.player.findUnique({ where: { phoneNumber } });
+    if (!player) return;
+
+    const firstCard = contactCards[0];
+
+    if (intent === 'OPT_OUT') {
+        await handleOptOut(jid, phoneNumber, firstMessageKey);
+        return;
+    }
+
+    if (intent === 'QUESTION') {
+        await simulateTypingAndSend(jid, "Aspetta, controllo e ti dico subito! 🎾", firstMessageKey);
+        return;
+    }
+
+    if (intent === 'BOOK') {
+        await startBookingFlow(jid, phoneNumber, combinedText, firstMessageKey);
+        return;
+    }
+
+    if (intent === 'CANCEL') {
+        // Controlla sia LOCKED che OPEN
+        const confirmedMatchPlayer = await prisma.matchPlayer.findFirst({
+            where: {
+                playerId: player.id,
+                leftAt: null,
+                match: { status: { in: ['LOCKED', 'OPEN'] } },
+            },
+            include: { match: { include: { club: true, MatchPlayer: { include: { player: true } } } } },
+        });
+
+        if (confirmedMatchPlayer) {
+            if (confirmedMatchPlayer.match.status === 'LOCKED') {
+                await handleCancellation(jid, phoneNumber, confirmedMatchPlayer.matchId, confirmedMatchPlayer.id, firstMessageKey);
+            } else {
+                // Disdetta da match OPEN
+                await handleOpenMatchCancellation(jid, phoneNumber, confirmedMatchPlayer, firstMessageKey);
+            }
+        } else {
+            await simulateTypingAndSend(jid, "Non risulti in nessuna partita confermata al momento 🤔", firstMessageKey);
+        }
+        return;
+    }
+
+    if (intent === 'BRING_FRIEND' || intent === 'BRING_GROUP' || intent === 'WHOLE_COURT') {
+        const confirmedMatchPlayer = await prisma.matchPlayer.findFirst({
+            where: { playerId: player.id, leftAt: null, match: { status: { in: ['OPEN', 'LOCKED'] } } },
+            include: { match: { include: { MatchPlayer: true, club: true } } },
+        });
+
+        const targetMatch = confirmedMatchPlayer?.match;
+        if (!targetMatch) {
+            await simulateTypingAndSend(jid, "Non sei in nessuna partita attiva al momento 🤔", firstMessageKey);
+            return;
+        }
+
+        const spotsLeft = targetMatch.playersNeeded - targetMatch.MatchPlayer.filter((mp: any) => !mp.leftAt).length;
+
+        if (intent === 'BRING_FRIEND') {
+            if (contactCards.length > 0) {
+                // Processa tutte le card ricevute
+                for (const card of contactCards) {
+                    await processFriendPhone(
+                        jid,
+                        `${card.contactPhone} ${card.contactName || ''}`.trim(),
+                        { matchId: targetMatch.id, spotsAvailable: spotsLeft, invitedByPhone: phoneNumber },
+                        firstMessageKey,
+                        { phone: card.contactPhone!, name: card.contactName }
+                    );
+                }
+            } else {
+                await handleBringFriend(jid, phoneNumber, targetMatch.id, spotsLeft, firstMessageKey);
+            }
+        } else if (intent === 'BRING_GROUP') {
+            // Estrai quanti sono dal testo
+            const groupCount = await extractGroupCount(combinedText);
+            if (contactCards.length > 0) {
+                const missing = groupCount - contactCards.length;
+                for (const card of contactCards) {
+                    await processFriendPhone(
+                        jid,
+                        `${card.contactPhone} ${card.contactName || ''}`.trim(),
+                        { matchId: targetMatch.id, spotsAvailable: spotsLeft, invitedByPhone: phoneNumber, expectedFriendCount: groupCount },
+                        firstMessageKey,
+                        { phone: card.contactPhone!, name: card.contactName }
+                    );
+                }
+                if (missing > 0) {
+                    await simulateTypingAndSend(
+                        jid,
+                        `Ho ricevuto ${contactCards.length} contatt${contactCards.length === 1 ? 'o' : 'i'} su ${groupCount}. Mancano ${missing} — mandameli quando puoi, intanto segno il posto 👍`,
+                        firstMessageKey
+                    );
+                }
+            } else {
+                await handleBringGroup(jid, phoneNumber, targetMatch.id, spotsLeft, firstMessageKey);
+            }
+        } else if (intent === 'WHOLE_COURT') {
+            await handleWholeCourt(jid, phoneNumber, targetMatch.id, firstMessageKey);
+        }
+        return;
+    }
+
+    // ── YES / NO ──────────────────────────────────────────────────
+
+    const activeInvitations = await prisma.invitation.findMany({
+        where: { playerId: player.id, status: 'PENDING', match: { status: 'OPEN' } },
+        include: { match: { include: { MatchPlayer: true, club: true } } },
+        orderBy: { sentAt: 'desc' },
+    });
+
+    if (activeInvitations.length === 0) {
+        if (intent === 'YES' || intent === 'NO') {
+            await simulateTypingAndSend(jid, "Non ho inviti attivi per te al momento 🎾", firstMessageKey);
+        }
+        return;
+    }
+
+    // Doppia invitation — chiedi conferma su quale
+    let invitation = activeInvitations[0];
+    if (activeInvitations.length > 1 && intent === 'YES') {
+        const chosen = await resolveDoubleInvitation(jid, combinedText, activeInvitations, firstMessageKey);
+        if (!chosen) return; // ha chiesto conferma, aspetta risposta
+        invitation = chosen;
+    }
+
+    if (intent === 'NO') {
+        await prisma.invitation.update({ where: { id: invitation.id }, data: { status: 'REJECTED' } });
+        await simulateTypingAndSend(jid, "Tranquillo! Sarà per la prossima volta 💪", firstMessageKey);
         return;
     }
 
     if (intent === 'YES') {
-        // 3. Player accepted! Let's lock them in
         try {
             const result = await prisma.$transaction(async (tx: PrismaTransactionClient) => {
                 const match = await tx.match.findUnique({
-                    where: { id: matchId },
-                    include: { MatchPlayer: true }
+                    where: { id: invitation.matchId },
+                    include: { MatchPlayer: true },
                 });
 
-                if (!match || match.status !== 'OPEN') {
-                    throw new Error('MATCH_CLOSED');
-                }
+                if (!match || match.status !== 'OPEN') throw new Error('MATCH_CLOSED');
 
-                if (match.MatchPlayer.length >= match.playersNeeded) {
-                    throw new Error('MATCH_FULL');
-                }
+                const activeCount = match.MatchPlayer.filter((mp: any) => !mp.leftAt).length;
+                if (activeCount >= match.playersNeeded) throw new Error('MATCH_FULL');
 
-                await tx.matchPlayer.create({
-                    data: { matchId: match.id, playerId: player.id },
-                });
+                await tx.matchPlayer.create({ data: { matchId: match.id, playerId: player.id } });
+                await tx.invitation.update({ where: { id: invitation.id }, data: { status: 'ACCEPTED' } });
 
-                await tx.invitation.update({
-                    where: { id: invitation.id },
-                    data: { status: 'ACCEPTED' },
-                });
-
-                const updatedCount = match.MatchPlayer.length + 1;
-                if (updatedCount >= match.playersNeeded) {
-                    const filledMatch = await tx.match.update({
-                        where: { id: match.id },
-                        data: { status: 'LOCKED' },
-                    });
-                    return { status: 'JUST_FILLED', match: filledMatch };
+                if (activeCount + 1 >= match.playersNeeded) {
+                    const filled = await tx.match.update({ where: { id: match.id }, data: { status: 'LOCKED' } });
+                    return { status: 'JUST_FILLED', match: filled };
                 }
 
                 return { status: 'ADDED', match };
             });
 
-            if (result.status === 'MATCH_CLOSED' || result.status === 'MATCH_FULL') {
-                throw new Error(result.status);
-            }
-
-            await simulateTypingAndSend(senderJid!, "Ottimo! Ti ho segnato. Ti scrivo non appena siamo in 4! 🎾", msg.key);
+            await simulateTypingAndSend(
+                jid,
+                result.status === 'JUST_FILLED'
+                    ? "Ottimo! Siamo al completo 🎾 Ti mando i dettagli nel gruppo!"
+                    : "Perfetto! Ti ho segnato. Ti scrivo appena siamo al completo 🎾",
+                firstMessageKey
+            );
 
             if (result.status === 'JUST_FILLED') {
                 await handleMatchFilled(result.match.id, result.match.startTime);
+                await increaseReliability(player.id);
             }
 
         } catch (error: any) {
-            logger.error({ error }, 'Error processing YES intent');
             if (error.message === 'MATCH_FULL' || error.message === 'MATCH_CLOSED') {
-                await prisma.invitation.update({
-                    where: { id: invitation.id },
-                    data: { status: 'REJECTED' },
+                await prisma.invitation.update({ where: { id: invitation.id }, data: { status: 'REJECTED' } });
+
+                // Dirottta con algoritmo redirect invece di dirlo e basta
+                const { redirectGroup } = await import('./redirect');
+                await redirectGroup({
+                    referentPhone: phoneNumber,
+                    referentJid: jid,
+                    playerPhones: [phoneNumber],
+                    playerCount: 1,
+                    originalMatchId: invitation.matchId,
+                    originalStartTime: invitation.match.startTime,
+                    reason: 'SLOT_TAKEN',
                 });
-                await simulateTypingAndSend(senderJid!, "Azz, sei arrivato un secondo in ritardo! Qualcuno ti ha soffiato l'ultimo posto. Alla prossima! 🥲", msg.key);
+            } else {
+                logger.error({ error }, 'Error processing YES intent');
             }
         }
     }
 }
 
-async function handleMatchFilled(matchId: string, startTime: Date) {
-    logger.info(`Match ${matchId} is now LOCKED. Executing closing sequence.`);
+// ─────────────────────────────────────────────
+// DISDETTA DA MATCH OPEN
+// ─────────────────────────────────────────────
+
+async function handleOpenMatchCancellation(
+    jid: string,
+    phoneNumber: string,
+    matchPlayer: any,
+    firstMessageKey: any
+): Promise<void> {
+    const match = matchPlayer.match;
+
+    // Rimuovi il giocatore
+    await prisma.matchPlayer.update({
+        where: { id: matchPlayer.id },
+        data: { leftAt: new Date() },
+    });
+
+    const { decreaseReliability } = await import('./reliability');
+    const player = await prisma.player.findUnique({ where: { phoneNumber } });
+    if (player) await decreaseReliability(player.id, 5);
+
+    // Ricalcola situazione
+    const updatedMatch = await prisma.match.findUnique({
+        where: { id: match.id },
+        include: {
+            MatchPlayer: { include: { player: true } },
+            invitations: { where: { status: 'PENDING' }, include: { player: true } },
+            club: true,
+        },
+    });
+
+    if (!updatedMatch) return;
+
+    const confirmed = updatedMatch.MatchPlayer.filter((mp: any) => !mp.leftAt);
+    const pending = updatedMatch.invitations;
+    const confirmedCount = confirmed.length;
+    const pendingCount = pending.length;
+    const total = confirmedCount + pendingCount;
+
+    await simulateTypingAndSend(jid, "Ok, capito! Ho aggiornato la partita 👍", firstMessageKey);
+
+    if (total >= updatedMatch.playersNeeded) {
+        // Ci sono abbastanza pending da aspettare — no wave
+        logger.info(`Match ${match.id}: ${confirmedCount} confirmed + ${pendingCount} pending >= ${updatedMatch.playersNeeded}. Waiting for pending.`);
+        return;
+    }
+
+    if (confirmedCount < 4 && total < 4) {
+        // Pool esaurito e non si può raggiungere il minimo — annulla tutto
+        await prisma.match.update({
+            where: { id: match.id },
+            data: { status: 'CANCELLED', cancelledAt: new Date(), cancelledReason: 'NO_PLAYERS' },
+        });
+
+        // Notifica i confermati rimasti e dirottali
+        if (confirmed.length > 0) {
+            const { redirectGroup } = await import('./redirect');
+            await redirectGroup({
+                referentPhone: confirmed[0].player.phoneNumber,
+                referentJid: confirmed[0].player.phoneNumber,
+                playerPhones: confirmed.map((mp: any) => mp.player.phoneNumber),
+                playerCount: confirmed.length,
+                originalMatchId: match.id,
+                originalStartTime: match.startTime,
+                reason: 'POOL_EXHAUSTED',
+            });
+        }
+        return;
+    }
+
+    // Delta mancante — lancia wave per i posti che servono
+    const delta = updatedMatch.playersNeeded - total;
+    logger.info(`Match ${match.id}: launching delta wave for ${delta} players`);
+
+    const { waveQueue } = await import('./queue');
+    await waveQueue.add('process-wave', {
+        matchId: match.id,
+        waveNumber: (updatedMatch as any).recoveryWaveCount + 1,
+        limit: delta,
+    }, {
+        delay: randomInt(15, 45) * 1000,
+    });
+
+    await prisma.match.update({
+        where: { id: match.id },
+        data: { recoveryWaveCount: { increment: 1 } },
+    });
+}
+
+// ─────────────────────────────────────────────
+// DOPPIA INVITATION — chiedi su quale
+// ─────────────────────────────────────────────
+
+async function resolveDoubleInvitation(
+    jid: string,
+    combinedText: string,
+    invitations: any[],
+    firstMessageKey: any
+): Promise<any | null> {
+    // Prima prova a capirlo dal testo
+    const times = invitations.map(inv =>
+        inv.match.startTime.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })
+    );
+
+    // Controlla se il testo menziona già uno degli orari
+    for (let i = 0; i < invitations.length; i++) {
+        if (combinedText.includes(times[i])) return invitations[i];
+    }
+
+    // Non è chiaro — chiedi con domanda AI-generated
+    const options = invitations.map((inv, i) =>
+        `${i + 1}. ${inv.match.court} alle ${times[i]}`
+    ).join('\n');
+
+    await simulateTypingAndSend(
+        jid,
+        `Scusa, ho due inviti aperti per te! Per quale stai confermando?\n\n${options}\n\nDimmi il numero 😊`,
+        firstMessageKey
+    );
+
+    // Salva stato per gestire la risposta nel prossimo batch
+    await prisma.whatsAppMessage.create({
+        data: {
+            chatId: jid,
+            sender: 'BOT',
+            role: 'AWAITING_INVITATION_CHOICE',
+            content: JSON.stringify({ invitationIds: invitations.map(inv => inv.id) }),
+        },
+    });
+
+    return null; // aspetta risposta
+}
+
+// ─────────────────────────────────────────────
+// MATCH FILLED — sequenza di chiusura
+// ─────────────────────────────────────────────
+
+async function handleMatchFilled(matchId: string, startTime: Date): Promise<void> {
+    logger.info(`Match ${matchId} LOCKED.`);
 
     const confirmed = await prisma.matchPlayer.findMany({
-        where: { matchId },
+        where: { matchId, leftAt: null },
         include: { player: true },
     });
-    const playerPhones = confirmed.map((m: any) => m.player.phoneNumber as string);
 
+    const match = await prisma.match.findUnique({ where: { id: matchId }, include: { club: true } });
     const timeStr = startTime.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
-    const groupName = `Padel ${timeStr}`;
-    const confirmationMsg = `Partita confermata 🎾\nCampo Prenotato\nOre: ${timeStr}\nBuona partita!`;
+    const groupName = `Padel ${timeStr} - ${match?.court || ''}`;
+    const confirmationMsg = `Partita confermata! 🎾\n📍 ${match?.court}\n🕐 Ore ${timeStr}\nBuona partita a tutti!`;
+    const playerPhones = confirmed.map((m: any) => m.player.phoneNumber as string);
 
     try {
         const groupId = await createGroupAndAddPlayers(groupName, playerPhones, confirmationMsg);
+        await prisma.match.update({ where: { id: matchId }, data: { groupId } });
 
-        await prisma.match.update({
-            where: { id: matchId },
-            data: { groupId },
-        });
-
+        // Notifica i PENDING rimasti e dirottali
         const pendingInvs = await prisma.invitation.findMany({
             where: { matchId, status: 'PENDING' },
             include: { player: true },
         });
 
         for (const inv of pendingInvs) {
-            await prisma.invitation.update({
-                where: { id: inv.id },
-                data: { status: 'IGNORED' },
+            await prisma.invitation.update({ where: { id: inv.id }, data: { status: 'IGNORED' } });
+
+            // Dirottta invece di dire solo "pieno"
+            const { redirectGroup } = await import('./redirect');
+            await redirectGroup({
+                referentPhone: inv.player.phoneNumber,
+                referentJid: inv.player.phoneNumber,
+                playerPhones: [inv.player.phoneNumber],
+                playerCount: 1,
+                originalMatchId: matchId,
+                originalStartTime: startTime,
+                reason: 'SLOT_TAKEN',
             });
-            // Delay before mass broadcasting sorry messages
-            await sleep(randomInt(2, 6) * 1000);
-            await simulateTypingAndSend(inv.player.phoneNumber, "Grazie mille per la disponibilità, ma abbiamo appena riempito il campo! Sarà per la prossima volta 💪");
         }
+
+        for (const mp of confirmed) await increaseReliability(mp.player.id);
 
         const reminderTime = new Date(startTime.getTime() - 60 * 60 * 1000);
         const delay = Math.max(0, reminderTime.getTime() - Date.now());
-
-        logger.info(`Scheduling reminder job for Match ${matchId} in ${delay / 1000}s`);
         await reminderQueue.add('send-reminder', { matchId, groupId, timeStr }, { delay });
 
     } catch (err) {
-        logger.error({ err }, `Error during closing sequence of Match ${matchId}`);
+        logger.error({ err }, `Error in closing sequence for match ${matchId}`);
     }
+}
+
+// ─────────────────────────────────────────────
+// UTILITY
+// ─────────────────────────────────────────────
+
+// ✅ FIX B: legge da Redis con fallback DB per compatibilità durante migrazione
+async function getStateByRole(jid: string, role: string): Promise<any | null> {
+    try {
+        const redis = getRedis();
+        const raw = await redis.get(`state:role:${jid}:${role}`);
+        if (raw) return JSON.parse(raw);
+    } catch (err) {
+        logger.error({ err, jid, role }, 'getStateByRole Redis error — falling back to DB');
+    }
+    // Fallback DB: mantiene compatibilità con stati scritti prima della migrazione
+    const msg = await prisma.whatsAppMessage.findFirst({
+        where: { chatId: jid, role },
+        orderBy: { timestamp: 'desc' },
+    });
+    if (!msg) return null;
+    try { return JSON.parse(msg.content); } catch { return null; }
+}
+
+function getAvailableIntents(player: any): string[] {
+    return ['YES', 'NO', 'CANCEL', 'BRING_FRIEND', 'BRING_GROUP', 'WHOLE_COURT', 'OPT_OUT', 'BOOK'];
+}
+
+function buildContext(intent: string, text: string): string {
+    const contexts: Record<string, string> = {
+        YES: 'Sembra che tu voglia confermare la tua presenza.',
+        NO: 'Sembra che tu voglia declinare.',
+        UNKNOWN: 'Non ho capito cosa vuoi fare.',
+    };
+    return contexts[intent] || 'Non ho capito bene il tuo messaggio.';
+}
+
+async function extractGroupCount(text: string): Promise<number> {
+    // Deterministico prima: cerca numeri nel testo
+    const numMatch = text.match(/\b([2-9]|10)\b/);
+    if (numMatch) {
+        const n = parseInt(numMatch[1]);
+        if (n >= 2 && n <= 10) return n - 1; // escludi chi scrive
+    }
+    const { withRetry, isTransientNetworkError } = await import('../utils/retry');
+    const { anthropic } = await import('./ai');
+    try {
+        const response = await withRetry(
+            () => anthropic.messages.create({
+                model: 'claude-haiku-4-5-20251001',
+                max_tokens: 5,
+                temperature: 0,
+                messages: [{
+                    role: 'user',
+                    content: `Quante persone (escluso chi scrive) vuole portare? Rispondi SOLO con un numero intero. Messaggio: "${text}"`,
+                }],
+            }),
+            { maxAttempts: 2, shouldRetry: isTransientNetworkError, context: 'extractGroupCount' }
+        );
+        const c = response.content[0];
+        if (c.type === 'text') return parseInt(c.text.trim()) || 1;
+    } catch { /* default */ }
+    return 1;
 }

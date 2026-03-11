@@ -20,14 +20,26 @@ import makeWASocket, {
     DisconnectReason,
     delay,
     proto,
+    downloadMediaMessage,
+    Browsers,
+    fetchLatestBaileysVersion,
 } from '@whiskeysockets/baileys';
+import { Boom } from '@hapi/boom';
 import pino from 'pino';
 import * as qrcode from 'qrcode-terminal';
-import { handleIncomingMessage } from './messageHandler';
+// import { handleIncomingMessage } from './messageHandler'; // Circular dependency removed
+import EventEmitter from 'events';
+
+export const wahEvents = new EventEmitter();
 
 const logger = pino({ level: 'info' });
 
 let sock: ReturnType<typeof makeWASocket> | null = null;
+let connectionStatus: 'open' | 'connecting' | 'closed' = 'connecting';
+
+// ✅ FIX I: backoff esponenziale per reconnect — evita loop infinito e accelerazione ban
+let reconnectAttempts = 0;
+const MAX_RECONNECT_DELAY_MS = 64000; // cap a 64s
 
 // ------------------------------------------------------------------
 // UTILITY HELPERS
@@ -74,34 +86,64 @@ function maybeSplitMessage(text: string): [string, string | null] {
 
 export async function connectToWhatsApp() {
     const { state, saveCreds } = await useMultiFileAuthState('baileys_auth_info');
+    const { version, isLatest } = await fetchLatestBaileysVersion();
+    logger.info(`Using WA version: ${version.join('.')} (isLatest: ${isLatest})`);
 
     sock = makeWASocket({
+        version,
         auth: state,
-        printQRInTerminal: false,
+        printQRInTerminal: !process.env.BOT_PHONE_NUMBER,
         logger: pino({ level: 'silent' }) as any,
-        // Emulate browser fingerprint of a real Chrome on macOS
-        browser: ['Chrome (Mac)', 'Chrome', '120.0.6099.199'],
+        // Using a custom browser fingerprint that mimics an official WA Web session to bypass the "Cannot link device" block
+        browser: ['Polpo AI', 'MacOS', '120.0'],
     });
 
     sock.ev.on('creds.update', saveCreds);
 
-    sock.ev.on('connection.update', (update) => {
+    sock.ev.on('connection.update', async (update) => {
         const { connection, lastDisconnect, qr } = update;
 
         if (qr) {
-            logger.info('📱 Scan this QR Code to authenticate WhatsApp:');
-            qrcode.generate(qr, { small: true });
+            if (process.env.BOT_PHONE_NUMBER && !sock!.authState.creds.registered) {
+                try {
+                    const cleanNumber = process.env.BOT_PHONE_NUMBER.replace('+', '');
+                    const code = await sock!.requestPairingCode(cleanNumber);
+                    console.log(`\n======================================================`);
+                    console.log(`🔢 CODICE DI ABBINAMENTO WHATSAPP: ${code}`);
+                    console.log(`👉 Apri WA Business > Dispositivi Collegati > Collega > "Collega con il numero di telefono" (in basso)`);
+                    console.log(`======================================================\n`);
+                } catch (err) {
+                    logger.error({ err }, 'Errore durante la generazione del pairing code');
+                }
+            } else {
+                logger.info('📱 Scan this QR Code to authenticate WhatsApp:');
+                qrcode.generate(qr, { small: true });
+            }
         }
 
         if (connection === 'close') {
-            const shouldReconnect =
-                (lastDisconnect?.error as any)?.output?.statusCode !== DisconnectReason.loggedOut;
-            logger.error(`WhatsApp connection closed. Reconnecting: ${shouldReconnect}`);
+            const statusCode = (lastDisconnect?.error as Boom)?.output?.statusCode;
+            const errorMsg = lastDisconnect?.error?.message || 'Unknown error';
+            connectionStatus = 'closed';
+            const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
+            
+            logger.error({ 
+                statusCode, 
+                error: lastDisconnect?.error,
+                message: errorMsg 
+            }, `WhatsApp connection closed. Reconnecting: ${shouldReconnect}`);
+            
             if (shouldReconnect) {
-                connectToWhatsApp();
+                // ✅ FIX I: backoff esponenziale con cap — non chiamare mai ricorsivamente senza delay
+                const delayMs = Math.min(1000 * Math.pow(2, reconnectAttempts), MAX_RECONNECT_DELAY_MS);
+                reconnectAttempts++;
+                logger.warn({ attempt: reconnectAttempts, delayMs }, `Reconnecting in ${delayMs}ms...`);
+                setTimeout(connectToWhatsApp, delayMs);
             }
         } else if (connection === 'open') {
             logger.info('✅ WhatsApp Connected Successfully!');
+            reconnectAttempts = 0; // ✅ reset counter su connessione riuscita
+            connectionStatus = 'open';
         }
     });
 
@@ -109,7 +151,7 @@ export async function connectToWhatsApp() {
         if (m.type !== 'notify') return;
         for (const msg of m.messages) {
             if (!msg.key.fromMe && msg.message) {
-                await handleIncomingMessage(msg);
+                wahEvents.emit('message', msg);
             }
         }
     });
@@ -307,3 +349,10 @@ export async function createGroupAndAddPlayers(
 export function getSock() {
     return sock;
 }
+
+// ✅ FIX I: stato connessione leggibile dall'health check endpoint
+export function getConnectionStatus(): 'open' | 'connecting' | 'closed' {
+    return connectionStatus;
+}
+
+export { downloadMediaMessage };

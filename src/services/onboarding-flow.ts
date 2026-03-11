@@ -1,0 +1,466 @@
+/**
+ * ONBOARDING SERVICE
+ *
+ * Due modalità di importazione giocatori:
+ *
+ * A) GRUPPO WHATSAPP — il circolo aggiunge il bot a un gruppo esistente
+ *    (es. "Padel Intermedi"). Il bot legge i partecipanti, deduce il livello
+ *    dal nome del gruppo e li importa tutti silenziosi.
+ *    Poi manda un messaggio di benvenuto personalizzato a ognuno.
+ *
+ * B) RUBRICA VCF — il circolo invia il file .vcf esportato dal telefono.
+ *    Il bot filtra i contatti che contengono la keyword configurata
+ *    (es. "Padel") nel nome, e li importa.
+ *
+ * ONBOARDING SINGOLO — flusso conversazionale per nuovi giocatori
+ *    che scrivono spontaneamente o vengono portati da un amico.
+ */
+
+import { prisma } from './db';
+import { getRedis } from './queue';
+import { getSock, simulateTypingAndSend, sendMessage } from './whatsapp';
+import { extractSkillLevel } from './ai';
+import pino from 'pino';
+
+const logger = pino({ level: 'info' });
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+const randomInt = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1)) + min;
+
+// ─────────────────────────────────────────────
+// TIPO: configurazione onboarding del circolo
+// ─────────────────────────────────────────────
+
+export interface ClubOnboardingConfig {
+    clubId: string;
+    botName: string;                    // es. "Circolo Padel Roma Bot"
+    welcomeMessage?: string;            // messaggio custom di benvenuto
+    askAvailability: boolean;           // chiedi giorni preferiti?
+    askTimePreference: boolean;         // chiedi orario preferito?
+    vcfKeyword?: string;                // keyword per filtro rubrica (es. "Padel")
+    allowMixedLevels: boolean;          // invita livelli misti?
+    maxDailyMessages: number;           // default 2
+    notifyAdminOnNewPlayer: boolean;
+}
+
+// ─────────────────────────────────────────────
+// A) IMPORT DA GRUPPO WHATSAPP
+// ─────────────────────────────────────────────
+
+/**
+ * Chiamato quando il bot viene aggiunto a un gruppo.
+ * Deduce il livello dal nome del gruppo e importa tutti i partecipanti.
+ *
+ * Naming convention gruppi consigliata al cliente:
+ *   "Padel Principianti", "Padel Intermedi", "Padel Avanzati"
+ *   → il bot estrae il livello dalla parola chiave nel nome
+ */
+export async function importPlayersFromGroup(
+    groupJid: string,
+    groupName: string,
+    config: ClubOnboardingConfig
+): Promise<{ imported: number; skipped: number }> {
+    const sock = getSock();
+    if (!sock) throw new Error('WhatsApp socket not initialized');
+
+    logger.info(`Importing players from group: "${groupName}" (${groupJid})`);
+
+    // Deduci skill level dal nome del gruppo
+    const skillLevel = guessSkillLevelFromGroupName(groupName);
+    logger.info(`Detected skill level from group name: ${skillLevel}`);
+
+    // Leggi i partecipanti del gruppo
+    const groupMetadata = await sock.groupMetadata(groupJid);
+    const participants = groupMetadata.participants;
+
+    let imported = 0;
+    let skipped = 0;
+
+    for (const participant of participants) {
+        const phone = participant.id.split('@')[0];
+
+        // Salta il bot stesso e gli admin di sistema
+        if (phone === process.env.BOT_PHONE_NUMBER?.replace('+', '')) {
+            skipped++;
+            continue;
+        }
+
+        // ✅ FIX K: cerca giocatore per club specifico (non globalmente)
+        const existing = await prisma.player.findFirst({
+            where: { phoneNumber: phone, clubId: config.clubId },
+        });
+        if (existing) {
+            skipped++;
+            continue;
+        }
+
+        // ✅ FIX K: nuovo giocatore sempre associato al clubId corretto
+        await prisma.player.create({
+            data: {
+                phoneNumber: phone,
+                clubId: config.clubId,
+                skillLevel: skillLevel as any,
+                groupIds: [groupJid],
+                active: true,
+            },
+        });
+
+        imported++;
+        logger.info(`Imported player: ${phone} (${skillLevel})`);
+
+        // Delay anti-ban tra un import e l'altro
+        await sleep(randomInt(500, 1500));
+    }
+
+    logger.info(`Group import complete: ${imported} imported, ${skipped} skipped`);
+
+    // Notifica admin
+    if (config.notifyAdminOnNewPlayer) {
+        const club = await prisma.club.findUnique({ where: { id: config.clubId } });
+        if (club?.adminPhone) {
+            await sendMessage(
+                club.adminPhone,
+                `[POLPO BOT] 📥 Import da gruppo completato\nGruppo: "${groupName}"\nLivello rilevato: ${skillLevel}\nNuovi: ${imported} | Già presenti: ${skipped}`
+            );
+        }
+    }
+
+    // Invia messaggi di benvenuto in batch con delay umani
+    await sendWelcomeBatch(groupJid, skillLevel, config);
+
+    return { imported, skipped };
+}
+
+// ─────────────────────────────────────────────
+// B) IMPORT DA FILE VCF (rubrica)
+// ─────────────────────────────────────────────
+
+/**
+ * Parsea un file .vcf e importa i contatti che contengono la keyword.
+ * Il circolo esporta la rubrica del telefono e la manda al bot.
+ */
+export async function importPlayersFromVcf(
+    vcfContent: string,
+    defaultSkillLevel: 'BEGINNER' | 'INTERMEDIATE' | 'ADVANCED',
+    config: ClubOnboardingConfig
+): Promise<{ imported: number; skipped: number; notFound: string[] }> {
+    const keyword = config.vcfKeyword?.toLowerCase() || 'padel';
+    const contacts = parseVcf(vcfContent);
+
+    logger.info(`VCF parsed: ${contacts.length} total contacts, filtering by keyword "${keyword}"`);
+
+    const filtered = contacts.filter(c => c.name.toLowerCase().includes(keyword));
+    logger.info(`VCF filtered: ${filtered.length} matching contacts`);
+
+    let imported = 0;
+    let skipped = 0;
+    const notFound: string[] = [];
+
+    for (const contact of filtered) {
+        if (!contact.phone) {
+            notFound.push(contact.name);
+            continue;
+        }
+
+        const normalizedPhone = normalizeItalianPhone(contact.phone);
+        if (!normalizedPhone) {
+            notFound.push(`${contact.name} (${contact.phone})`);
+            continue;
+        }
+
+        // ✅ FIX K: cerca per club
+        const existing = await prisma.player.findFirst({
+            where: { phoneNumber: normalizedPhone, clubId: config.clubId },
+        });
+        if (existing) {
+            skipped++;
+            continue;
+        }
+
+        const cleanName = contact.name
+            .replace(new RegExp(keyword, 'gi'), '')
+            .trim()
+            .replace(/^[-–\s]+|[-–\s]+$/g, '');
+
+        const skillFromName = guessSkillLevelFromGroupName(contact.name) || defaultSkillLevel;
+
+        await prisma.player.create({
+            data: {
+                phoneNumber: normalizedPhone,
+                clubId: config.clubId, // ✅ FIX K
+                name: cleanName || null,
+                skillLevel: skillFromName as any,
+                active: true,
+            },
+        });
+
+        imported++;
+        await sleep(randomInt(200, 600));
+    }
+
+    logger.info(`VCF import complete: ${imported} imported, ${skipped} skipped, ${notFound.length} not found`);
+    return { imported, skipped, notFound };
+}
+
+// ─────────────────────────────────────────────
+// C) ONBOARDING SINGOLO — flusso conversazionale
+// ─────────────────────────────────────────────
+
+/**
+ * Flusso per un giocatore nuovo che scrive spontaneamente al bot.
+ * Gestito a step tramite stato conversazionale in WhatsAppMessage.
+ *
+ * Step:
+ * 1. Benvenuto + chiedi nome
+ * 2. Chiedi livello
+ * 3. (opzionale) Chiedi disponibilità
+ * 4. (opzionale) Chiedi orario preferito
+ * 5. Salva e conferma
+ */
+
+export type OnboardingStep =
+    | 'AWAITING_NAME'
+    | 'AWAITING_LEVEL'
+    | 'AWAITING_AVAILABILITY'
+    | 'AWAITING_TIME_PREFERENCE'
+    | 'COMPLETE';
+
+export async function startSingleOnboarding(
+    senderJid: string,
+    config: ClubOnboardingConfig
+): Promise<void> {
+    const botName = config.botName || 'Padel Bot';
+    const welcome = config.welcomeMessage ||
+        `Ciao! Sono ${botName} 🎾 Ti aggiungo al sistema per ricevere inviti alle partite.\n\nCome ti chiami?`;
+
+    await simulateTypingAndSend(senderJid, welcome);
+
+    await setOnboardingState(senderJid, 'AWAITING_NAME', { config });
+}
+
+export async function continueOnboarding(
+    senderJid: string,
+    messageText: string,
+    step: OnboardingStep,
+    stateData: any,
+    messageKey?: any
+): Promise<void> {
+    const { config } = stateData;
+
+    if (step === 'AWAITING_NAME') {
+        const name = messageText.trim().split(' ')[0]; // prendi solo il nome
+        await setOnboardingState(senderJid, 'AWAITING_LEVEL', { ...stateData, name });
+
+        await simulateTypingAndSend(
+            senderJid,
+            `Piacere ${name}! 🤝 Che livello hai a padel? (principiante / intermedio / avanzato)`,
+            messageKey
+        );
+        return;
+    }
+
+    if (step === 'AWAITING_LEVEL') {
+        const skillLevel = await extractSkillLevel(messageText);
+        const updatedState = { ...stateData, skillLevel };
+
+        if (config.askAvailability) {
+            await setOnboardingState(senderJid, 'AWAITING_AVAILABILITY', updatedState);
+            await simulateTypingAndSend(
+                senderJid,
+                `Perfetto! Che giorni sei disponibile di solito? (es. "lunedì e mercoledì sera", "weekend", "qualsiasi")`,
+                messageKey
+            );
+        } else if (config.askTimePreference) {
+            await setOnboardingState(senderJid, 'AWAITING_TIME_PREFERENCE', updatedState);
+            await simulateTypingAndSend(
+                senderJid,
+                `Hai preferenze sull'orario? (es. "mattina", "sera dopo le 18", "no preference")`,
+                messageKey
+            );
+        } else {
+            await finalizeOnboarding(senderJid, updatedState, messageKey);
+        }
+        return;
+    }
+
+    if (step === 'AWAITING_AVAILABILITY') {
+        const updatedState = { ...stateData, availability: messageText.trim() };
+
+        if (config.askTimePreference) {
+            await setOnboardingState(senderJid, 'AWAITING_TIME_PREFERENCE', updatedState);
+            await simulateTypingAndSend(
+                senderJid,
+                `E che orario preferisci? (mattina, pomeriggio, sera)`,
+                messageKey
+            );
+        } else {
+            await finalizeOnboarding(senderJid, updatedState, messageKey);
+        }
+        return;
+    }
+
+    if (step === 'AWAITING_TIME_PREFERENCE') {
+        const updatedState = { ...stateData, timePreference: messageText.trim() };
+        await finalizeOnboarding(senderJid, updatedState, messageKey);
+        return;
+    }
+}
+
+async function finalizeOnboarding(senderJid: string, stateData: any, messageKey?: any): Promise<void> {
+    const { name, skillLevel, availability, timePreference, config } = stateData;
+    const phone = senderJid.split('@')[0];
+
+    // ✅ FIX K: upsert con clubId — unique è (phoneNumber, clubId)
+    await prisma.player.upsert({
+        where: { phoneNumber_clubId: { phoneNumber: phone, clubId: config.clubId } },
+        update: { name, skillLevel, active: true },
+        create: {
+            phoneNumber: phone,
+            clubId: config.clubId,
+            name,
+            skillLevel,
+            active: true,
+        },
+    });
+
+    await clearOnboardingState(senderJid);
+
+    await simulateTypingAndSend(
+        senderJid,
+        `Perfetto ${name}! 🎾 Sei nel sistema. Ti contatterò quando c'è una partita disponibile per il tuo livello. A presto!`,
+        messageKey
+    );
+
+    // Notifica admin
+    if (config.notifyAdminOnNewPlayer) {
+        const club = await prisma.club.findUnique({ where: { id: config.clubId } });
+        if (club?.adminPhone) {
+            await sendMessage(
+                club.adminPhone,
+                `[POLPO BOT] 👤 Nuovo giocatore onboardato\nNome: ${name}\nTelefono: ${phone}\nLivello: ${skillLevel}${availability ? `\nDisponibilità: ${availability}` : ''}${timePreference ? `\nOrario: ${timePreference}` : ''}\n➡️ Aggiungere al gruppo WhatsApp livello: ${skillLevel}`
+            );
+        }
+    }
+}
+
+// ─────────────────────────────────────────────
+// BENVENUTO IN BATCH
+// Manda un messaggio di benvenuto a tutti i nuovi importati
+// con delay random per evitare ban
+// ─────────────────────────────────────────────
+
+async function sendWelcomeBatch(
+    groupJid: string,
+    skillLevel: string,
+    config: ClubOnboardingConfig
+): Promise<void> {
+    const players = await prisma.player.findMany({
+        where: { groupIds: { has: groupJid } },
+    });
+
+    const botName = config.botName || 'Padel Bot';
+    const customWelcome = config.welcomeMessage;
+
+    logger.info(`Sending welcome messages to ${players.length} players from group import`);
+
+    for (const player of players) {
+        const msg = customWelcome ||
+            `Ciao! Sono ${botName} 🎾 D'ora in poi ti contatterò quando si apre un posto per una partita di padel. Rispondi "stop" in qualsiasi momento per uscire dalla lista. A presto!`;
+
+        await sleep(randomInt(8000, 25000)); // delay umano tra messaggi
+
+        try {
+            await simulateTypingAndSend(player.phoneNumber, msg);
+        } catch (err) {
+            logger.error({ err }, `Failed to send welcome to ${player.phoneNumber}`);
+        }
+    }
+}
+
+// ─────────────────────────────────────────────
+// STATO ONBOARDING
+// ─────────────────────────────────────────────
+
+// ✅ FIX K: stati onboarding su Redis con TTL 24h (era WhatsAppMessage su DB)
+async function setOnboardingState(jid: string, step: OnboardingStep, data: any): Promise<void> {
+    try {
+        const redis = getRedis();
+        await redis.set(
+            `state:onboarding:${jid}`,
+            JSON.stringify({ step, data }),
+            'EX', 24 * 60 * 60
+        );
+    } catch (err) {
+        logger.error({ err, jid }, 'Failed to save onboarding state to Redis');
+    }
+}
+
+export async function getOnboardingState(jid: string): Promise<{ step: OnboardingStep; data: any } | null> {
+    try {
+        const redis = getRedis();
+        const raw = await redis.get(`state:onboarding:${jid}`);
+        if (!raw) return null;
+        return JSON.parse(raw);
+    } catch (err) {
+        logger.error({ err, jid }, 'Failed to read onboarding state from Redis');
+        return null;
+    }
+}
+
+export async function clearOnboardingState(jid: string): Promise<void> {
+    try {
+        const redis = getRedis();
+        await redis.del(`state:onboarding:${jid}`);
+    } catch (err) {
+        logger.error({ err, jid }, 'Failed to clear onboarding state from Redis');
+    }
+}
+
+// ─────────────────────────────────────────────
+// UTILITY: parser VCF minimale
+// ─────────────────────────────────────────────
+
+function parseVcf(vcfContent: string): { name: string; phone: string | null }[] {
+    const contacts: { name: string; phone: string | null }[] = [];
+    const cards = vcfContent.split('BEGIN:VCARD');
+
+    for (const card of cards) {
+        if (!card.includes('END:VCARD')) continue;
+
+        const nameMatch = card.match(/FN:(.+)/);
+        const phoneMatch = card.match(/TEL[^:]*:([+\d\s\-().]+)/);
+
+        if (nameMatch) {
+            contacts.push({
+                name: nameMatch[1].trim(),
+                phone: phoneMatch ? phoneMatch[1].trim() : null,
+            });
+        }
+    }
+
+    return contacts;
+}
+
+function normalizeItalianPhone(raw: string): string | null {
+    const digits = raw.replace(/\D/g, '');
+
+    if (digits.startsWith('39') && digits.length === 12) return `+${digits}`;
+    if (digits.startsWith('3') && digits.length === 10) return `+39${digits}`;
+    if (digits.startsWith('0039')) return `+${digits.slice(2)}`;
+
+    return null;
+}
+
+// ─────────────────────────────────────────────
+// UTILITY: deduci livello dal nome del gruppo
+// ─────────────────────────────────────────────
+
+function guessSkillLevelFromGroupName(name: string): 'BEGINNER' | 'INTERMEDIATE' | 'ADVANCED' {
+    const lower = name.toLowerCase();
+
+    const beginnerKw = ['principiante', 'principianti', 'beginner', 'base', 'livello 1', 'lv1', 'newbie'];
+    const advancedKw = ['avanzato', 'avanzati', 'advanced', 'agonistico', 'pro', 'livello 3', 'lv3', 'esperto', 'esperti'];
+
+    if (beginnerKw.some(kw => lower.includes(kw))) return 'BEGINNER';
+    if (advancedKw.some(kw => lower.includes(kw))) return 'ADVANCED';
+    return 'INTERMEDIATE'; // default
+}

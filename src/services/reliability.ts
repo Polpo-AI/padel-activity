@@ -1,49 +1,42 @@
-import { prisma } from '../services/db';
+import { prisma } from './db';
 import pino from 'pino';
 
 const logger = pino({ level: 'info' });
 
-export async function resetDailyStats() {
-    logger.info('Resetting daily message counts for all players...');
+const MAX_SCORE = 150;
+const MIN_SCORE = 0;
+
+export async function increaseReliability(playerId: string, amount: number = 2): Promise<void> {
     try {
-        const res = await prisma.player.updateMany({
-            data: { dailyMessagesCount: 0 },
+        const player = await prisma.player.findUnique({ where: { id: playerId } });
+        if (!player) return;
+        const newScore = Math.min(MAX_SCORE, player.reliabilityScore + amount);
+        await prisma.player.update({
+            where: { id: playerId },
+            data: { reliabilityScore: newScore },
         });
-        logger.info(`Reset ${res.count} players.`);
+        logger.info(`Player ${playerId} reliability: ${player.reliabilityScore} → ${newScore} (+${amount})`);
     } catch (err) {
-        logger.error({ err }, 'Failed to reset daily stats');
+        logger.error({ err }, 'Failed to increase reliability');
     }
 }
 
-// Called when a player bails out of a locked match
-export async function decreaseReliability(playerId: string, points: number = 10) {
+export async function decreaseReliability(playerId: string, amount: number = 10): Promise<void> {
     try {
-        const player = await prisma.player.update({
+        const player = await prisma.player.findUnique({ where: { id: playerId } });
+        if (!player) return;
+        const newScore = Math.max(MIN_SCORE, player.reliabilityScore - amount);
+        await prisma.player.update({
             where: { id: playerId },
-            data: { reliabilityScore: { decrement: points } },
+            data: { reliabilityScore: newScore },
         });
-        logger.info(`Decreased reliability for player ${player.phoneNumber}. New score: ${player.reliabilityScore}`);
-    } catch (err) {
-        logger.error({ err }, `Failed to decrease reliability for player ${playerId}`);
-    }
-}
+        logger.info(`Player ${playerId} reliability: ${player.reliabilityScore} → ${newScore} (-${amount})`);
 
-// Called after a successful match
-export async function increaseReliability(playerId: string, points: number = 2) {
-    try {
-        const player = await prisma.player.update({
-            where: { id: playerId },
-            data: { reliabilityScore: { increment: points } },
-        });
-        // Cap at 100
-        if (player.reliabilityScore > 100) {
-            await prisma.player.update({
-                where: { id: playerId },
-                data: { reliabilityScore: 100 },
-            });
+        // Se score troppo basso, disabilita temporaneamente
+        if (newScore < 30) {
+            logger.warn(`Player ${playerId} reliability critically low (${newScore}). Consider disabling.`);
         }
-        logger.info(`Increased reliability for player ${player.phoneNumber}`);
     } catch (err) {
-        logger.error({ err }, `Failed to increase reliability for player ${playerId}`);
+        logger.error({ err }, 'Failed to decrease reliability');
     }
 }
