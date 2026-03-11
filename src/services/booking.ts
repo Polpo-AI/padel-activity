@@ -132,6 +132,7 @@ async function searchAndProposeMatches(
 ): Promise<void> {
     const openMatches = await prisma.match.findMany({
         where: {
+            clubId: player.clubId,
             status: 'OPEN',
             skillLevel: player.skillLevel,
             startTime: { gte: from, lte: to },
@@ -232,7 +233,7 @@ async function handleGuaranteedFull(
     // ✅ FIX J: filtra per clubId del player
     const targetMatch = await prisma.match.findFirst({
         where: {
-            clubId: player.clubId,
+            clubId: (player as any).clubId,
             status: 'OPEN',
             skillLevel: player.skillLevel,
             startTime: { gte: from, lte: to },

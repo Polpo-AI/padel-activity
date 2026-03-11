@@ -6,9 +6,6 @@ dotenv.config();
 export default defineConfig({
   schema: 'prisma/schema.prisma',
   datasource: {
-    url: process.env.DATABASE_URL,
-  },
-  studio: {
-    port: 5555,
+    url: process.env.DIRECT_URL || process.env.DATABASE_URL,
   },
 });

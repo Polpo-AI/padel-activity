@@ -8,13 +8,18 @@
  */
 
 import { PrismaClient } from '@prisma/client';
+import { Pool } from 'pg';
+import { PrismaPg } from '@prisma/adapter-pg';
 import { withRetry, isTransientDbError } from '../utils/retry';
 import pino from 'pino';
 
 const logger = pino({ level: 'info' });
 
 function createPrismaClient() {
+    const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+    const adapter = new PrismaPg(pool);
     const client = new PrismaClient({
+        adapter,
         log: [
             { level: 'warn', emit: 'event' },
             { level: 'error', emit: 'event' },

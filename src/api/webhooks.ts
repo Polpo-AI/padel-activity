@@ -48,7 +48,7 @@ function verifyWebhookSignature(req: Request, res: Response, next: NextFunction)
         return;
     }
 
-    const rawBody = JSON.stringify(req.body); // body già parsato da express.json()
+    const rawBody = (req as any).rawBody ? (req as any).rawBody.toString() : JSON.stringify(req.body);
     const expected = 'sha256=' + crypto
         .createHmac('sha256', WEBHOOK_SECRET)
         .update(rawBody)
