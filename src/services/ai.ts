@@ -147,7 +147,7 @@ export async function transcribeAudio(
     try {
         const result = await withRetry(
             async () => {
-                const file = new File([audioBuffer], `audio.${format}`, { type: `audio/${format}` });
+                const file = new File([audioBuffer as any], `audio.${format}`, { type: `audio/${format}` });
                 return openai.audio.transcriptions.create({
                     file,
                     model: 'whisper-1',

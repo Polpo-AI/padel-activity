@@ -1,5 +1,5 @@
 import { Worker, Job } from 'bullmq';
-import { redisOpts } from '../services/queue';
+import { getRedis } from '../services/queue';
 import { sendMessage } from '../services/whatsapp';
 import pino from 'pino';
 
@@ -25,7 +25,7 @@ export const reminderWorker = new Worker<ReminderJobData>(
             logger.error({ error }, `Failed to send reminder to ${groupId}`);
         }
     },
-    { connection: redisOpts }
+    { connection: getRedis() as any }
 );
 
 reminderWorker.on('failed', (job, err) => {

@@ -34,6 +34,7 @@ export interface RedirectOption {
     priority: 1 | 2 | 3 | 4 | 5;
     matchId?: string;           // se partita esistente
     court: string;
+    courtId?: string | null;
     startTime: Date;
     spotsLeft?: number;         // posti liberi nella partita
     willLock: boolean;          // true se aggiungendo N si chiude
@@ -121,7 +122,7 @@ export async function findRedirectOptions(
             status: 'OPEN',
             startTime: { gte: windowStart, lte: windowEnd },
         },
-        include: { MatchPlayer: true },
+        include: { MatchPlayer: true, court: true },
         orderBy: { startTime: 'asc' },
     });
 
@@ -133,11 +134,12 @@ export async function findRedirectOptions(
             options.push({
                 priority: 1,
                 matchId: match.id,
-                court: match.court,
+                court: match.court?.name || 'Campo',
+                courtId: match.courtId,
                 startTime: match.startTime,
                 spotsLeft,
                 willLock: true,
-                description: buildOptionDescription(1, match.court, match.startTime, spotsLeft, playerCount),
+                description: buildOptionDescription(1, match.court?.name || 'Campo', match.startTime, spotsLeft, playerCount),
             });
         }
     }
@@ -152,11 +154,12 @@ export async function findRedirectOptions(
                 options.push({
                     priority: 2,
                     matchId: match.id,
-                    court: match.court,
+                    court: match.court?.name || 'Campo',
+                courtId: match.courtId,
                     startTime: match.startTime,
                     spotsLeft,
                     willLock: false,
-                    description: buildOptionDescription(2, match.court, match.startTime, spotsLeft, playerCount),
+                    description: buildOptionDescription(2, match.court?.name || 'Campo', match.startTime, spotsLeft, playerCount),
                 });
             }
         }
@@ -187,7 +190,7 @@ export async function findRedirectOptions(
                 status: 'OPEN',
                 startTime: { gte: dayStart, lte: dayEnd },
             },
-            include: { MatchPlayer: true },
+            include: { MatchPlayer: true, court: true },
             orderBy: { startTime: 'asc' },
             take: needed,
         });
@@ -199,11 +202,12 @@ export async function findRedirectOptions(
                 options.push({
                     priority: 4,
                     matchId: match.id,
-                    court: match.court,
+                    court: match.court?.name || 'Campo',
+                courtId: match.courtId,
                     startTime: match.startTime,
                     spotsLeft,
                     willLock: spotsLeft === playerCount,
-                    description: buildOptionDescription(4, match.court, match.startTime, spotsLeft, playerCount),
+                    description: buildOptionDescription(4, match.court?.name || 'Campo', match.startTime, spotsLeft, playerCount),
                 });
             }
         }
@@ -292,7 +296,7 @@ async function addGroupToMatch(matchId: string, group: RedirectGroup): Promise<v
 
     // Aggiungi tutti i giocatori
     for (const phone of group.playerPhones) {
-        const player = await prisma.player.findUnique({ where: { phoneNumber: phone } });
+        const player = await prisma.player.findFirst({ where: { phoneNumber: phone } });
         if (!player) continue;
 
         const alreadyIn = await prisma.matchPlayer.findUnique({
@@ -309,7 +313,7 @@ async function addGroupToMatch(matchId: string, group: RedirectGroup): Promise<v
     // Controlla se ora è piena
     const updatedMatch = await prisma.match.findUnique({
         where: { id: matchId },
-        include: { MatchPlayer: true },
+        include: { MatchPlayer: true, court: true },
     });
     const newCount = updatedMatch!.MatchPlayer.filter((mp: any) => !mp.leftAt).length;
 
@@ -332,7 +336,7 @@ async function addGroupToMatch(matchId: string, group: RedirectGroup): Promise<v
     const timeStr = match.startTime.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
     await simulateTypingAndSend(
         group.referentJid,
-        `Perfetto! Vi ho segnati per le ${timeStr} al ${match.court} 🎾${newCount >= match.playersNeeded ? ' Siamo al completo!' : ' Aspettiamo gli altri.'}`
+        `Perfetto! Vi ho segnati per le ${timeStr} al ${(match as any).court?.name || 'Campo'} 🎾${newCount >= match.playersNeeded ? ' Siamo al completo!' : ' Aspettiamo gli altri.'}`
     );
 }
 
@@ -342,13 +346,13 @@ async function addGroupToMatch(matchId: string, group: RedirectGroup): Promise<v
 
 async function createMatchForGroup(option: RedirectOption, group: RedirectGroup): Promise<void> {
     // ✅ FIX J: usa clubId dal group, mai findFirst()
-    const referent = await prisma.player.findUnique({ where: { phoneNumber: group.referentPhone } });
+    const referent = await prisma.player.findFirst({ where: { phoneNumber: group.referentPhone } });
     const skillLevel = referent?.skillLevel || 'INTERMEDIATE';
 
     const match = await prisma.match.create({
         data: {
             clubId: group.clubId,   // ✅ FIX J
-            court: option.court,
+            courtId: option.courtId || null,
             startTime: option.startTime,
             skillLevel: skillLevel as any,
             playersNeeded: 4,
@@ -358,7 +362,7 @@ async function createMatchForGroup(option: RedirectOption, group: RedirectGroup)
 
     // Aggiungi i giocatori del gruppo
     for (const phone of group.playerPhones) {
-        const player = await prisma.player.findUnique({ where: { phoneNumber: phone } });
+        const player = await prisma.player.findFirst({ where: { phoneNumber: phone } });
         if (!player) continue;
         await prisma.matchPlayer.create({ data: { matchId: match.id, playerId: player.id } });
         await prisma.invitation.create({
@@ -396,11 +400,11 @@ async function findFreeSlots(
     to: Date,
     excludeMatchId: string,
     clubId: string           // ✅ FIX J + P: carica campi dal DB del club corretto
-): Promise<{ court: string; startTime: Date }[]> {
+): Promise<{ court: string; courtId?: string | null; startTime: Date }[]> {
     // ✅ FIX J+P: usa clubId esplicito, legge i campi reali dal DB
     const clubCourts = await prisma.court.findMany({
         where: { clubId, active: true },
-        select: { name: true },
+        select: { id: true, name: true },
         orderBy: { name: 'asc' },
     });
     if (clubCourts.length === 0) return [];
@@ -420,15 +424,15 @@ async function findFreeSlots(
     );
 
     // Genera slot ogni 30 minuti nell'arco temporale
-    const slots: { court: string; startTime: Date }[] = [];
-    const courts = clubCourts.map(c => c.name); // ✅ FIX P: da DB, non hardcoded
+    const slots: { court: string; courtId?: string | null; startTime: Date }[] = [];
+    const courts = clubCourts; // ✅ FIX P: da DB, non hardcoded
     const current = new Date(from);
 
     while (current <= to && slots.length < 3) {
         for (const court of courts) {
             const key = `${court}_${current.toISOString()}`;
             if (!occupiedKeys.has(key)) {
-                slots.push({ court, startTime: new Date(current) });
+                slots.push({ court: court.name, courtId: court.id, startTime: new Date(current) });
                 if (slots.length >= 3) break;
             }
         }
@@ -444,14 +448,14 @@ async function findJollySlot(
     to: Date,
     excludeMatchId: string,
     clubId: string           // ✅ FIX J + P
-): Promise<{ court: string; startTime: Date } | null> {
+): Promise<{ court: string; courtId?: string | null; startTime: Date } | null> {
     const nextDay = new Date(referenceTime);
     nextDay.setDate(nextDay.getDate() + 1);
 
     // ✅ FIX J+P: campi reali dal DB del club corretto
     const clubCourts = await prisma.court.findMany({
         where: { clubId, active: true },
-        select: { name: true },
+        select: { id: true, name: true },
     });
     if (clubCourts.length === 0) return null;
 
@@ -464,15 +468,15 @@ async function findJollySlot(
                 lte: new Date(nextDay.getTime() + 60 * 60 * 1000),
             },
         },
-        select: { court: true },
+        select: { courtId: true },
     });
 
-    const occupiedCourts = new Set(existingNextDay.map(m => m.court));
-    const courts = clubCourts.map(c => c.name); // ✅ FIX P: da DB
-    const freeCourt = courts.find(c => !occupiedCourts.has(c));
+    const occupiedCourtIds = new Set(existingNextDay.map(m => m.courtId).filter(Boolean));
+    const courts = clubCourts; // ✅ FIX P: da DB
+    const freeCourt = courts.find(c => !occupiedCourtIds.has(c.id));
 
     if (freeCourt) {
-        return { court: freeCourt, startTime: nextDay };
+        return { court: freeCourt.name, courtId: freeCourt.id, startTime: nextDay };
     }
 
     return null;

@@ -1,3 +1,20 @@
+// ============================================================
+// SCHEMA PRISMA — Padel Bot Pro
+//
+// ✅ FIX CRITICITÀ A (Multi-Tenancy):
+//    - Player.clubId: ogni giocatore appartiene a un club specifico
+//    - Club.groupJids: lista JID gruppi WA del club per lookup inverso
+//    - Tutti gli indici di selezione wave filtrano per clubId
+//
+// ✅ FIX CRITICITÀ F (N+1 loop):
+//    - MatchStatus.ARCHIVED: i match vecchi possono essere archiviati
+//    - Il job mensile maintenance.worker aggiorna status → ARCHIVED
+//    - checkSilentMatches e selectPlayersForWave escludono match archiviati
+//
+// MIGRATION NOTE: dopo aver modificato questo file, eseguire:
+//    npx prisma migrate dev --name multi_tenancy_and_archived
+// ============================================================
+
 generator client {
   provider = "prisma-client-js"
 }
@@ -7,59 +24,157 @@ datasource db {
 }
 
 model Player {
-  id                 String         @id @default(uuid())
-  phoneNumber        String         @unique
-  skillLevel         SkillLevel
-  reliabilityScore   Int            @default(100)
+  id                 String              @id @default(uuid())
+  phoneNumber        String
+  name               String?
+  skillLevel         Int                 @default(3)       // 1-5
+  reliabilityScore   Float               @default(0)       // showUpRate ∈ [0,1]
   lastContactedAt    DateTime?
-  dailyMessagesCount Int            @default(0)
+  dailyMessagesCount Int                 @default(0)
+  active             Boolean             @default(true)    // false = non contattare
+  groupIds           String[]            @default([])      // JID gruppi WA
+
+  // ✅ FIX A: ogni giocatore è associato a un club specifico
+  clubId             String?
+  club               Club?               @relation(fields: [clubId], references: [id])
+
   invitations        Invitation[]
   MatchPlayer        MatchPlayer[]
+  pendingOnboardings PendingOnboarding[] @relation("InvitedBy")
+
+  // ✅ FIX A: phoneNumber unico per club (non globalmente)
+  @@unique([phoneNumber, clubId])
+
+  @@index([clubId, active, skillLevel, dailyMessagesCount])  // wave player selection per club
+  @@index([clubId, active, lastContactedAt])                 // turnover ordering per club
+}
+
+model Court {
+  id      String  @id @default(uuid())
+  clubId  String
+  name    String  // personalizzabile in onboarding
+  active  Boolean @default(true)
+  club    Club    @relation(fields: [clubId], references: [id])
+  matches Match[]
 }
 
 model Match {
-  id            String        @id @default(uuid())
-  court         String
-  startTime     DateTime
-  skillLevel    SkillLevel
-  playersNeeded Int           @default(4)
-  status        MatchStatus   @default(OPEN)
-  groupId       String?
-  invitations   Invitation[]
-  MatchPlayer   MatchPlayer[]
+  id                String        @id @default(uuid())
+  clubId            String?
+  club              Club?         @relation(fields: [clubId], references: [id])
+  courtId           String?
+  court             Court?        @relation(fields: [courtId], references: [id])
+  startTime         DateTime
+  endTime           DateTime?
+  skillLevel        Int
+  allowMixedLevels  Boolean       @default(false)
+  playersNeeded     Int           @default(4)
+  status            MatchStatus   @default(OPEN)
+  groupId           String?
+  cancelledAt       DateTime?
+  cancelledReason   String?
+  recoveryWaveCount Int           @default(0)
+  invitations       Invitation[]
+  MatchPlayer       MatchPlayer[]
+
+  @@index([status, startTime])          // wave selection, timeout check
+  @@index([clubId, status])             // dashboard per club
+  @@index([clubId, status, startTime])  // ✅ FIX F: filtro combined per checkSilentMatches
+  @@index([courtId])                    // lista partite per campo
 }
 
 model Invitation {
-  id       String           @id @default(uuid())
-  matchId  String
-  playerId String
-  status   InvitationStatus @default(PENDING)
-  sentAt   DateTime         @default(now())
-  match    Match            @relation(fields: [matchId], references: [id])
-  player   Player           @relation(fields: [playerId], references: [id])
+  id                String           @id @default(uuid())
+  matchId           String
+  playerId          String
+  status            InvitationStatus @default(PENDING)
+  sentAt            DateTime         @default(now())
+  respondedAt       DateTime?
+  minutesUntilMatch Int?
+  isFriendInvite    Boolean          @default(false)
+  invitedById       String?
+  match             Match            @relation(fields: [matchId], references: [id])
+  player            Player           @relation(fields: [playerId], references: [id])
+
+  @@index([playerId, status])     // processMatchOutcomes
+  @@index([matchId, status])      // wave: escludi già invitati
+  @@index([status, sentAt])       // cleanup job
 }
 
 model MatchPlayer {
-  id       String   @id @default(uuid())
+  id       String    @id @default(uuid())
   matchId  String
   playerId String
-  joinedAt DateTime @default(now())
-  match    Match    @relation(fields: [matchId], references: [id])
-  player   Player   @relation(fields: [playerId], references: [id])
+  joinedAt DateTime  @default(now())
+  leftAt   DateTime?
+  noShow   Boolean   @default(false)
+  match    Match     @relation(fields: [matchId], references: [id])
+  player   Player    @relation(fields: [playerId], references: [id])
 
   @@unique([matchId, playerId])
 }
 
-enum SkillLevel {
-  BEGINNER
-  INTERMEDIATE
-  ADVANCED
+model PendingOnboarding {
+  id                String   @id @default(uuid())
+  matchId           String
+  phoneNumber       String
+  name              String?
+  skillLevel        Int?
+  invitedByPlayerId String
+  invitedBy         Player   @relation("InvitedBy", fields: [invitedByPlayerId], references: [id])
+  createdAt         DateTime @default(now())
+  resolved          Boolean  @default(false)
 }
+
+model Club {
+  id                         String   @id @default(uuid())
+  name                       String
+  timezone                   String   @default("Europe/Rome")
+  matchDuration              Int      @default(90)
+  openTime                   String   @default("08:00")
+  closeTime                  String   @default("23:30")
+  aiTone                     String?  @db.Text
+  adminPhone                 String?
+  waveMultiplier             Int      @default(3)
+  deadlineMinutesBeforeMatch Int      @default(60)
+  allowMixedLevels           Boolean  @default(false)
+  mixedLevelRange            Int      @default(1)
+  skillLevelCount            Int      @default(3)
+  dashboardUsername          String?  @unique
+  dashboardPasswordHash      String?
+
+  // ✅ FIX A: lista JID dei gruppi WhatsApp associati a questo club
+  //    Usato da group-handler.ts per resolveClubFromGroupJid()
+  groupJids                  String[] @default([])
+
+  courts                     Court[]
+  matches                    Match[]
+  players                    Player[]
+}
+
+model WhatsAppMessage {
+  id        String   @id @default(uuid())
+  chatId    String
+  sender    String
+  role      String
+  content   String   @db.Text
+  timestamp DateTime @default(now())
+
+  @@index([chatId])
+  @@index([chatId, role])   // ✅ ancora usato come fallback durante migrazione Redis
+  @@index([timestamp])      // cleanup job
+}
+
+// ─────────────────────────────────────────────
+// ENUMS
+// ─────────────────────────────────────────────
 
 enum MatchStatus {
   OPEN
   LOCKED
-  CANCELED
+  CANCELLED
+  UNFILLED
+  ARCHIVED   // ✅ FIX F: i match completati vengono archiviati dal job mensile
 }
 
 enum InvitationStatus {
@@ -67,15 +182,5 @@ enum InvitationStatus {
   ACCEPTED
   REJECTED
   IGNORED
-}
-
-model WhatsAppMessage {
-  id        String   @id @default(uuid())
-  chatId    String   // JID of the sender or group
-  sender    String   // Phone number or name
-  role      String   // 'BOT' or 'USER'
-  content   String   @db.Text
-  timestamp DateTime @default(now())
-
-  @@index([chatId])
+  EXPIRED
 }

@@ -87,7 +87,7 @@ export async function startBookingFlow(
     messageText: string,
     messageKey?: any
 ): Promise<void> {
-    const player = await prisma.player.findUnique({ where: { phoneNumber } });
+    const player = await prisma.player.findFirst({ where: { phoneNumber } });
     if (!player) return;
 
     const context = await extractBookingContext(messageText);
@@ -136,7 +136,7 @@ async function searchAndProposeMatches(
             skillLevel: player.skillLevel,
             startTime: { gte: from, lte: to },
         },
-        include: { MatchPlayer: true },
+        include: { MatchPlayer: true, court: true },
         orderBy: [
             // Prima quelle che si chiudono aggiungendo Mario e co.
             { startTime: 'asc' },
@@ -212,7 +212,7 @@ async function handleGuaranteedFull(
     context: BookingContext,
     messageKey?: any
 ): Promise<void> {
-    const player = await prisma.player.findUnique({ where: { phoneNumber } });
+    const player = await prisma.player.findFirst({ where: { phoneNumber } });
     if (!player) return;
 
     const now = new Date();
@@ -237,7 +237,7 @@ async function handleGuaranteedFull(
             skillLevel: player.skillLevel,
             startTime: { gte: from, lte: to },
         },
-        include: { MatchPlayer: { include: { player: true } }, invitations: { include: { player: true } }, club: true },
+        include: { MatchPlayer: { include: { player: true } }, invitations: { include: { player: true } }, club: true, court: true },
         orderBy: { startTime: 'asc' },
     });
 
@@ -286,6 +286,7 @@ async function handleGuaranteedFull(
         const referent = playersToRedirect[0];
         const { redirectGroup } = await import('./redirect');
         await redirectGroup({
+            clubId: targetMatch.clubId || '',
             referentPhone: referent.phoneNumber,
             referentJid: referent.phoneNumber,
             playerPhones: playersToRedirect.map((p: any) => p.phoneNumber),
@@ -299,7 +300,7 @@ async function handleGuaranteedFull(
     const timeStr = targetMatch.startTime.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
     await simulateTypingAndSend(
         jid,
-        `Perfetto! Ho riservato il ${targetMatch.court} alle ${timeStr} per voi 4 🎾 Confermate e chiudiamo!`,
+        `Perfetto! Ho riservato il ${targetMatch.court?.name || "Campo"} alle ${timeStr} per voi 4 🎾 Confermate e chiudiamo!`,
         messageKey
     );
 }
@@ -310,7 +311,7 @@ async function assignMatchToGroup(
     referentPhone: string,
     context: BookingContext
 ): Promise<void> {
-    const player = await prisma.player.findUnique({ where: { phoneNumber: referentPhone } });
+    const player = await prisma.player.findFirst({ where: { phoneNumber: referentPhone } });
     if (!player) return;
 
     await prisma.matchPlayer.create({ data: { matchId, playerId: player.id } });
@@ -344,7 +345,7 @@ export async function continueBookingFlow(
     messageKey?: any
 ): Promise<void> {
     const phoneNumber = jid.split('@')[0];
-    const player = await prisma.player.findUnique({ where: { phoneNumber } });
+    const player = await prisma.player.findFirst({ where: { phoneNumber } });
     if (!player) return;
 
     if (state.step === 'AWAITING_TIME' || state.step === 'AWAITING_TIME_FOR_NEW_MATCH') {
@@ -372,7 +373,7 @@ export async function continueBookingFlow(
         const matchIds: string[] = state.matchOptions || [];
         const matches = await prisma.match.findMany({
             where: { id: { in: matchIds } },
-            include: { MatchPlayer: true },
+            include: { MatchPlayer: true, court: true },
         });
 
         const choiceIndex = await resolveMatchChoice(messageText, matches);
@@ -454,7 +455,7 @@ async function createNewMatch(
         data: {
             clubId,
             courtId: freeCourt?.id,
-            court: freeCourt?.name ?? 'Da assegnare',
+            
             startTime,
             skillLevel: player.skillLevel,
             playersNeeded: 4,
@@ -497,7 +498,7 @@ async function addPlayerToMatch(
 ): Promise<void> {
     const match = await prisma.match.findUnique({
         where: { id: matchId },
-        include: { MatchPlayer: true },
+        include: { MatchPlayer: true, court: true },
     });
 
     if (!match || match.status !== 'OPEN') {
@@ -543,10 +544,10 @@ async function addFriendToMatch(
     matchId: string,
     messageKey?: any
 ): Promise<void> {
-    let friend = await prisma.player.findUnique({ where: { phoneNumber: friendPhone } });
+    let friend = await prisma.player.findFirst({ where: { phoneNumber: friendPhone } });
 
     if (!friend) {
-        const referentPlayer = await prisma.player.findUnique({ where: { phoneNumber: referentJid.split('@')[0] } });
+        const referentPlayer = await prisma.player.findFirst({ where: { phoneNumber: referentJid.split('@')[0] } });
         friend = await prisma.player.create({
             data: {
                 phoneNumber: friendPhone,

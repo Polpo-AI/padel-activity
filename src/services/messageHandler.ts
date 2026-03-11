@@ -68,14 +68,14 @@ registerBatchHandler(handleBatch);
 // ─────────────────────────────────────────────
 
 export async function handleBatch(jid: string, messages: NormalizedMessage[]): Promise<void> {
-    const firstMessageKey = messages[0]?.raw?.key;
+    const undefined = messages[0]?.raw?.key;
     try {
         await _handleBatchInner(jid, messages);
     } catch (err) {
         // REGOLA FEEDBACK: qualunque errore, l'utente riceve sempre una risposta.
         logger.error({ err }, `Unhandled error in handleBatch for ${jid}`);
         try {
-            await simulateTypingAndSend(jid, "Scusa, ho avuto un piccolo problema tecnico 😅 Puoi ripetere?", firstMessageKey);
+            await simulateTypingAndSend(jid, "Scusa, ho avuto un piccolo problema tecnico 😅 Puoi ripetere?");
         } catch {}
     }
 }
@@ -106,9 +106,9 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[]): Pr
     for (const msg of messages) {
         if (msg.type === 'audio' && msg.raw.message?.audioMessage) {
             try {
-                const buffer = await downloadMediaMessage(msg.raw, 'buffer', {}, {
+                const buffer = await downloadMediaMessage(msg.raw as any, 'buffer', {}, {
                     logger: pino({ level: 'silent' }) as any,
-                    reuploadRequest: (m: proto.IWebMessageInfo) => Promise.resolve(m as any),
+                    reuploadRequest: (m: any) => Promise.resolve(m as any),
                 });
                 msg.text = await transcribeAudio(buffer as Buffer, 'ogg');
                 msg.type = 'text';
@@ -118,7 +118,7 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[]): Pr
                     await simulateTypingAndSend(
                         jid,
                         "Non riesco ad ascoltare il messaggio vocale al momento 😅 Puoi scrivermi?",
-                        firstMessageKey
+                        undefined
                     );
                     return;
                 }
@@ -131,7 +131,7 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[]): Pr
     const firstCard = contactCards[0];
     const textMessages = messages.filter(m => m.type === 'text' && m.text);
     const combinedText = textMessages.map(m => m.text).join(' ').trim();
-    // firstMessageKey è definito nel wrapper esterno handleBatch e usato nel fallback
+    // undefined è definito nel wrapper esterno handleBatch e usato nel fallback
     // qui usiamo quello del batch corrente per i messaggi normali
     const batchFirstKey = messages[0]?.raw?.key;
 
@@ -144,7 +144,7 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[]): Pr
     const onboardingState = await getOnboardingState(jid);
     if (onboardingState) {
         const input = combinedText || contactCards.map(c => `${c.contactName || ''} ${c.contactPhone || ''}`).join(' ').trim();
-        if (input) await continueOnboarding(jid, input, onboardingState.step, onboardingState.data, firstMessageKey);
+        if (input) await continueOnboarding(jid, input, onboardingState.step, onboardingState.data);
         return;
     }
 
@@ -159,7 +159,7 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[]): Pr
     const bookingState = await getBookingState(jid);
     if (bookingState) {
         const contactInfo = firstCard ? { phone: firstCard.contactPhone, name: firstCard.contactName } : null;
-        await continueBookingFlow(jid, combinedText, contactInfo, bookingState, firstMessageKey);
+        await continueBookingFlow(jid, combinedText, contactInfo, bookingState);
         return;
     }
 
@@ -174,7 +174,7 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[]): Pr
                         jid,
                         `${card.contactPhone} ${card.contactName || ''}`.trim(),
                         awaitingState.data,
-                        firstMessageKey,
+                        undefined,
                         { phone: card.contactPhone!, name: card.contactName }
                     );
                 }
@@ -187,17 +187,17 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[]): Pr
                     await simulateTypingAndSend(
                         jid,
                         `Ho ricevuto ${receivedCount} contatt${receivedCount === 1 ? 'o' : 'i'} su ${expectedCount}. Mancano ancora ${missing} — intanto ho segnato quelli che mi hai mandato, il posto per ${missing} è riservato sotto tua responsabilità 👍`,
-                        firstMessageKey
+                        undefined
                     );
                 }
             } else if (combinedText) {
-                await processFriendPhone(jid, combinedText, awaitingState.data, firstMessageKey);
+                await processFriendPhone(jid, combinedText, awaitingState.data);
             }
             return;
         }
 
         if (awaitingState.role === 'AWAITING_FRIEND_LEVEL' && combinedText) {
-            await processFriendLevel(jid, combinedText, awaitingState.data, firstMessageKey);
+            await processFriendLevel(jid, combinedText, awaitingState.data);
             return;
         }
     }
@@ -209,7 +209,7 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[]): Pr
         if (result.confident && result.intent !== 'UNKNOWN') {
             await clearUnclearState(jid);
             // Riprocessa con intent chiaro
-            await routeIntent(jid, phoneNumber, result.intent, combinedText, contactCards, firstMessageKey);
+            await routeIntent(jid, phoneNumber, result.intent, combinedText, contactCards);
         } else {
             await handleUnclearIntent(
                 jid,
@@ -217,7 +217,7 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[]): Pr
                 unclearState.attempt,
                 unclearState.context,
                 unclearState.availableIntents,
-                firstMessageKey
+                undefined
             );
         }
         return;
@@ -227,7 +227,7 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[]): Pr
     // STEP 2: giocatore sconosciuto
     // ─────────────────────────────────────────
 
-    const player = await prisma.player.findUnique({ where: { phoneNumber } });
+    const player = await prisma.player.findFirst({ where: { phoneNumber } });
 
     if (!player) {
         // ✅ FIX A: invece di findFirst() generico, tentiamo di risalire al club
@@ -279,14 +279,14 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[]): Pr
     if (!confident || intent === 'UNKNOWN') {
         const availableIntents = getAvailableIntents(player);
         await setUnclearState(jid, 1, buildContext(intent, combinedText), availableIntents as any);
-        await handleUnclearIntent(jid, combinedText, 0, buildContext(intent, combinedText), availableIntents as any, firstMessageKey);
+        await handleUnclearIntent(jid, combinedText, 0, buildContext(intent, combinedText), availableIntents as any);
         return;
     }
 
     // Delay umano
     await sleep(randomInt(8, 35) * 1000);
 
-    await routeIntent(jid, phoneNumber, intent as any, combinedText, contactCards, firstMessageKey);
+    await routeIntent(jid, phoneNumber, intent as any, combinedText, contactCards);
 }
 
 // ─────────────────────────────────────────────
@@ -298,26 +298,25 @@ async function routeIntent(
     phoneNumber: string,
     intent: string,
     combinedText: string,
-    contactCards: NormalizedMessage[],
-    firstMessageKey: any
+    contactCards: NormalizedMessage[]
 ): Promise<void> {
-    const player = await prisma.player.findUnique({ where: { phoneNumber } });
+    const player = await prisma.player.findFirst({ where: { phoneNumber } });
     if (!player) return;
 
     const firstCard = contactCards[0];
 
     if (intent === 'OPT_OUT') {
-        await handleOptOut(jid, phoneNumber, firstMessageKey);
+        await handleOptOut(jid, phoneNumber);
         return;
     }
 
     if (intent === 'QUESTION') {
-        await simulateTypingAndSend(jid, "Aspetta, controllo e ti dico subito! 🎾", firstMessageKey);
+        await simulateTypingAndSend(jid, "Aspetta, controllo e ti dico subito! 🎾");
         return;
     }
 
     if (intent === 'BOOK') {
-        await startBookingFlow(jid, phoneNumber, combinedText, firstMessageKey);
+        await startBookingFlow(jid, phoneNumber, combinedText);
         return;
     }
 
@@ -334,13 +333,13 @@ async function routeIntent(
 
         if (confirmedMatchPlayer) {
             if (confirmedMatchPlayer.match.status === 'LOCKED') {
-                await handleCancellation(jid, phoneNumber, confirmedMatchPlayer.matchId, confirmedMatchPlayer.id, firstMessageKey);
+                await handleCancellation(jid, phoneNumber, confirmedMatchPlayer.matchId, confirmedMatchPlayer.id);
             } else {
                 // Disdetta da match OPEN
-                await handleOpenMatchCancellation(jid, phoneNumber, confirmedMatchPlayer, firstMessageKey);
+                await handleOpenMatchCancellation(jid, phoneNumber, confirmedMatchPlayer, undefined);
             }
         } else {
-            await simulateTypingAndSend(jid, "Non risulti in nessuna partita confermata al momento 🤔", firstMessageKey);
+            await simulateTypingAndSend(jid, "Non risulti in nessuna partita confermata al momento 🤔");
         }
         return;
     }
@@ -353,7 +352,7 @@ async function routeIntent(
 
         const targetMatch = confirmedMatchPlayer?.match;
         if (!targetMatch) {
-            await simulateTypingAndSend(jid, "Non sei in nessuna partita attiva al momento 🤔", firstMessageKey);
+            await simulateTypingAndSend(jid, "Non sei in nessuna partita attiva al momento 🤔");
             return;
         }
 
@@ -367,12 +366,12 @@ async function routeIntent(
                         jid,
                         `${card.contactPhone} ${card.contactName || ''}`.trim(),
                         { matchId: targetMatch.id, spotsAvailable: spotsLeft, invitedByPhone: phoneNumber },
-                        firstMessageKey,
+                        undefined,
                         { phone: card.contactPhone!, name: card.contactName }
                     );
                 }
             } else {
-                await handleBringFriend(jid, phoneNumber, targetMatch.id, spotsLeft, firstMessageKey);
+                await handleBringFriend(jid, phoneNumber, targetMatch.id, spotsLeft);
             }
         } else if (intent === 'BRING_GROUP') {
             // Estrai quanti sono dal testo
@@ -383,8 +382,8 @@ async function routeIntent(
                     await processFriendPhone(
                         jid,
                         `${card.contactPhone} ${card.contactName || ''}`.trim(),
-                        { matchId: targetMatch.id, spotsAvailable: spotsLeft, invitedByPhone: phoneNumber, expectedFriendCount: groupCount },
-                        firstMessageKey,
+                        { matchId: targetMatch.id, spotsAvailable: spotsLeft, invitedByPhone: phoneNumber },
+                        undefined,
                         { phone: card.contactPhone!, name: card.contactName }
                     );
                 }
@@ -392,14 +391,14 @@ async function routeIntent(
                     await simulateTypingAndSend(
                         jid,
                         `Ho ricevuto ${contactCards.length} contatt${contactCards.length === 1 ? 'o' : 'i'} su ${groupCount}. Mancano ${missing} — mandameli quando puoi, intanto segno il posto 👍`,
-                        firstMessageKey
+                        undefined
                     );
                 }
             } else {
-                await handleBringGroup(jid, phoneNumber, targetMatch.id, spotsLeft, firstMessageKey);
+                await handleBringGroup(jid, phoneNumber, targetMatch.id, spotsLeft);
             }
         } else if (intent === 'WHOLE_COURT') {
-            await handleWholeCourt(jid, phoneNumber, targetMatch.id, firstMessageKey);
+            await handleWholeCourt(jid, phoneNumber, targetMatch.id);
         }
         return;
     }
@@ -414,7 +413,7 @@ async function routeIntent(
 
     if (activeInvitations.length === 0) {
         if (intent === 'YES' || intent === 'NO') {
-            await simulateTypingAndSend(jid, "Non ho inviti attivi per te al momento 🎾", firstMessageKey);
+            await simulateTypingAndSend(jid, "Non ho inviti attivi per te al momento 🎾");
         }
         return;
     }
@@ -422,14 +421,14 @@ async function routeIntent(
     // Doppia invitation — chiedi conferma su quale
     let invitation = activeInvitations[0];
     if (activeInvitations.length > 1 && intent === 'YES') {
-        const chosen = await resolveDoubleInvitation(jid, combinedText, activeInvitations, firstMessageKey);
+        const chosen = await resolveDoubleInvitation(jid, combinedText, activeInvitations, undefined);
         if (!chosen) return; // ha chiesto conferma, aspetta risposta
         invitation = chosen;
     }
 
     if (intent === 'NO') {
         await prisma.invitation.update({ where: { id: invitation.id }, data: { status: 'REJECTED' } });
-        await simulateTypingAndSend(jid, "Tranquillo! Sarà per la prossima volta 💪", firstMessageKey);
+        await simulateTypingAndSend(jid, "Tranquillo! Sarà per la prossima volta 💪");
         return;
     }
 
@@ -462,7 +461,7 @@ async function routeIntent(
                 result.status === 'JUST_FILLED'
                     ? "Ottimo! Siamo al completo 🎾 Ti mando i dettagli nel gruppo!"
                     : "Perfetto! Ti ho segnato. Ti scrivo appena siamo al completo 🎾",
-                firstMessageKey
+                undefined
             );
 
             if (result.status === 'JUST_FILLED') {
@@ -484,6 +483,7 @@ async function routeIntent(
                     originalMatchId: invitation.matchId,
                     originalStartTime: invitation.match.startTime,
                     reason: 'SLOT_TAKEN',
+                    clubId: invitation.match.clubId || '',
                 });
             } else {
                 logger.error({ error }, 'Error processing YES intent');
@@ -500,7 +500,7 @@ async function handleOpenMatchCancellation(
     jid: string,
     phoneNumber: string,
     matchPlayer: any,
-    firstMessageKey: any
+    undefined: any
 ): Promise<void> {
     const match = matchPlayer.match;
 
@@ -511,7 +511,7 @@ async function handleOpenMatchCancellation(
     });
 
     const { decreaseReliability } = await import('./reliability');
-    const player = await prisma.player.findUnique({ where: { phoneNumber } });
+    const player = await prisma.player.findFirst({ where: { phoneNumber } });
     if (player) await decreaseReliability(player.id, 5);
 
     // Ricalcola situazione
@@ -532,7 +532,7 @@ async function handleOpenMatchCancellation(
     const pendingCount = pending.length;
     const total = confirmedCount + pendingCount;
 
-    await simulateTypingAndSend(jid, "Ok, capito! Ho aggiornato la partita 👍", firstMessageKey);
+    await simulateTypingAndSend(jid, "Ok, capito! Ho aggiornato la partita 👍");
 
     if (total >= updatedMatch.playersNeeded) {
         // Ci sono abbastanza pending da aspettare — no wave
@@ -558,6 +558,7 @@ async function handleOpenMatchCancellation(
                 originalMatchId: match.id,
                 originalStartTime: match.startTime,
                 reason: 'POOL_EXHAUSTED',
+                clubId: match.clubId || '',
             });
         }
         return;
@@ -590,7 +591,7 @@ async function resolveDoubleInvitation(
     jid: string,
     combinedText: string,
     invitations: any[],
-    firstMessageKey: any
+    undefined: any
 ): Promise<any | null> {
     // Prima prova a capirlo dal testo
     const times = invitations.map(inv =>
@@ -610,7 +611,7 @@ async function resolveDoubleInvitation(
     await simulateTypingAndSend(
         jid,
         `Scusa, ho due inviti aperti per te! Per quale stai confermando?\n\n${options}\n\nDimmi il numero 😊`,
-        firstMessageKey
+        undefined
     );
 
     // Salva stato per gestire la risposta nel prossimo batch
@@ -638,10 +639,10 @@ async function handleMatchFilled(matchId: string, startTime: Date): Promise<void
         include: { player: true },
     });
 
-    const match = await prisma.match.findUnique({ where: { id: matchId }, include: { club: true } });
+    const match = await prisma.match.findUnique({ where: { id: matchId }, include: { club: true, court: true } });
     const timeStr = startTime.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
-    const groupName = `Padel ${timeStr} - ${match?.court || ''}`;
-    const confirmationMsg = `Partita confermata! 🎾\n📍 ${match?.court}\n🕐 Ore ${timeStr}\nBuona partita a tutti!`;
+    const groupName = `Padel ${timeStr} - ${match?.court?.name || ''}`;
+    const confirmationMsg = `Partita confermata! 🎾\n📍 ${match?.court?.name || ''}\n🕐 Ore ${timeStr}\nBuona partita a tutti!`;
     const playerPhones = confirmed.map((m: any) => m.player.phoneNumber as string);
 
     try {
@@ -667,6 +668,7 @@ async function handleMatchFilled(matchId: string, startTime: Date): Promise<void
                 originalMatchId: matchId,
                 originalStartTime: startTime,
                 reason: 'SLOT_TAKEN',
+                clubId: match?.clubId || '',
             });
         }
 

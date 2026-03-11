@@ -18,6 +18,8 @@ services:
     image: redis:7-alpine
     container_name: padel_redis
     restart: always
+    # ✅ FIX CRITICITÀ D: AOF attivo per persistenza job wave/reminder su crash
+    command: redis-server --appendonly yes --appendfsync everysec --auto-aof-rewrite-percentage 100 --auto-aof-rewrite-min-size 64mb
     ports:
       - "6379:6379"
     volumes:

@@ -176,7 +176,7 @@ router.get('/matches', authMiddleware, async (req: Request, res: Response) => {
 
 router.get('/matches/:id', authMiddleware, async (req: Request, res: Response) => {
     const match = await prisma.match.findUnique({
-        where: { id: req.params.id },
+        where: { id: req.params.id as string },
         include: {
             court: true,
             MatchPlayer: { include: { player: true } },
@@ -242,7 +242,7 @@ router.post('/matches', authMiddleware, async (req: Request, res: Response) => {
 
 router.post('/matches/:id/cancel', authMiddleware, async (req: Request, res: Response) => {
     const match = await prisma.match.findUnique({
-        where: { id: req.params.id },
+        where: { id: req.params.id as string },
         include: { MatchPlayer: { include: { player: true } }, club: true },
     });
 
@@ -259,6 +259,7 @@ router.post('/matches/:id/cancel', authMiddleware, async (req: Request, res: Res
     if (confirmed.length > 0) {
         const { redirectGroup } = await import('../services/redirect');
         await redirectGroup({
+            clubId: match.clubId || '',
             referentPhone: confirmed[0].player.phoneNumber,
             referentJid: confirmed[0].player.phoneNumber,
             playerPhones: confirmed.map(mp => mp.player.phoneNumber),

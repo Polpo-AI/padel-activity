@@ -110,7 +110,7 @@ export async function handleWholeCourt(
         return;
     }
 
-    const player = await prisma.player.findUnique({ where: { phoneNumber: senderPhone } });
+    const player = await prisma.player.findFirst({ where: { phoneNumber: senderPhone } });
     if (!player) return;
 
     await prisma.match.update({
@@ -178,8 +178,8 @@ export async function processFriendPhone(
         return;
     }
 
-    const existingPlayer = await prisma.player.findUnique({ where: { phoneNumber: friendPhone } });
-    const invitedByPlayer = await prisma.player.findUnique({ where: { phoneNumber: invitedByPhone } });
+    const existingPlayer = await prisma.player.findFirst({ where: { phoneNumber: friendPhone } });
+    const invitedByPlayer = await prisma.player.findFirst({ where: { phoneNumber: invitedByPhone } });
 
     if (existingPlayer) {
         const alreadyIn = await prisma.matchPlayer.findUnique({
@@ -247,7 +247,7 @@ export async function processFriendLevel(
     const { matchId, friendPhone, invitedByPhone } = pendingState;
     const skillLevel = await extractSkillLevel(messageText);
 
-    const invitedByPlayer = await prisma.player.findUnique({ where: { phoneNumber: invitedByPhone } });
+    const invitedByPlayer = await prisma.player.findFirst({ where: { phoneNumber: invitedByPhone } });
 
     const newPlayer = await prisma.player.create({
         data: {
