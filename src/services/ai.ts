@@ -126,6 +126,7 @@ export async function generateInvitation(
         logger.error({ err }, 'generateInvitation failed — using fallback');
     }
 
+    logger.warn({ playerName }, '⚠️ generateInvitation using FALLBACK text');
     return fallback;
 }
 
@@ -236,7 +237,15 @@ export async function extractSkillLevel(
                 temperature: 0,
                 messages: [{
                     role: 'user',
-                    content: `Livello padel 1-${maxLevel}. Rispondi SOLO con un numero o NULL. Testo: "${text}"`,
+                    content: `Sei un esperto di padel italiano. Devi classificare il livello di un giocatore da 1 a ${maxLevel} basandoti su quello che scrive, anche se usa espressioni colloquiali o dialettali.
+
+Esempi:
+- "principiante", "sono una schiappa", "non so giocare", "ho iniziato da poco" → 1
+- "intermedio", "me la cavicchio", "gioco da qualche anno", "non sono male", "abbastanza bene", "discreto" → ${Math.ceil(maxLevel / 2)}
+- "avanzato", "gioco a buon livello", "sono forte", "gioco in torneo", "agonista" → ${maxLevel}
+
+Rispondi SOLO con il numero (1, ${Math.ceil(maxLevel / 2)}, o ${maxLevel}), nient'altro.
+Messaggio del giocatore: "${text}"`,
                 }],
             }),
             { maxAttempts: 2, context: 'extractSkillLevel' }

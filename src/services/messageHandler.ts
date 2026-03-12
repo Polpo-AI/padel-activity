@@ -68,7 +68,7 @@ registerBatchHandler(handleBatch);
 // ─────────────────────────────────────────────
 
 export async function handleBatch(jid: string, messages: NormalizedMessage[]): Promise<void> {
-    const undefined = messages[0]?.raw?.key;
+    const messageKey = messages[0]?.raw?.key;
     try {
         await _handleBatchInner(jid, messages);
     } catch (err) {
@@ -82,6 +82,10 @@ export async function handleBatch(jid: string, messages: NormalizedMessage[]): P
 
 async function _handleBatchInner(jid: string, messages: NormalizedMessage[]): Promise<void> {
     const phoneNumber = jid.split('@')[0];
+    // 🔍 DEBUG TEMPORANEO: mostra struttura raw per capire dove si trova il numero reale
+    const rawKey = messages[0]?.raw?.key;
+    const pushName = messages[0]?.raw?.pushName;
+    logger.info({ rawKey, pushName, jid }, 'DEBUG raw message key');
     logger.info(`Batch: ${messages.length} msg from ${phoneNumber}`);
 
     // ── Persisti ─────────────────────────────────────────────────
@@ -745,3 +749,5 @@ async function extractGroupCount(text: string): Promise<number> {
     } catch { /* default */ }
     return 1;
 }
+
+// ─────────────────────────────────────────────

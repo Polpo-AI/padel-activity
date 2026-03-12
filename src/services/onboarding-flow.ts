@@ -247,7 +247,21 @@ export async function continueOnboarding(
     const { config } = stateData;
 
     if (step === 'AWAITING_NAME') {
-        const name = messageText.trim().split(' ')[0]; // prendi solo il nome
+        // ✅ USA AI per estrarre il nome — gestisce "mi chiamo X", "sono X", "X" ecc.
+        let name = messageText.trim();
+        try {
+            const { anthropic } = await import('./ai');
+            const response = await anthropic.messages.create({
+                model: 'claude-haiku-4-5-20251001',
+                max_tokens: 20,
+                temperature: 0,
+                messages: [{ role: 'user', content: `Estrai solo il nome proprio da questo messaggio WhatsApp. Rispondi SOLO con il nome, nient'altro. Se non trovi un nome, rispondi con il messaggio originale. Messaggio: "${messageText}"` }],
+            });
+            const extracted = response.content[0].type === 'text' ? response.content[0].text.trim() : null;
+            if (extracted && extracted.length > 0 && extracted.length < 30) name = extracted;
+        } catch { /* usa il testo originale come fallback */ }
+        // Capitalizza prima lettera
+        name = name.charAt(0).toUpperCase() + name.slice(1).toLowerCase();
         await setOnboardingState(senderJid, 'AWAITING_LEVEL', { ...stateData, name });
 
         await simulateTypingAndSend(
@@ -309,13 +323,13 @@ async function finalizeOnboarding(senderJid: string, stateData: any, messageKey?
     const { name, skillLevel, availability, timePreference, config } = stateData;
     const phone = senderJid.split('@')[0];
 
-    // ✅ FIX K: upsert con clubId — unique è (phoneNumber, clubId)
+    // ✅ FIX: chiave composta phoneNumber_clubId + relazione club per connect
     await prisma.player.upsert({
         where: { phoneNumber_clubId: { phoneNumber: phone, clubId: config.clubId } },
         update: { name, skillLevel, active: true },
         create: {
             phoneNumber: phone,
-            clubId: config.clubId,
+            club: { connect: { id: config.clubId } },
             name,
             skillLevel,
             active: true,

@@ -7,14 +7,13 @@
  * Usage: npx ts-node scripts/setup-club.ts
  */
 
-import { PrismaClient } from '@prisma/client';
 import * as readline from 'readline';
 import * as bcrypt from 'bcrypt';
 import dotenv from 'dotenv';
 
 dotenv.config();
 
-const prisma = new PrismaClient();
+import { prisma } from '../src/services/db';
 
 const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
 const ask = (q: string): Promise<string> => new Promise(resolve => rl.question(q, resolve));

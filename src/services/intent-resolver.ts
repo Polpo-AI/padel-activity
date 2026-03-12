@@ -76,7 +76,9 @@ Rispondi SOLO con il JSON, nient'altro.
 
         const content = response.content[0];
         if (content.type === 'text') {
-            const parsed = JSON.parse(content.text.trim());
+            // ✅ FIX: rimuovi backtick markdown se l'AI li aggiunge (es. ```json ... ```)
+            const clean = content.text.trim().replace(/^```json\s*/i, '').replace(/```\s*$/, '').trim();
+            const parsed = JSON.parse(clean);
             return {
                 intent: parsed.intent as Intent,
                 confident: parsed.confident === true,

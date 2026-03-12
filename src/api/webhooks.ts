@@ -85,13 +85,18 @@ router.post('/slots', verifyWebhookSignature, async (req, res) => {
         }
 
         // ✅ FIX: match sempre creato con clubId esplicito — nessun findFirst()
+        // Trova il campo per nome nel club
+        const courtRecord = await prisma.court.findFirst({
+            where: { clubId, name: court },
+        });
+
         const match = await prisma.match.create({
             data: {
-                clubId,
-                court,
+                club: { connect: { id: clubId } },
+                ...(courtRecord ? { court: { connect: { id: courtRecord.id } } } : {}),
                 startTime: new Date(time),
-                skillLevel: (skill_level || 'INTERMEDIATE').toUpperCase() as any,
-                playersNeeded: parseInt(players_needed, 10) || 4,
+                skillLevel: parseInt(skill_level) || 2,
+                playersNeeded: parseInt(players_needed) || 4,
                 status: 'OPEN',
             },
         });

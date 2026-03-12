@@ -33,6 +33,9 @@ import './workers/maintenance.worker';
 
 // Registra batch handler
 import './services/messageHandler';
+import { wahEvents } from './services/whatsapp';
+import { enqueue } from './services/inbound-queue';
+wahEvents.on('message', (msg) => enqueue(msg));
 
 const logger = pino({
     level: process.env.LOG_LEVEL || 'info',

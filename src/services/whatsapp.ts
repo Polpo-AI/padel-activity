@@ -56,8 +56,14 @@ const jitteredSleep = (ms: number, jitterMs = 500) => {
     return delay(total);
 };
 
-const formatJid = (jid: string) =>
-    jid.includes('@s.whatsapp.net') ? jid : `${jid.replace(/\D/g, '')}@s.whatsapp.net`;
+const formatJid = (jid: string) => {
+    // ✅ FIX LID: i LID (@lid) sono identificatori interni Meta, non numeri di telefono.
+    // Se riceviamo un @lid non possiamo convertirlo in @s.whatsapp.net — lo lasciamo invariato
+    // e Baileys lo gestirà correttamente internamente.
+    if (jid.includes('@lid')) return jid;
+    if (jid.includes('@s.whatsapp.net')) return jid;
+    return `${jid.replace(/\D/g, '')}@s.whatsapp.net`;
+};
 
 /**
  * Splits a long text at a sentence boundary into two parts.

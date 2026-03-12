@@ -107,7 +107,7 @@ export async function processWave(matchId: string, waveNumber: number): Promise<
             player.name || 'Amico',
             match.startTime,
             courtName,
-            match.clubId ?? undefined,
+            match.club?.id ?? undefined,  // ✅ usa relazione invece di clubId diretto
             false
         );
 
