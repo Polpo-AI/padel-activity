@@ -16,6 +16,8 @@ const DEBOUNCE_MS = 5000;
 const REDIS_TTL_S = 600;         // 10 minuti
 const RECOVERY_DELAY_MS = 30000; // 30s dopo startup
 
+const prefix = process.env.QUEUE_PREFIX ? `${process.env.QUEUE_PREFIX}:` : '';
+
 export interface NormalizedMessage {
     type: 'text' | 'audio' | 'contact' | 'other';
     text?: string;
@@ -151,27 +153,27 @@ async function persistToRedis(jid: string, messages: NormalizedMessage[]): Promi
             rawKey: m.raw.key,
             rawMessage: m.raw.message,
         }));
-        await redis.setex(`inbound:${jid}`, REDIS_TTL_S, JSON.stringify(serializable));
+        await redis.setex(`${prefix}inbound:${jid}`, REDIS_TTL_S, JSON.stringify(serializable));
     } catch {}
 }
 
 async function deleteFromRedis(jid: string): Promise<void> {
     try {
         const redis = getRedis();
-        await redis.del(`inbound:${jid}`);
+        await redis.del(`${prefix}inbound:${jid}`);
     } catch {}
 }
 
 async function recoverPendingBatches(): Promise<void> {
     try {
         const redis = getRedis();
-        const keys = await redis.keys('inbound:*');
+        const keys = await redis.keys(`${prefix}inbound:*`);
         if (keys.length === 0) return;
 
         logger.info(`Recovering ${keys.length} pending batches from Redis after restart`);
 
         for (const key of keys) {
-            const jid = key.replace('inbound:', '');
+            const jid = key.replace(`${prefix}inbound:`, '');
             const data = await redis.get(key);
             if (!data) continue;
 
