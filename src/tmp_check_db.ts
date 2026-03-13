@@ -1,4 +1,7 @@
 import { prisma } from './services/db';
+import dotenv from 'dotenv';
+
+dotenv.config();
 
 async function main() {
   console.log('--- PLAYERS ---');
