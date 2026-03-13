@@ -10,6 +10,7 @@ model Player {
   id                 String              @id @default(uuid())
   phoneNumber        String
   name               String?
+  gender             Gender              @default(UNKNOWN)
   skillLevel         Int                 @default(3)
   reliabilityScore   Float               @default(0)
   lastContactedAt    DateTime?
@@ -153,4 +154,10 @@ enum InvitationStatus {
   REJECTED
   IGNORED
   EXPIRED
+}
+
+enum Gender {
+  MALE
+  FEMALE
+  UNKNOWN
 }

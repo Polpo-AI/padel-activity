@@ -13,7 +13,7 @@
 import { prisma } from './db';
 import { getRedis } from './queue';
 import { simulateTypingAndSend, sendMessage } from './whatsapp';
-import { extractPhoneNumber, extractSkillLevel } from './ai';
+import { extractPhoneNumber, extractSkillLevel, inferGender } from './ai';
 import pino from 'pino';
 
 const logger = pino({ level: 'info' });
@@ -182,6 +182,7 @@ export async function processFriendPhone(
             data: {
                 phoneNumber: guestId, // Use fake identifier for guest
                 name: `${guestName} di ${invitedByPlayer?.name || invitedByPhone}`,
+                gender: await inferGender(guestName),
                 skillLevel: invitedByPlayer?.skillLevel || (match.club?.skillLevelCount ?? 3),
                 clubId: match.clubId,
                 active: false // Guests are not active searchable players
@@ -283,8 +284,13 @@ export async function processFriendLevel(
 
     const matchData = await prisma.match.findUnique({
         where: { id: matchId },
-        include: { MatchPlayer: { include: { player: true } }, club: true, court: true }
-    });
+        include: { 
+            MatchPlayer: { include: { player: true } }, 
+            club: true, 
+            court: true,
+            pendingOnboardings: true 
+        } as any
+    }) as any;
 
     const skillLevel = await extractSkillLevel(messageText, matchData?.club?.skillLevelCount ?? 3);
 
@@ -293,10 +299,11 @@ export async function processFriendLevel(
     const newPlayer = await prisma.player.create({
         data: {
             phoneNumber: friendPhone,
+            gender: await inferGender((matchData?.pendingOnboardings || []).find((po: any) => po.phoneNumber === friendPhone)?.name || ''),
             skillLevel: skillLevel as any,
             dailyMessagesCount: 0,
             clubId: matchData?.clubId,
-        },
+        } as any
     });
 
     if (!matchData || matchData.status !== 'OPEN') {

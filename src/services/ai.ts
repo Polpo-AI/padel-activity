@@ -265,3 +265,32 @@ Messaggio del giocatore: "${text}"`,
 
     return null;
 }
+export async function inferGender(name: string): Promise<'MALE' | 'FEMALE' | 'UNKNOWN'> {
+    if (!name || name === 'Giocatore') return 'UNKNOWN';
+
+    try {
+        const result = await withRetry(
+            () => anthropic.messages.create({
+                model: 'claude-haiku-4-5-20251001',
+                max_tokens: 10,
+                temperature: 0,
+                messages: [{
+                    role: 'user',
+                    content: `Determina il genere di una persona basandoti sul nome italiano: "${name}".
+Rispondi SOLO con una di queste parole: MALE, FEMALE, UNKNOWN.
+Se il nome è ambiguo o internazionale (es. Alex, Andrea), rispondi UNKNOWN.`,
+                }],
+            }),
+            { maxAttempts: 2, context: 'inferGender' }
+        );
+        const content = result.content[0];
+        if (content.type === 'text') {
+            const val = content.text.trim().toUpperCase();
+            if (['MALE', 'FEMALE', 'UNKNOWN'].includes(val)) return val as any;
+        }
+    } catch (err) {
+        logger.error({ err }, 'inferGender failed');
+    }
+
+    return 'UNKNOWN';
+}

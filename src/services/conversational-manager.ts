@@ -1,5 +1,5 @@
 import { prisma } from './db';
-import { anthropic } from './ai';
+import { anthropic, inferGender } from './ai';
 import { simulateTypingAndSend } from './whatsapp';
 import pino from 'pino';
 
@@ -189,6 +189,9 @@ MESSAGGIO ATTUALE: "${text}"
             }
             if (data.level && (!context.player || !context.player.skillLevel)) {
                 updates.skillLevel = data.level;
+            }
+            if (updates.name) {
+                updates.gender = await inferGender(updates.name);
             }
 
             if (Object.keys(updates).length > 0) {
