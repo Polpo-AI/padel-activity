@@ -68,7 +68,11 @@ Rispondi SOLO con il JSON.
 
         const content = response.content[0];
         if (content.type === 'text') {
-            return JSON.parse(content.text.trim());
+            let text = content.text.trim();
+            if (text.includes('```')) {
+                text = text.replace(/```json|```/g, '').trim();
+            }
+            return JSON.parse(text);
         }
     } catch (err) {
         logger.error({ err }, 'Error extracting booking context');

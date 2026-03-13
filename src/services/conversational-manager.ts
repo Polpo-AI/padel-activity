@@ -105,7 +105,8 @@ Determina se l'Assistente ha APPENA CONFERMATO una di queste azioni:
 1. BOOK: L'utente vuole prenotare una partita/campo e sono stati definiti giorno e ora (es. "Prenotazione confermata per martedì alle 19").
 2. BRING_FRIEND: L'utente ha indicato un amico da aggiungere alla partita (es. "Ho segnato Marco").
 
-Rispondi SOLO con un JSON: {"intent": "BOOK" | "BRING_FRIEND" | "UNKNOWN", "params": {}}
+Rispondi SOLO con un JSON valido, SENZA markdown (no \`\`\`json).
+Output: {"intent": "BOOK" | "BRING_FRIEND" | "UNKNOWN", "params": {}}
 Parametri per BOOK: {"day": "string", "time": "string"}
 Parametri per BRING_FRIEND: {"name": "string"}
 
@@ -124,7 +125,13 @@ Bot (Latest): ${botResponse}
 
         const content = response.content[0];
         if (content.type === 'text') {
-            const result = JSON.parse(content.text.trim());
+            let text = content.text.trim();
+            // Safety: rimuovi eventuali blocchi markdown se l'AI ignora l'istruzione
+            if (text.includes('```')) {
+                text = text.replace(/```json|```/g, '').trim();
+            }
+            
+            const result = JSON.parse(text);
             if (result.intent !== 'UNKNOWN') {
                 logger.info({ signal: result }, 'Fluid ACTION SIGNAL detected');
                 return result as FluidAction;
@@ -163,7 +170,11 @@ MESSAGGIO ATTUALE: "${text}"
 
         const content = response.content[0];
         if (content.type === 'text') {
-            const data = JSON.parse(content.text.trim());
+            let textResp = content.text.trim();
+            if (textResp.includes('```')) {
+                textResp = textResp.replace(/```json|```/g, '').trim();
+            }
+            const data = JSON.parse(textResp);
             const updates: any = {};
             
             if (data.name && (!context.player || !context.player.name || context.player.name === 'Giocatore')) {
