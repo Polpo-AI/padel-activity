@@ -76,10 +76,8 @@ if (process.env.NODE_ENV === 'production') {
     const indexExists = fs.existsSync(path.join(buildPath, 'index.html'));
     logger.info({ buildPath, indexExists }, 'Serving dashboard from');
     
-    app.get('/ping-dashboard', (req, res) => res.send('PONG DASH v2'));
-
     app.use('/dashboard', express.static(buildPath));
-    app.get('/dashboard*', (req, res) => {
+    app.get(['/dashboard', '/dashboard/*'], (req, res) => {
         res.sendFile(path.join(buildPath, 'index.html'));
     });
 }
