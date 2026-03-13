@@ -91,7 +91,7 @@ function maybeSplitMessage(text: string): [string, string | null] {
 // ------------------------------------------------------------------
 
 export async function connectToWhatsApp() {
-    const { state, saveCreds } = await useMultiFileAuthState('baileys_auth_staging');
+    const { state, saveCreds } = await useMultiFileAuthState('baileys_auth_info');
     const { version, isLatest } = await fetchLatestBaileysVersion();
     logger.info(`Using WA version: ${version.join('.')} (isLatest: ${isLatest})`);
 
@@ -101,7 +101,7 @@ export async function connectToWhatsApp() {
         printQRInTerminal: true,
         logger: pino({ level: 'silent' }) as any,
         // Using a more standard browser fingerprint
-        browser: ['macOS', 'Edge', '120.0.6099.129'],
+        browser: ['Ubuntu', 'Chrome', '120.0.6099.129'],
     });
 
     sock.ev.on('creds.update', saveCreds);
