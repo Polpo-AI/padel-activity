@@ -251,6 +251,7 @@ async function handleGuaranteedFull(
     const { from, to } = getTimeWindow(context, now);
 
     if (!from || !to) {
+        // If we don't even have a day/slot, we must ask
         await simulateTypingAndSend(
             jid,
             "Ottimo! Siete già in 4? 🎾 A che ora vorreste giocare?",
@@ -274,13 +275,18 @@ async function handleGuaranteedFull(
     });
 
     if (!targetMatch) {
-        // Nessuna partita da liberare — crea direttamente
-        await simulateTypingAndSend(
-            jid,
-            "Non ho partite aperte in quella fascia. Vi creo io un campo 🎾 A che ora esatta?",
-            messageKey
-        );
-        await setBookingState(jid, { ...context, step: 'AWAITING_TIME_FOR_GUARANTEED' });
+        // Nessuna partita da liberare — se abbiamo l'orario esatto, creiamo subito
+        if (context.specificTime && from) {
+            await createNewMatch(jid, player, from, context, messageKey);
+        }
+ else {
+            await simulateTypingAndSend(
+                jid,
+                "Non ho partite aperte in quella fascia. Vi creo io un campo 🎾 A che ora esatta?",
+                messageKey
+            );
+            await setBookingState(jid, { ...context, step: 'AWAITING_TIME_FOR_GUARANTEED' });
+        }
         return;
     }
 
