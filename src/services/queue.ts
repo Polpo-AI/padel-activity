@@ -21,14 +21,23 @@ let redisInstance: Redis | null = null;
 
 export function getRedis(): Redis {
     if (!redisInstance) {
-        redisInstance = new Redis({
-            host: process.env.REDIS_HOST || 'localhost',
-            port: parseInt(process.env.REDIS_PORT || '6379'),
-            password: process.env.REDIS_PASSWORD || undefined,
-            maxRetriesPerRequest: null,
-            enableReadyCheck: false,
-            retryStrategy: (times) => Math.min(times * 500, 5000),
-        });
+        const redisUrl = process.env.REDIS_URL;
+        if (redisUrl) {
+            redisInstance = new Redis(redisUrl, {
+                maxRetriesPerRequest: null,
+                enableReadyCheck: false,
+                retryStrategy: (times) => Math.min(times * 500, 5000),
+            });
+        } else {
+            redisInstance = new Redis({
+                host: process.env.REDIS_HOST || 'localhost',
+                port: parseInt(process.env.REDIS_PORT || '6379'),
+                password: process.env.REDIS_PASSWORD || undefined,
+                maxRetriesPerRequest: null,
+                enableReadyCheck: false,
+                retryStrategy: (times) => Math.min(times * 500, 5000),
+            });
+        }
 
         redisInstance.on('connect', () => logger.info('Redis connected'));
         redisInstance.on('error', async (err) => {
@@ -42,13 +51,20 @@ export function getRedis(): Redis {
     return redisInstance;
 }
 
-export const connection = {
-    host: process.env.REDIS_HOST || 'localhost',
-    port: parseInt(process.env.REDIS_PORT || '6379'),
-    password: process.env.REDIS_PASSWORD || undefined,
-    maxRetriesPerRequest: null as null,
-    enableReadyCheck: false,
-};
+export const connection = (process.env.REDIS_HOST
+    ? {
+          host: process.env.REDIS_HOST,
+          port: parseInt(process.env.REDIS_PORT || '6379'),
+          password: process.env.REDIS_PASSWORD || undefined,
+          maxRetriesPerRequest: null,
+          enableReadyCheck: false,
+      }
+    : process.env.REDIS_URL || {
+          host: 'localhost',
+          port: 6379,
+          maxRetriesPerRequest: null,
+          enableReadyCheck: false,
+      }) as any;
 
 // ─────────────────────────────────────────────
 // QUEUES
