@@ -531,7 +531,7 @@ async function createNewMatch(
             startTime,
             skillLevel: player.skillLevel,
             playersNeeded: 4,
-            status: 'OPEN',
+            status: playerCount >= 4 ? 'LOCKED' : 'OPEN',
         },
     });
 
@@ -571,7 +571,7 @@ async function createNewMatch(
         messageKey
     );
 
-    if (playerCount > 1 && !context.friendLevel) {
+    if (playerCount > 1 && playerCount < 4 && !context.friendLevel) {
         // Ask for friend's level after a small organic delay
         setTimeout(async () => {
             await simulateTypingAndSend(jid, `A proposito, che livello ${playerCount === 2 ? 'è il tuo amico' : 'sono i tuoi amici'} (1-${maxLevel})?`);
