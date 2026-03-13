@@ -155,13 +155,20 @@ async function scheduleMaintenance() {
 // ─────────────────────────────────────────────
 
 async function main() {
-    logger.info('Starting Padel Bot...');
+    const PORT = parseInt(process.env.PORT || '3000', 10);
+    app.listen(PORT, () => {
+        logger.info(`Server on port ${PORT}`);
+        logger.info(`Dashboard: http://localhost:${PORT}/dashboard`);
+        logger.info(`Health:    http://localhost:${PORT}/health`);
+    });
+
+    logger.info('Starting Padel Bot logic...');
 
     // Verifica DB prima di tutto
     const dbOk = await checkDbHealth();
     if (!dbOk) {
-        logger.error('Cannot reach database on startup — exiting');
-        process.exit(1);
+        logger.error('Cannot reach database on startup — continuing but functionality will be limited');
+        notifyAdminCritical('Bot avviato ma Database non raggiungibile. Funzionalità limitata.').catch(() => {});
     }
 
     // WhatsApp First (so we can notify about errors later)
@@ -184,13 +191,6 @@ async function main() {
     }
 
     await scheduleMaintenance();
-
-    const PORT = parseInt(process.env.PORT || '3000', 10);
-    app.listen(PORT, () => {
-        logger.info(`Server on port ${PORT}`);
-        logger.info(`Dashboard: http://localhost:${PORT}/dashboard`);
-        logger.info(`Health:    http://localhost:${PORT}/health`);
-    });
 }
 
 main().catch(async (err) => {
