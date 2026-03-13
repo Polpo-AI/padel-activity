@@ -186,7 +186,7 @@ export async function processFriendPhone(
                 skillLevel: invitedByPlayer?.skillLevel || (match.club?.skillLevelCount ?? 3),
                 clubId: match.clubId,
                 active: false // Guests are not active searchable players
-            }
+            } as any
         });
 
         await prisma.matchPlayer.create({ data: { matchId, playerId: guestPlayer.id } });
