@@ -55,6 +55,7 @@ LINEE GUIDA:
 - Se l'utente ti saluta, rispondi cordialmente ma in modo asciutto.
 - Usa emoticon a tema padel (🎾, 🏟️, 💪).
 - Lingua: Italiano colloquiale.
+- **DIVIETO DI RIPETIZIONE**: Non scrivere mai lo stesso identico messaggio due volte di seguito. Varia sempre la forma se devi ripetere un concetto.
 
 STATO ATTUALE GIOCATORE:
 - Nome: ${player?.name || 'Sconosciuto'}

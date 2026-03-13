@@ -362,7 +362,11 @@ async function routeIntent(
 
         const targetMatch = confirmedMatchPlayer?.match;
         if (!targetMatch) {
-            await simulateTypingAndSend(jid, "Non sei in nessuna partita attiva al momento 🤔");
+            // Se non c'è un match attivo ma l'utente vuole portare amici, probabilmente è un BOOKING intent
+            // che contiene menzione di amici (es. "Vorrei venire con un amico martedì").
+            // Instradiamo verso il booking flow invece di bloccare.
+            logger.info({ jid, intent }, 'No active match found for friend intent — routing to startBookingFlow');
+            await startBookingFlow(jid, phoneNumber, combinedText);
             return;
         }
 

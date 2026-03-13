@@ -53,15 +53,12 @@ Valori possibili per intent:
 - YES (accetta, conferma, "ci sono", "vengo", "ok", "sì")
 - NO (rifiuta, "non posso", "passo")
 - CANCEL (disdice dopo aver già confermato)
-- BRING_FRIEND (porta 1 amico)
-- BRING_GROUP (porta 2+ persone)
-- WHOLE_COURT (prenota tutto il campo)
-- OPT_OUT (vuole uscire dalla lista)
-- QUESTION (fa una domanda)
-- BOOK (vuole prenotare una partita spontaneamente)
-- UNKNOWN (non classificabile)
+- BOOK (vuole prenotare una nuova partita spontaneamente, anche se menziona amici es. "voglio venire martedì con un amico")
+- BRING_FRIEND (porta 1 amico a una partita A CUI È GIÀ ISCRITTO)
+- BRING_GROUP (porta più persone a una partita A CUI È GIÀ ISCRITTO)
+- WHOLE_COURT (chiude il campo per una partita a cui è già iscritto)
 
-confident: true SOLO se sei molto sicuro basandoti anche sulla cronologia (es. se l'utente dice un orario dopo che gli è stato chiesto).
+confident: true SOLO se sei molto sicuro basandoti anche sulla cronologia (es. se l'utente dice un orario dopo che gli è stato chiesto). Se l'utente menziona un giorno o un'ora per una NUOVA partita, usa BOOK.
 
 Messaggio: "${messageText}"
 

@@ -215,12 +215,24 @@ export async function humanSend(
     text: string,
     incomingMsgKey?: proto.IMessageKey
 ): Promise<void> {
-    if (process.env.DRY_RUN === 'true') {
-        logger.info(`[DRY RUN] Would send human-simulated message to ${jid}: ${text}`);
-        return;
-    }
     if (!sock) throw new Error('WhatsApp socket not initialized');
     const formattedJid = formatJid(jid);
+
+    // ✅ PREVENT DUPLICATES: Se il messaggio è identico all'ultimo inviato al bot, aggiungiamo una variazione
+    try {
+        const { prisma } = await import('./db');
+        const lastMsg = await prisma.whatsAppMessage.findFirst({
+            where: { chatId: formattedJid, role: 'BOT' },
+            orderBy: { timestamp: 'desc' },
+        });
+
+        if (lastMsg && lastMsg.content.trim() === text.trim()) {
+            logger.warn({ jid: formattedJid }, 'Duplicate message detected — adding variation');
+            text = text + " ."; // Aggiunge un punto e spazio invisibile per variare
+        }
+    } catch (err) {
+        logger.error({ err }, 'Duplicate check failed');
+    }
 
     // ── LAYER 1: Read receipt (blue ticks) ──────────────────────────
     if (incomingMsgKey) {
