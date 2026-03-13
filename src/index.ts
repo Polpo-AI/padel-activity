@@ -155,7 +155,7 @@ async function scheduleMaintenance() {
 // ─────────────────────────────────────────────
 
 async function main() {
-    const PORT = parseInt(process.env.PORT || '3000', 10);
+    const PORT = parseInt(process.env.STAGING_PORT || process.env.PORT || '3000', 10);
     app.listen(PORT, () => {
         logger.info(`Server on port ${PORT}`);
         logger.info(`Dashboard: http://localhost:${PORT}/dashboard`);
