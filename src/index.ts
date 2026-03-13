@@ -77,9 +77,8 @@ if (process.env.NODE_ENV === 'production') {
     logger.info({ buildPath, indexExists }, 'Serving dashboard from');
     
     app.use('/dashboard', express.static(buildPath));
-    app.get('/dashboard*', (req, res) => {
-        res.sendFile(path.join(buildPath, 'index.html'));
-    });
+    app.get('/dashboard', (req, res) => res.sendFile(path.join(buildPath, 'index.html')));
+    app.get('/dashboard/*', (req, res) => res.sendFile(path.join(buildPath, 'index.html')));
 }
 
 app.use('/api', webhooksRouter);
