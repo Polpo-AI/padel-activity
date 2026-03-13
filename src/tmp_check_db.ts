@@ -20,13 +20,11 @@ async function main() {
   });
   console.log(JSON.stringify(matches, null, 2));
 
-  console.log('\n--- INVITATIONS ---');
-  const invitations = await prisma.invitation.findMany({
-    include: {
-      player: true
-    }
+  console.log('\n--- WHATSAPP MESSAGES ---');
+  const messages = await prisma.whatsAppMessage.findMany({
+    orderBy: { timestamp: 'asc' }
   });
-  console.log(JSON.stringify(invitations, null, 2));
+  console.log(JSON.stringify(messages, null, 2));
 }
 
 main().catch(console.error).finally(() => prisma.$disconnect());
