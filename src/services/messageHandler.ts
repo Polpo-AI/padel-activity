@@ -82,11 +82,19 @@ export async function handleBatch(jid: string, messages: NormalizedMessage[]): P
 }
 
 async function _handleBatchInner(jid: string, messages: NormalizedMessage[]): Promise<void> {
-    const phoneNumber = jid.split('@')[0];
-    // 🔍 DEBUG TEMPORANEO: mostra struttura raw per capire dove si trova il numero reale
-    const rawKey = messages[0]?.raw?.key;
+    // ── Risoluzione Numero di Telefono ──────────────────────────
+    // Se il JID è un @lid, cerchiamo il numero reale (@s.whatsapp.net) nei metadata Baileys
+    let phoneNumber = jid.split('@')[0];
+    const rawKey = messages[0]?.raw?.key as any;
+    const remoteJidAlt = rawKey?.remoteJidAlt;
+
+    if (jid.includes('@lid') && remoteJidAlt && remoteJidAlt.includes('@s.whatsapp.net')) {
+        phoneNumber = remoteJidAlt.split('@')[0];
+        logger.info({ LID: jid.split('@')[0], Phone: phoneNumber }, 'Resolved LID to Phone Number');
+    }
+
     const pushName = messages[0]?.raw?.pushName;
-    logger.info({ rawKey, pushName, jid }, 'DEBUG raw message key');
+    logger.info({ rawKey, pushName, jid, resolvedPhone: phoneNumber }, 'DEBUG message batch processing');
     logger.info(`Batch: ${messages.length} msg from ${phoneNumber}`);
 
     // ── Persisti ─────────────────────────────────────────────────
@@ -168,8 +176,17 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[]): Pr
     const bookingState = await getBookingState(jid);
     if (bookingState) {
         const contactInfo = firstCard ? { phone: firstCard.contactPhone, name: firstCard.contactName } : null;
-        await continueBookingFlow(jid, combinedText, contactInfo, bookingState);
-        return;
+        // Se il giocatore non esiste ancora, consideriamo lo stato 'stale' e procediamo a conversazione fluida
+        const playerExists = await prisma.player.findFirst({ where: { phoneNumber } });
+        if (playerExists) {
+            await continueBookingFlow(jid, combinedText, contactInfo, bookingState);
+            return;
+        } else {
+            logger.warn({ jid, phoneNumber }, 'Booking state found for unknown player — ignoring state to allow fluid interaction');
+            // Opzionale: puliamo lo stato sporco
+            const { clearBookingState } = await import('./booking');
+            await clearBookingState(jid);
+        }
     }
 
     // 1d. Awaiting friend phone/level
