@@ -1,20 +1,3 @@
-// ============================================================
-// SCHEMA PRISMA — Padel Bot Pro
-//
-// ✅ FIX CRITICITÀ A (Multi-Tenancy):
-//    - Player.clubId: ogni giocatore appartiene a un club specifico
-//    - Club.groupJids: lista JID gruppi WA del club per lookup inverso
-//    - Tutti gli indici di selezione wave filtrano per clubId
-//
-// ✅ FIX CRITICITÀ F (N+1 loop):
-//    - MatchStatus.ARCHIVED: i match vecchi possono essere archiviati
-//    - Il job mensile maintenance.worker aggiorna status → ARCHIVED
-//    - checkSilentMatches e selectPlayersForWave escludono match archiviati
-//
-// MIGRATION NOTE: dopo aver modificato questo file, eseguire:
-//    npx prisma migrate dev --name multi_tenancy_and_archived
-// ============================================================
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -27,32 +10,27 @@ model Player {
   id                 String              @id @default(uuid())
   phoneNumber        String
   name               String?
-  skillLevel         Int                 @default(3)       // 1-5
-  reliabilityScore   Float               @default(0)       // showUpRate ∈ [0,1]
+  skillLevel         Int                 @default(3)
+  reliabilityScore   Float               @default(0)
   lastContactedAt    DateTime?
   dailyMessagesCount Int                 @default(0)
-  active             Boolean             @default(true)    // false = non contattare
-  groupIds           String[]            @default([])      // JID gruppi WA
-
-  // ✅ FIX A: ogni giocatore è associato a un club specifico
+  active             Boolean             @default(true)
+  groupIds           String[]            @default([])
   clubId             String?
-  club               Club?               @relation(fields: [clubId], references: [id])
-
   invitations        Invitation[]
   MatchPlayer        MatchPlayer[]
   pendingOnboardings PendingOnboarding[] @relation("InvitedBy")
+  club               Club?               @relation(fields: [clubId], references: [id])
 
-  // ✅ FIX A: phoneNumber unico per club (non globalmente)
   @@unique([phoneNumber, clubId])
-
-  @@index([clubId, active, skillLevel, dailyMessagesCount])  // wave player selection per club
-  @@index([clubId, active, lastContactedAt])                 // turnover ordering per club
+  @@index([clubId, active, skillLevel, dailyMessagesCount])
+  @@index([clubId, active, lastContactedAt])
 }
 
 model Court {
   id      String  @id @default(uuid())
   clubId  String
-  name    String  // personalizzabile in onboarding
+  name    String
   active  Boolean @default(true)
   club    Club    @relation(fields: [clubId], references: [id])
   matches Match[]
@@ -61,9 +39,7 @@ model Court {
 model Match {
   id                String        @id @default(uuid())
   clubId            String?
-  club              Club?         @relation(fields: [clubId], references: [id])
   courtId           String?
-  court             Court?        @relation(fields: [courtId], references: [id])
   startTime         DateTime
   endTime           DateTime?
   skillLevel        Int
@@ -75,12 +51,14 @@ model Match {
   cancelledReason   String?
   recoveryWaveCount Int           @default(0)
   invitations       Invitation[]
+  club              Club?         @relation(fields: [clubId], references: [id])
+  court             Court?        @relation(fields: [courtId], references: [id])
   MatchPlayer       MatchPlayer[]
 
-  @@index([status, startTime])          // wave selection, timeout check
-  @@index([clubId, status])             // dashboard per club
-  @@index([clubId, status, startTime])  // ✅ FIX F: filtro combined per checkSilentMatches
-  @@index([courtId])                    // lista partite per campo
+  @@index([status, startTime])
+  @@index([clubId, status])
+  @@index([clubId, status, startTime])
+  @@index([courtId])
 }
 
 model Invitation {
@@ -96,9 +74,9 @@ model Invitation {
   match             Match            @relation(fields: [matchId], references: [id])
   player            Player           @relation(fields: [playerId], references: [id])
 
-  @@index([playerId, status])     // processMatchOutcomes
-  @@index([matchId, status])      // wave: escludi già invitati
-  @@index([status, sentAt])       // cleanup job
+  @@index([playerId, status])
+  @@index([matchId, status])
+  @@index([status, sentAt])
 }
 
 model MatchPlayer {
@@ -121,9 +99,9 @@ model PendingOnboarding {
   name              String?
   skillLevel        Int?
   invitedByPlayerId String
-  invitedBy         Player   @relation("InvitedBy", fields: [invitedByPlayerId], references: [id])
   createdAt         DateTime @default(now())
   resolved          Boolean  @default(false)
+  invitedBy         Player   @relation("InvitedBy", fields: [invitedByPlayerId], references: [id])
 }
 
 model Club {
@@ -133,7 +111,7 @@ model Club {
   matchDuration              Int      @default(90)
   openTime                   String   @default("08:00")
   closeTime                  String   @default("23:30")
-  aiTone                     String?  @db.Text
+  aiTone                     String?
   adminPhone                 String?
   waveMultiplier             Int      @default(3)
   deadlineMinutesBeforeMatch Int      @default(60)
@@ -142,11 +120,7 @@ model Club {
   skillLevelCount            Int      @default(3)
   dashboardUsername          String?  @unique
   dashboardPasswordHash      String?
-
-  // ✅ FIX A: lista JID dei gruppi WhatsApp associati a questo club
-  //    Usato da group-handler.ts per resolveClubFromGroupJid()
   groupJids                  String[] @default([])
-
   courts                     Court[]
   matches                    Match[]
   players                    Player[]
@@ -157,24 +131,20 @@ model WhatsAppMessage {
   chatId    String
   sender    String
   role      String
-  content   String   @db.Text
+  content   String
   timestamp DateTime @default(now())
 
   @@index([chatId])
-  @@index([chatId, role])   // ✅ ancora usato come fallback durante migrazione Redis
-  @@index([timestamp])      // cleanup job
+  @@index([chatId, role])
+  @@index([timestamp])
 }
-
-// ─────────────────────────────────────────────
-// ENUMS
-// ─────────────────────────────────────────────
 
 enum MatchStatus {
   OPEN
   LOCKED
   CANCELLED
   UNFILLED
-  ARCHIVED   // ✅ FIX F: i match completati vengono archiviati dal job mensile
+  ARCHIVED
 }
 
 enum InvitationStatus {

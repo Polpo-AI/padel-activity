@@ -158,20 +158,23 @@ async function main() {
         process.exit(1);
     }
 
+    // WhatsApp First (so we can notify about errors later)
+    try {
+        await connectToWhatsApp();
+        logger.info('WhatsApp connection sequence started');
+    } catch (err) {
+        logger.error({ err }, 'WhatsApp initial socket creation failed');
+    }
+
+    // Wait a bit for WhatsApp to actually connect before critical health checks
+    // this avoids "socket not initialized" errors in notifyAdmin
+    await new Promise(r => setTimeout(r, 2000));
+
     // Verifica Redis
     const redisOk = await checkRedisHealth();
     if (!redisOk) {
         logger.warn('Redis not reachable on startup — waves will not work until Redis is up');
-        await notifyAdminCritical('Bot avviato ma Redis non raggiungibile. Le wave sono sospese.');
-    }
-
-    // WhatsApp
-    try {
-        await connectToWhatsApp();
-        logger.info('WhatsApp connected');
-    } catch (err) {
-        logger.error({ err }, 'WhatsApp initial connection failed — Baileys will retry automatically');
-        await notifyAdminCritical('Bot avviato ma WhatsApp non connesso. Scan QR necessario o retry in corso.');
+        notifyAdminCritical('Bot avviato ma Redis non raggiungibile. Le wave sono sospese.').catch(() => {});
     }
 
     await scheduleMaintenance();

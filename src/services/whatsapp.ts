@@ -98,22 +98,25 @@ export async function connectToWhatsApp() {
     sock = makeWASocket({
         version,
         auth: state,
-        printQRInTerminal: !process.env.BOT_PHONE_NUMBER,
+        printQRInTerminal: true,
         logger: pino({ level: 'silent' }) as any,
-        // Using a custom browser fingerprint that mimics an official WA Web session to bypass the "Cannot link device" block
-        browser: ['Polpo AI', 'MacOS', '120.0'],
+        // Using a more standard browser fingerprint
+        browser: ['Ubuntu', 'Chrome', '120.0.6099.129'],
     });
 
     sock.ev.on('creds.update', saveCreds);
 
+    let isPairingCodeRequested = false;
     sock.ev.on('connection.update', async (update) => {
         const { connection, lastDisconnect, qr } = update;
 
         if (qr) {
             const forceQr = process.env.FORCE_QR === 'true';
-            if (process.env.BOT_PHONE_NUMBER && !sock!.authState.creds.registered && !forceQr) {
+            if (process.env.BOT_PHONE_NUMBER && !sock!.authState.creds.registered && !isPairingCodeRequested && !forceQr) {
+                isPairingCodeRequested = true;
                 try {
-                    const cleanNumber = process.env.BOT_PHONE_NUMBER.replace('+', '');
+                    const cleanNumber = process.env.BOT_PHONE_NUMBER.replace(/\D/g, '');
+                    console.log(`[AUTH] Requesting pairing code for: ${cleanNumber}`);
                     const code = await sock!.requestPairingCode(cleanNumber);
                     console.log(`\n======================================================`);
                     console.log(`🔢 CODICE DI ABBINAMENTO WHATSAPP: ${code}`);
