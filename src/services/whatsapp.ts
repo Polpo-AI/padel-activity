@@ -110,7 +110,8 @@ export async function connectToWhatsApp() {
         const { connection, lastDisconnect, qr } = update;
 
         if (qr) {
-            if (process.env.BOT_PHONE_NUMBER && !sock!.authState.creds.registered) {
+            const forceQr = process.env.FORCE_QR === 'true';
+            if (process.env.BOT_PHONE_NUMBER && !sock!.authState.creds.registered && !forceQr) {
                 try {
                     const cleanNumber = process.env.BOT_PHONE_NUMBER.replace('+', '');
                     const code = await sock!.requestPairingCode(cleanNumber);
