@@ -36,7 +36,7 @@ interface BookingContext {
     friendLevel?: number | null; // se specificato "un amico livello 3"
 }
 
-export async function extractBookingContext(messageText: string): Promise<BookingContext> {
+export async function extractBookingContext(messageText: string, maxLevel: number = 3): Promise<BookingContext> {
     const prompt = `
 Analizza questo messaggio di un giocatore di padel che vuole prenotare una partita.
 
@@ -47,7 +47,7 @@ Estrai le seguenti informazioni e rispondi SOLO con un JSON:
   "specificTime": "HH:MM" oppure null,
   "specificDay": "lunedì" | "martedì" | "mercoledì" | "giovedì" | "venerdì" | "sabato" | "domenica" | "oggi" | "domani" | null,
   "guaranteesFull": true se dice che sono già in 4 o che chiudono il campo da soli, false altrimenti,
-  "friendLevel": numero intero 1-4 se specifica il livello dell'amico/i, altrimenti null
+  "friendLevel": numero intero da 1 a \${maxLevel} se specifica il livello dell'amico/i, altrimenti null
 }
 
 Regole per timeSlot:
@@ -96,10 +96,11 @@ export async function startBookingFlow(
     messageKey?: any,
     overrides?: Partial<BookingContext>
 ): Promise<void> {
-    const player = await prisma.player.findFirst({ where: { phoneNumber } });
+    const player = await prisma.player.findFirst({ where: { phoneNumber }, include: { club: true } });
     if (!player) return;
 
-    const context = await extractBookingContext(messageText);
+    const maxLevel = player.club?.skillLevelCount ?? 3;
+    const context = await extractBookingContext(messageText, maxLevel);
     
     // Apply overrides from action detection (e.g. extracted day/time)
     if (overrides) {
@@ -479,6 +480,7 @@ async function createNewMatch(
     const playerCount = context.playerCount;
     // ✅ FIX J/M: usa clubId dal player — non findFirst()
     const clubId = player.clubId;
+    const maxLevel = player.club?.skillLevelCount ?? 3;
 
     // Assegna il primo campo disponibile del club in quell'orario
     const occupiedCourtIds = await prisma.match.findMany({
@@ -542,7 +544,7 @@ async function createNewMatch(
     if (playerCount > 1 && !context.friendLevel) {
         // Ask for friend's level after a small organic delay
         setTimeout(async () => {
-            await simulateTypingAndSend(jid, `A proposito, che livello ${playerCount === 2 ? 'è il tuo amico' : 'sono i tuoi amici'} (1-4)?`);
+            await simulateTypingAndSend(jid, `A proposito, che livello ${playerCount === 2 ? 'è il tuo amico' : 'sono i tuoi amici'} (1-${maxLevel})?`);
             await setBookingState(jid, { 
                 step: 'AWAITING_FRIEND_LEVEL', 
                 matchId: match.id,
@@ -620,7 +622,9 @@ async function addPlayerToMatch(
 
     if (playerCount > 1) {
         setTimeout(async () => {
-            await simulateTypingAndSend(jid, `Che livello ${playerCount === 2 ? 'è il tuo amico' : 'sono i tuoi amici'}? (1-4) 🎾`);
+            const playerRec = await prisma.player.findFirst({ where: { id: player.id }, include: { club: true } });
+            const maxL = playerRec?.club?.skillLevelCount ?? 3;
+            await simulateTypingAndSend(jid, `Che livello ${playerCount === 2 ? 'è il tuo amico' : 'sono i tuoi amici'}? (1-${maxL}) 🎾`);
             await setBookingState(jid, { 
                 step: 'AWAITING_FRIEND_LEVEL', 
                 matchId: match.id,

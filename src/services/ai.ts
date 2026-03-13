@@ -248,7 +248,7 @@ Esempi:
 - "intermedio", "me la cavicchio", "gioco da qualche anno", "non sono male", "abbastanza bene", "discreto" → ${Math.ceil(maxLevel / 2)}
 - "avanzato", "gioco a buon livello", "sono forte", "gioco in torneo", "agonista" → ${maxLevel}
 
-Rispondi SOLO con il numero (1, ${Math.ceil(maxLevel / 2)}, o ${maxLevel}), nient'altro.
+Rispondi SOLO con il numero intero (da 1 a ${maxLevel}), nient'altro. Se il messaggio suggerisce un livello intermedio e il massimo è 3, rispondi 2. Se il massimo è 5, rispondi 3.
 Messaggio del giocatore: "${text}"`,
                 }],
             }),

@@ -182,7 +182,7 @@ export async function processFriendPhone(
             data: {
                 phoneNumber: guestId, // Use fake identifier for guest
                 name: `${guestName} di ${invitedByPlayer?.name || invitedByPhone}`,
-                skillLevel: invitedByPlayer?.skillLevel || 3,
+                skillLevel: invitedByPlayer?.skillLevel || (match.club?.skillLevelCount ?? 3),
                 clubId: match.clubId,
                 active: false // Guests are not active searchable players
             }
@@ -254,7 +254,7 @@ export async function processFriendPhone(
 
         await simulateTypingAndSend(
             senderJid,
-            `Ottimo! ${friendPhone} non è ancora nel sistema. Che livello ha? (principiante, intermedio, avanzato)`,
+            `Ottimo! ${friendPhone} non è ancora nel sistema. Che livello ha? (1-${match.club?.skillLevelCount ?? 3})`,
             messageKey
         );
 
@@ -280,7 +280,13 @@ export async function processFriendLevel(
     messageKey?: any
 ): Promise<void> {
     const { matchId, friendPhone, invitedByPhone } = pendingState;
-    const skillLevel = await extractSkillLevel(messageText);
+
+    const matchData = await prisma.match.findUnique({
+        where: { id: matchId },
+        include: { MatchPlayer: { include: { player: true } }, club: true, court: true }
+    });
+
+    const skillLevel = await extractSkillLevel(messageText, matchData?.club?.skillLevelCount ?? 3);
 
     const invitedByPlayer = await prisma.player.findFirst({ where: { phoneNumber: invitedByPhone } });
 
@@ -289,15 +295,11 @@ export async function processFriendLevel(
             phoneNumber: friendPhone,
             skillLevel: skillLevel as any,
             dailyMessagesCount: 0,
+            clubId: matchData?.clubId,
         },
     });
 
-    const match = await prisma.match.findUnique({
-        where: { id: matchId },
-        include: { MatchPlayer: true, club: true },
-    });
-
-    if (!match || match.status !== 'OPEN') {
+    if (!matchData || matchData.status !== 'OPEN') {
         await simulateTypingAndSend(senderJid, "Mi dispiace, la partita si è riempita nel frattempo!", messageKey);
         await clearAwaitingState(senderJid);
         return;
@@ -313,17 +315,17 @@ export async function processFriendLevel(
         data: { resolved: true, skillLevel: skillLevel as any },
     });
 
-    const timeStr = match.startTime.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
+    const timeStr = matchData.startTime.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
     await simulateTypingAndSend(
         friendPhone,
-        `Ciao! Sei stato aggiunto a una partita di padel 🎾 ${(match as any).court} alle ${timeStr}. Ci vediamo lì!`
+        `Ciao! Sei stato aggiunto a una partita di padel 🎾 ${matchData.court?.name || 'campo'} alle ${timeStr}. Ci vediamo lì!`
     );
 
     await simulateTypingAndSend(senderJid, `✅ Perfetto! Il tuo amico è stato aggiunto. Ci vediamo in campo! 🎾`, messageKey);
 
     await notifyAdmin(
-        match.club,
-        `👤 Nuovo giocatore onboardato\nTelefono: ${friendPhone}\nLivello assegnato: ${skillLevel}\nPartita: ${(match as any).court} ${match.startTime.toLocaleTimeString('it-IT')}\nPortato da: ${invitedByPhone}\n➡️ Aggiungere al gruppo WhatsApp livello: ${skillLevel}`
+        matchData.club,
+        `👤 Nuovo giocatore onboardato\nTelefono: ${friendPhone}\nLivello assegnato: ${skillLevel}\nPartita: ${matchData.court?.name || 'campo'} ${matchData.startTime.toLocaleTimeString('it-IT')}\nPortato da: ${invitedByPhone}\n➡️ Aggiungere al gruppo WhatsApp livello: ${skillLevel}`
     );
 
     await clearAwaitingState(senderJid);
