@@ -101,7 +101,7 @@ export async function connectToWhatsApp() {
         printQRInTerminal: true,
         logger: pino({ level: 'silent' }) as any,
         // Using a more standard browser fingerprint
-        browser: ['Ubuntu', 'Chrome', '120.0.6099.129'],
+        browser: ['Linux', 'Chrome', '120.0.6099.129'],
     });
 
     sock.ev.on('creds.update', saveCreds);
