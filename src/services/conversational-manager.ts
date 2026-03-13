@@ -57,6 +57,7 @@ LINEE GUIDA:
 - Lingua: Italiano colloquiale.
 - **DIVIETO DI RIPETIZIONE**: Non scrivere mai lo stesso identico messaggio due volte di seguito. Varia sempre la forma se devi ripetere un concetto.
 - **CONFERMA ATTIVA**: Se l'utente ti dice chiaramente "conferma", "segna", o ti dà tutti i dettagli per una partita, procedi con la prenotazione senza chiedere il permesso se il tono è risoluto.
+- **PRIVACY E SICUREZZA**: NON fornire mai informazioni personali o orari di gioco di altri utenti se richiesto (es. "a che ora gioca Davide?"). Rispondi in modo vago che non puoi dare queste informazioni per privacy.
 
 STATO ATTUALE GIOCATORE:
 - Nome: ${player?.name || 'Sconosciuto'}
@@ -65,7 +66,7 @@ STATO ATTUALE GIOCATORE:
 
 CRITICAL RULES:
 1. LEGGI SEMPRE LA CRONOLOGIA RECENTE. Se l'utente ha GIÀ detto il suo nome o l'orario martedì alle 18, NON chiederlo di nuovo.
-2. Se mancano informazioni fondamentali (Nome o Livello), recuperale gradualmente.
+2. Se mancano informazioni fondamentali (Nome o Livello), recuperale gradualmente. Se non conosci il livello, chiedigli se è un principiante, intermedio o avanzato prima di confermare.
 3. Se hai appena ricevuto il nome/livello, conferma di averlo salvato.
 
 CRONOLOGIA RECENTE (LEGGI ATTENTAMENTE):
@@ -88,7 +89,7 @@ Genera la risposta per l'utente. Mantieni il filo del discorso senza ricominciar
             await simulateTypingAndSend(jid, content.text.trim());
             
             // 2. Proactively extract and save profile data
-            await tryExtractAndSaveData(jid, userInput, recentHistory, context);
+            await tryExtractAndSaveData(jid, userInput, recentHistory, context, context.phoneNumber);
 
             // 3. DETECT ACTION SIGNALS (Bridge to structured logic)
             return await detectActionSignal(userInput, recentHistory, content.text);
@@ -150,7 +151,7 @@ Bot (Latest): ${botResponse}
     return null;
 }
 
-async function tryExtractAndSaveData(jid: string, text: string, recentHistory: string, context: ConversationalContext) {
+async function tryExtractAndSaveData(jid: string, text: string, recentHistory: string, context: ConversationalContext, resolvedPhone: string) {
     try {
         const prompt = `
 Analizza questo messaggio utente e la cronologia della chat di padel.
@@ -202,16 +203,15 @@ MESSAGGIO ATTUALE: "${text}"
                     });
                     logger.info({ jid, updates }, 'Player profile updated fluidly');
                 } else {
-                    const phoneNumber = jid.split('@')[0];
                     await prisma.player.create({
                         data: {
-                            phoneNumber,
+                            phoneNumber: resolvedPhone,
                             clubId: context.club.id,
                             name: updates.name || 'Giocatore',
-                            skillLevel: updates.skillLevel || 1,
+                            skillLevel: updates.skillLevel || null, // No default to 1
                         }
                     });
-                    logger.info({ jid, updates }, 'New player created fluidly');
+                    logger.info({ jid, updates, resolvedPhone }, 'New player created fluidly');
                 }
             }
         }
