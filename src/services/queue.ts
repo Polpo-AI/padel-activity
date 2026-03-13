@@ -54,7 +54,9 @@ export const connection = {
 // QUEUES
 // ─────────────────────────────────────────────
 
-export const waveQueue = new Queue('wave', {
+const prefix = process.env.QUEUE_PREFIX ? `${process.env.QUEUE_PREFIX}:` : '';
+
+export const waveQueue = new Queue(`${prefix}wave`, {
     connection,
     defaultJobOptions: {
         attempts: 3,
@@ -64,7 +66,7 @@ export const waveQueue = new Queue('wave', {
     },
 });
 
-export const reminderQueue = new Queue('reminder', {
+export const reminderQueue = new Queue(`${prefix}reminder`, {
     connection,
     defaultJobOptions: {
         attempts: 3,
@@ -74,7 +76,7 @@ export const reminderQueue = new Queue('reminder', {
     },
 });
 
-export const maintenanceQueue = new Queue('maintenance', {
+export const maintenanceQueue = new Queue(`${prefix}maintenance`, {
     connection,
     defaultJobOptions: {
         attempts: 2,
@@ -83,7 +85,7 @@ export const maintenanceQueue = new Queue('maintenance', {
     },
 });
 
-export const recoveryQueue = new Queue('recovery', {
+export const recoveryQueue = new Queue(`${prefix}recovery`, {
     connection,
     defaultJobOptions: {
         attempts: 3,
@@ -99,7 +101,8 @@ export const recoveryQueue = new Queue('recovery', {
 
 const failureCounters = new Map<string, number>();
 
-function setupQueueEvents(queueName: string) {
+function setupQueueEvents(name: string) {
+    const queueName = `${prefix}${name}`;
     const events = new QueueEvents(queueName, { connection });
 
     events.on('failed', async ({ jobId, failedReason }) => {
