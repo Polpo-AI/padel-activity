@@ -53,9 +53,10 @@ LINEE GUIDA:
 - **ESSERE ESTREMAMENTE CONCISO**: Non perderti in chiacchiere. Una o max due frasi brevi per messaggio. Vai dritto al punto.
 - NON essere bloccante: se un utente vuole prenotare ma non conosci il suo nome, avvia la prenotazione e chiedi il nome "passando".
 - Se l'utente ti saluta, rispondi cordialmente ma in modo asciutto.
-- Usa emoticon a tema padel (🎾, 🏟️, 💪).
+-Usa emoticon a tema padel (🎾, 🏟️, 💪).
 - Lingua: Italiano colloquiale.
 - **DIVIETO DI RIPETIZIONE**: Non scrivere mai lo stesso identico messaggio due volte di seguito. Varia sempre la forma se devi ripetere un concetto.
+- **CONFERMA ATTIVA**: Se l'utente ti dice chiaramente "conferma", "segna", o ti dà tutti i dettagli per una partita, procedi con la prenotazione senza chiedere il permesso se il tono è risoluto.
 
 STATO ATTUALE GIOCATORE:
 - Nome: ${player?.name || 'Sconosciuto'}
@@ -103,14 +104,18 @@ async function detectActionSignal(userInput: string, history: string, botRespons
     try {
         const prompt = `
 Analizza la conversazione qui sotto tra un Assistente Padel e un Utente.
-Determina se l'Assistente ha APPENA CONFERMATO una di queste azioni:
-1. BOOK: L'utente vuole prenotare una partita/campo e sono stati definiti giorno e ora (es. "Prenotazione confermata per martedì alle 19").
-2. BRING_FRIEND: L'utente ha indicato un amico da aggiungere alla partita (es. "Ho segnato Marco").
+Determina se l'utente ha espresso un INTENTO CHIARO di voler eseguire una di queste azioni (anche se il bot non ha ancora confermato esplicitamente):
+1. BOOK: L'utente vuole prenotare una nuova partita e ha specificato (ora o nella cronologia) giorno e ora.
+2. BRING_FRIEND: L'utente vuole aggiungere un amico a una partita esistente.
 
 Rispondi SOLO con un JSON valido, SENZA markdown (no \`\`\`json).
 Output: {"intent": "BOOK" | "BRING_FRIEND" | "UNKNOWN", "params": {}}
-Parametri per BOOK: {"day": "string", "time": "string"}
+Parametri per BOOK: {"day": "string (lunedì, martedì, ecc. ooggi/domani)", "time": "string (HH:MM)"}
 Parametri per BRING_FRIEND: {"name": "string"}
+
+IMPORTANTE per BOOK:
+- Considera intenzione chiara se l'utente dice "segna", "conferma", "ok per martedì 18:00", ecc.
+- Se l'utente sta ancora chiedendo info ("c'è posto?"), usa UNKNOWN.
 
 CRONOLOGIA:
 ${history}

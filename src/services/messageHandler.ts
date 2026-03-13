@@ -287,8 +287,8 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[]): Pr
 
         // Se l'AI fluida ha rilevato un impegno concreto (BOOK o BRING_FRIEND), bridge verso business logic
         if (fluidAction) {
-            logger.info({ jid, action: fluidAction.intent }, 'Bridging fluid action to structured flow');
-            await routeIntent(jid, phoneNumber, fluidAction.intent, combinedText, contactCards);
+            logger.info({ jid, action: fluidAction.intent, params: fluidAction.params }, 'Bridging fluid action to structured flow');
+            await routeIntent(jid, phoneNumber, fluidAction.intent, combinedText, contactCards, fluidAction.params);
         }
         return;
     }
@@ -308,7 +308,8 @@ async function routeIntent(
     phoneNumber: string,
     intent: string,
     combinedText: string,
-    contactCards: NormalizedMessage[]
+    contactCards: NormalizedMessage[],
+    params?: any
 ): Promise<void> {
     const player = await prisma.player.findFirst({ where: { phoneNumber } });
     if (!player) return;
@@ -326,7 +327,11 @@ async function routeIntent(
     }
 
     if (intent === 'BOOK') {
-        await startBookingFlow(jid, phoneNumber, combinedText);
+        const overrides = params ? {
+            specificDay: params.day,
+            specificTime: params.time
+        } : undefined;
+        await startBookingFlow(jid, phoneNumber, combinedText, undefined, overrides);
         return;
     }
 
@@ -365,8 +370,12 @@ async function routeIntent(
             // Se non c'è un match attivo ma l'utente vuole portare amici, probabilmente è un BOOKING intent
             // che contiene menzione di amici (es. "Vorrei venire con un amico martedì").
             // Instradiamo verso il booking flow invece di bloccare.
-            logger.info({ jid, intent }, 'No active match found for friend intent — routing to startBookingFlow');
-            await startBookingFlow(jid, phoneNumber, combinedText);
+            logger.info({ jid, intent, params }, 'No active match found for friend intent — routing to startBookingFlow');
+            const overrides = params ? {
+                specificDay: params.day,
+                specificTime: params.time
+            } : undefined;
+            await startBookingFlow(jid, phoneNumber, combinedText, undefined, overrides);
             return;
         }
 

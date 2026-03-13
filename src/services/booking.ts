@@ -31,6 +31,7 @@ interface BookingContext {
     playerCount: number;        // quante persone (incluso Mario)
     timeSlot: 'morning' | 'afternoon' | 'evening' | 'specific' | 'unknown';
     specificTime?: string;      // es. "20:30" se specificato
+    specificDay?: string | null; // es. "martedì"
     guaranteesFull: boolean;    // Mario dice "siamo già in 4" o simile
 }
 
@@ -43,6 +44,7 @@ Estrai le seguenti informazioni e rispondi SOLO con un JSON:
   "playerCount": numero intero (quante persone vengono, incluso chi scrive, default 1),
   "timeSlot": "morning" | "afternoon" | "evening" | "specific" | "unknown",
   "specificTime": "HH:MM" oppure null,
+  "specificDay": "lunedì" | "martedì" | "mercoledì" | "giovedì" | "venerdì" | "sabato" | "domenica" | "oggi" | "domani" | null,
   "guaranteesFull": true se dice che sono già in 4 o che chiudono il campo da soli, false altrimenti
 }
 
@@ -78,7 +80,7 @@ Rispondi SOLO con il JSON.
         logger.error({ err }, 'Error extracting booking context');
     }
 
-    return { playerCount: 1, timeSlot: 'unknown', guaranteesFull: false };
+    return { playerCount: 1, timeSlot: 'unknown', guaranteesFull: false, specificDay: null };
 }
 
 // ─────────────────────────────────────────────
@@ -89,12 +91,23 @@ export async function startBookingFlow(
     jid: string,
     phoneNumber: string,
     messageText: string,
-    messageKey?: any
+    messageKey?: any,
+    overrides?: Partial<BookingContext>
 ): Promise<void> {
     const player = await prisma.player.findFirst({ where: { phoneNumber } });
     if (!player) return;
 
     const context = await extractBookingContext(messageText);
+    
+    // Apply overrides from action detection (e.g. extracted day/time)
+    if (overrides) {
+        if (overrides.specificDay) context.specificDay = overrides.specificDay;
+        if (overrides.specificTime) {
+            context.specificTime = overrides.specificTime;
+            context.timeSlot = 'specific';
+        }
+    }
+
     logger.info(`Booking context: ${JSON.stringify(context)}`);
 
     // Edge case: Mario garantisce di chiudere il campo
@@ -578,11 +591,28 @@ function getTimeWindow(
     context: BookingContext,
     now: Date
 ): { from: Date | null; to: Date | null } {
-    const today = new Date(now);
+    let targetDate = new Date(now);
+
+    if (context.specificDay) {
+        const dayMap: Record<string, number> = {
+            'domenica': 0, 'lunedì': 1, 'martedì': 2, 'mercoledì': 3,
+            'giovedì': 4, 'venerdì': 5, 'sabato': 6
+        };
+
+        if (context.specificDay === 'domani') {
+            targetDate.setDate(targetDate.getDate() + 1);
+        } else if (context.specificDay !== 'oggi' && dayMap[context.specificDay] !== undefined) {
+            const targetDay = dayMap[context.specificDay];
+            const currentDay = targetDate.getDay();
+            let diff = targetDay - currentDay;
+            if (diff <= 0) diff += 7; // Prossimo occorrenza del giorno
+            targetDate.setDate(targetDate.getDate() + diff);
+        }
+    }
 
     if (context.specificTime) {
         const [h, m] = context.specificTime.split(':').map(Number);
-        const specific = new Date(today);
+        const specific = new Date(targetDate);
         specific.setHours(h, m, 0, 0);
         return {
             from: new Date(specific.getTime() - 30 * 60 * 1000),
@@ -599,9 +629,9 @@ function getTimeWindow(
     const slot = slots[context.timeSlot];
     if (!slot) return { from: null, to: null };
 
-    const from = new Date(today);
+    const from = new Date(targetDate);
     from.setHours(slot.from, 0, 0, 0);
-    const to = new Date(today);
+    const to = new Date(targetDate);
     to.setHours(slot.to, 0, 0, 0);
 
     return { from, to };
