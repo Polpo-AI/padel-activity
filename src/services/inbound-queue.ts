@@ -12,7 +12,7 @@ import { getRedis } from './queue';
 
 const logger = pino({ level: 'info' });
 
-const DEBOUNCE_MS = 5000;
+const DEBOUNCE_MS = 10000;
 const REDIS_TTL_S = 600;         // 10 minuti
 const RECOVERY_DELAY_MS = 30000; // 30s dopo startup
 

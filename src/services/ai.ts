@@ -37,7 +37,8 @@ export type Intent =
 
 export async function classifyIntent(
     text: string,
-    context?: string
+    context?: string,
+    history?: string
 ): Promise<{ intent: Intent; confident: boolean }> {
     try {
         const result = await withRetry(
@@ -49,9 +50,12 @@ export async function classifyIntent(
                     role: 'user',
                     content: `Classifica questa risposta WhatsApp (matchmaking padel).
 ${context ? `Contesto: ${context}` : ''}
+${history ? `Cronologia recente:\n${history}` : ''}
+
 Rispondi SOLO con JSON: {"intent":"VALORE","confident":true/false}
 Valori: YES, NO, CANCEL, BRING_FRIEND, BRING_GROUP, WHOLE_COURT, OPT_OUT, QUESTION, BOOK, UNKNOWN
-confident: true solo se molto sicuro.
+confident: true solo se molto sicuro basandoti anche sulla cronologia (es. se l'utente dice orario dopo che gli è stato chiesto).
+
 Messaggio: "${text}"`,
                 }],
             }),

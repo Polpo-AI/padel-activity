@@ -334,9 +334,15 @@ export async function createGroupAndAddPlayers(
         return 'dry-run-group-id';
     }
     if (!sock) throw new Error('WhatsApp socket not initialized');
+
+    // Filter out JIDs that don't look like WhatsApp IDs (e.g. guests/placeholders)
+    const validJids = playerJids
+        .map(formatJid)
+        .filter(jid => jid.includes('@s.whatsapp.net') || jid.includes('@lid'));
+
     try {
-        const group = await sock.groupCreate(groupName, playerJids.map(formatJid));
-        logger.info(`Group ${group.id} created successfully.`);
+        const group = await sock.groupCreate(groupName, validJids);
+        logger.info(`Group ${group.id} created successfully with ${validJids.length} participants.`);
 
         // Organic delay before typing the first group message
         await jitteredSleep(randomInt(3000, 6000), 500);
@@ -344,6 +350,7 @@ export async function createGroupAndAddPlayers(
         await jitteredSleep(randomInt(2000, 4500), 300);
         await sock.sendPresenceUpdate('paused', group.id);
         await jitteredSleep(300, 100);
+        
         await sock.sendMessage(group.id, { text: confirmationMessage });
 
         return group.id;

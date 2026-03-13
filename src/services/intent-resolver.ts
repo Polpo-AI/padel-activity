@@ -38,12 +38,14 @@ interface ClassificationResult {
 
 export async function classifyWithConfidence(
     messageText: string,
-    context?: string
+    context?: string,
+    history?: string
 ): Promise<ClassificationResult> {
     const prompt = `
 Classifica questa risposta WhatsApp ricevuta da un sistema di matchmaking padel.
 
-${context ? `Contesto della conversazione: ${context}` : ''}
+${context ? `Contesto immediato: ${context}` : ''}
+${history ? `Cronologia chat recente:\n${history}` : ''}
 
 Rispondi con un JSON esatto: {"intent": "VALORE", "confident": true/false}
 
@@ -59,7 +61,7 @@ Valori possibili per intent:
 - BOOK (vuole prenotare una partita spontaneamente)
 - UNKNOWN (non classificabile)
 
-confident: true SOLO se sei molto sicuro. false se il messaggio è ambiguo.
+confident: true SOLO se sei molto sicuro basandoti anche sulla cronologia (es. se l'utente dice un orario dopo che gli è stato chiesto).
 
 Messaggio: "${messageText}"
 

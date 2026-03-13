@@ -150,19 +150,12 @@ export async function processFriendPhone(
 ): Promise<void> {
     const { matchId, invitedByPhone } = pendingState;
 
-    const friendPhone = contactInfo?.phone || await extractPhoneNumber(messageText);
-    if (!friendPhone) {
-        await simulateTypingAndSend(
-            senderJid,
-            "Non ho trovato un numero valido nel messaggio. Mandamelo nel formato +393471234567 😊",
-            messageKey
-        );
-        return;
-    }
+    let friendPhone = contactInfo?.phone || await extractPhoneNumber(messageText);
+    const friendName = contactInfo?.name || (messageText.length < 30 ? messageText.trim() : null);
 
     const match = await prisma.match.findUnique({
         where: { id: matchId },
-        include: { MatchPlayer: true, club: true },
+        include: { MatchPlayer: { include: { player: true } }, club: true, court: true },
     });
 
     if (!match || match.status !== 'OPEN') {
@@ -171,25 +164,67 @@ export async function processFriendPhone(
         return;
     }
 
-    const spotsLeft = match.playersNeeded - match.MatchPlayer.length;
+    const spotsLeft = match.playersNeeded - match.MatchPlayer.filter(mp => !mp.leftAt).length;
     if (spotsLeft <= 0) {
         await simulateTypingAndSend(senderJid, "Ops, qualcuno ha preso l'ultimo posto proprio adesso! 😅", messageKey);
         await clearAwaitingState(senderJid);
         return;
     }
 
-    const existingPlayer = await prisma.player.findFirst({ where: { phoneNumber: friendPhone } });
     const invitedByPlayer = await prisma.player.findFirst({ where: { phoneNumber: invitedByPhone } });
+
+    // IF NO PHONE: Create a Guest Placeholder
+    if (!friendPhone) {
+        const guestId = `GUEST_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+        const guestName = friendName || "Ospite";
+
+        const guestPlayer = await prisma.player.create({
+            data: {
+                phoneNumber: guestId, // Use fake identifier for guest
+                name: `${guestName} di ${invitedByPlayer?.name || invitedByPhone}`,
+                skillLevel: invitedByPlayer?.skillLevel || 3,
+                clubId: match.clubId,
+                active: false // Guests are not active searchable players
+            }
+        });
+
+        await prisma.matchPlayer.create({ data: { matchId, playerId: guestPlayer.id } });
+
+        await simulateTypingAndSend(
+            senderJid,
+            `Perfetto! Ho riservato un posto per "${guestName}". Quando hai il suo numero mandamelo pure, così lo aggiungo al gruppo! 🎾`,
+            messageKey
+        );
+
+        // If it was the last spot, match is filled
+        if (spotsLeft === 1) {
+            const { handleMatchFilled } = await import('./messageHandler');
+            await prisma.match.update({ where: { id: matchId }, data: { status: 'LOCKED' } });
+            await handleMatchFilled(matchId, match.startTime);
+        }
+
+        await clearAwaitingState(senderJid);
+        return;
+    }
+
+    // NORMAL PHONE FLOW
+    const existingPlayer = await prisma.player.findFirst({
+        where: { phoneNumber: friendPhone, clubId: match.clubId }
+    });
 
     if (existingPlayer) {
         const alreadyIn = await prisma.matchPlayer.findUnique({
             where: { matchId_playerId: { matchId, playerId: existingPlayer.id } },
         });
 
-        if (alreadyIn) {
+        if (alreadyIn && !alreadyIn.leftAt) {
             await simulateTypingAndSend(senderJid, `${existingPlayer.name || 'Il tuo amico'} è già nella partita! 🎾`, messageKey);
         } else {
-            await prisma.matchPlayer.create({ data: { matchId, playerId: existingPlayer.id } });
+            await prisma.matchPlayer.upsert({
+                where: { matchId_playerId: { matchId, playerId: existingPlayer.id } },
+                create: { matchId, playerId: existingPlayer.id },
+                update: { leftAt: null }
+            });
             await prisma.invitation.create({
                 data: { matchId, playerId: existingPlayer.id, status: 'ACCEPTED', isFriendInvite: true, invitedById: invitedByPlayer?.id },
             });
@@ -197,15 +232,16 @@ export async function processFriendPhone(
             const timeStr = match.startTime.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
             await simulateTypingAndSend(
                 friendPhone,
-                `Ciao ${existingPlayer.name || ''}! Ti ha aggiunto alla partita di padel ${(match as any).court} alle ${timeStr}. Ci vediamo lì! 🎾`
+                `Ciao ${existingPlayer.name || ''}! Ti ha aggiunto alla partita di padel ${match.court?.name || 'campo'} alle ${timeStr}. Ci vediamo lì! 🎾`
             );
 
             await simulateTypingAndSend(senderJid, `✅ ${existingPlayer.name || friendPhone} aggiunto! Ci vediamo in campo 🎾`, messageKey);
 
-            await notifyAdmin(
-                match.club,
-                `👤 Nuovo giocatore aggiunto a partita\nPartita: ${(match as any).court} ${match.startTime.toLocaleTimeString('it-IT')}\nAggiunto: ${existingPlayer.name || friendPhone} (${friendPhone})\nPortato da: ${invitedByPhone}\n➡️ Aggiungere al gruppo WhatsApp del livello appropriato`
-            );
+            if (spotsLeft === 1) {
+                const { handleMatchFilled } = await import('./messageHandler');
+                await prisma.match.update({ where: { id: matchId }, data: { status: 'LOCKED' } });
+                await handleMatchFilled(matchId, match.startTime);
+            }
         }
     } else {
         await prisma.pendingOnboarding.create({
@@ -222,13 +258,12 @@ export async function processFriendPhone(
             messageKey
         );
 
-        // ✅ FIX B: aggiorna stato Redis con nuovo role
         await setAwaitingState(senderJid, 'AWAITING_FRIEND_LEVEL', {
             matchId,
             friendPhone,
             invitedByPhone,
         });
-        return; // non fare clearAwaitingState — aspettiamo il livello
+        return;
     }
 
     await clearAwaitingState(senderJid);

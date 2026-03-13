@@ -51,6 +51,7 @@ import {
 import pino from 'pino';
 import { simulateTypingAndSend, createGroupAndAddPlayers, downloadMediaMessage } from './whatsapp';
 import { reminderQueue } from './queue';
+import { handleFluidConversation } from './conversational-manager';
 
 const logger = pino({ level: 'info' });
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -206,10 +207,22 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[]): Pr
         }
     }
 
+    // ─────────────────────────────────────────
+    // STEP 2: Recupero storia recente
+    // ─────────────────────────────────────────
+    const recentMessages = await prisma.whatsAppMessage.findMany({
+        where: { chatId: jid },
+        take: 15,
+        orderBy: { timestamp: 'desc' }
+    });
+    const historyText = recentMessages.slice().reverse()
+        .map(m => `${m.role === 'USER' ? 'User' : 'Bot'}: ${m.content}`)
+        .join('\n');
+
     // 1e. Clarification (intent poco chiaro, tentativi in corso)
     const unclearState = await getUnclearState(jid);
     if (unclearState && combinedText) {
-        const result = await classifyWithConfidence(combinedText, unclearState.context);
+        const result = await classifyWithConfidence(combinedText, unclearState.context, historyText);
         if (result.confident && result.intent !== 'UNKNOWN') {
             await clearUnclearState(jid);
             // Riprocessa con intent chiaro
@@ -228,66 +241,59 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[]): Pr
     }
 
     // ─────────────────────────────────────────
-    // STEP 2: giocatore sconosciuto
+    // STEP 2: risoluzione club e caricamento player
     // ─────────────────────────────────────────
 
-    const player = await prisma.player.findFirst({ where: { phoneNumber } });
-
-    if (!player) {
-        // ✅ FIX A: invece di findFirst() generico, tentiamo di risalire al club
-        // dal gruppo WhatsApp di provenienza del messaggio (se presente).
-        // Fallback sicuro: se c'è 1 solo club nel sistema, usa quello.
-        let club = null;
-        const clubCount = await prisma.club.count();
-        if (clubCount === 1) {
-            club = await prisma.club.findFirst();
-        } else {
-            // Cerca club che ha questo JID nei suoi groupJids
-            club = await prisma.club.findFirst({
-                where: { groupJids: { has: jid } },
-            });
-        }
-
-        await startSingleOnboarding(jid, {
-            clubId: club?.id || '',
-            botName: club?.name || 'Padel Bot',
-            askAvailability: false,
-            askTimePreference: false,
-            allowMixedLevels: false,
-            maxDailyMessages: 2,
-            notifyAdminOnNewPlayer: !!club?.adminPhone,
-        });
-        return;
+    const player = await prisma.player.findFirst({ where: { phoneNumber, clubId: { not: '' } } });
+    
+    // Identifica il club
+    let club = null;
+    const clubCount = await prisma.club.count();
+    if (clubCount === 1) {
+        club = await prisma.club.findFirst();
+    } else {
+        club = await prisma.club.findFirst({ where: { groupJids: { has: jid } } });
     }
+    if (!club) club = await prisma.club.findFirst(); // fallback al primo se proprio non lo sappiamo
 
     // ─────────────────────────────────────────
-    // STEP 3: classifica intent
+    // STEP 3: classifica intent e routing fluido
     // ─────────────────────────────────────────
 
     let intent: string;
     let confident: boolean;
 
     if (contactCards.length > 0 && !combinedText) {
-        // Solo card senza testo → BRING_FRIEND diretto
         intent = 'BRING_FRIEND';
         confident = true;
     } else if (combinedText) {
-        const result = await classifyWithConfidence(combinedText);
+        const result = await classifyWithConfidence(combinedText, undefined, historyText);
         intent = result.intent;
         confident = result.confident;
     } else {
         return;
     }
 
-    // Intent non confident → avvia clarification
-    if (!confident || intent === 'UNKNOWN') {
-        const availableIntents = getAvailableIntents(player);
-        await setUnclearState(jid, 1, buildContext(intent, combinedText), availableIntents as any);
-        await handleUnclearIntent(jid, combinedText, 0, buildContext(intent, combinedText), availableIntents as any);
+    // Se l'utente è sconosciuto O l'intent non è chiarissimo O è una domanda generica
+    // usiamo il ConversationalManager naturale invece del flusso rigido.
+    if (!player || !confident || intent === 'UNKNOWN' || intent === 'QUESTION') {
+        const fluidAction = await handleFluidConversation({
+            jid,
+            phoneNumber,
+            player,
+            club,
+            recentMessages: recentMessages.slice().reverse()
+        }, combinedText);
+
+        // Se l'AI fluida ha rilevato un impegno concreto (BOOK o BRING_FRIEND), bridge verso business logic
+        if (fluidAction) {
+            logger.info({ jid, action: fluidAction.intent }, 'Bridging fluid action to structured flow');
+            await routeIntent(jid, phoneNumber, fluidAction.intent, combinedText, contactCards);
+        }
         return;
     }
 
-    // Delay umano
+    // Delay umano per intent confermati
     await sleep(randomInt(8, 35) * 1000);
 
     await routeIntent(jid, phoneNumber, intent as any, combinedText, contactCards);
@@ -635,19 +641,50 @@ async function resolveDoubleInvitation(
 // MATCH FILLED — sequenza di chiusura
 // ─────────────────────────────────────────────
 
-async function handleMatchFilled(matchId: string, startTime: Date): Promise<void> {
+export async function handleMatchFilled(matchId: string, startTime: Date): Promise<void> {
     logger.info(`Match ${matchId} LOCKED.`);
 
     const confirmed = await prisma.matchPlayer.findMany({
         where: { matchId, leftAt: null },
         include: { player: true },
+        orderBy: { joinedAt: 'asc' }
     });
 
-    const match = await prisma.match.findUnique({ where: { id: matchId }, include: { club: true, court: true } });
+    const match = await prisma.match.findUnique({ 
+        where: { id: matchId }, 
+        include: { club: true, court: true } 
+    });
+    
+    if (!match) {
+        logger.error({ matchId }, 'Match not found in handleMatchFilled');
+        return;
+    }
+
     const timeStr = startTime.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
-    const groupName = `Padel ${timeStr} - ${match?.court?.name || ''}`;
-    const confirmationMsg = `Partita confermata! 🎾\n📍 ${match?.court?.name || ''}\n🕐 Ore ${timeStr}\nBuona partita a tutti!`;
-    const playerPhones = confirmed.map((m: any) => m.player.phoneNumber as string);
+    const dateStr = startTime.toLocaleDateString('it-IT', { weekday: 'long', day: 'numeric', month: 'long' });
+    const groupName = `Padel ${timeStr} - ${match.court?.name || 'Campo'}`;
+
+    // Build rich confirmation message
+    const playerList = confirmed.map((mp, i) => `${i + 1}. ${mp.player.name || 'Giocatore'}`).join('\n');
+    const confirmationMsg = `
+✨ **PARTITA CONFERMATA!** 🎾
+
+🏟️ **Circolo**: ${match.club?.name || 'Padel Club'}
+📍 **Campo**: ${match.court?.name || 'Da definire'}
+📅 **Data**: ${dateStr}
+🕐 **Orario**: ${timeStr}
+
+👥 **Giocatori**:
+${playerList}
+
+🌟 Buon divertimento a tutti! 💪🎾🏁
+`.trim();
+
+    // Filter players that have a valid JID/Phone for the WhatsApp group
+    // Guests or placeholder players (with fake identifiers) won't be added to the physical group
+    const playerPhones = confirmed
+        .filter(mp => mp.player.phoneNumber && (mp.player.phoneNumber.length > 5)) // basic check for real phone
+        .map(mp => mp.player.phoneNumber);
 
     try {
         const groupId = await createGroupAndAddPlayers(groupName, playerPhones, confirmationMsg);
