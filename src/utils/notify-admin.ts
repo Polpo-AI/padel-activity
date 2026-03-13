@@ -61,7 +61,13 @@ export async function notifyAdmin(
     }
 
     try {
-        const { sendMessage } = await import('../services/whatsapp');
+        const { sendMessage, getConnectionStatus } = await import('../services/whatsapp');
+        
+        if (getConnectionStatus() !== 'open') {
+            logger.warn({ key }, 'Cannot send admin notification: WhatsApp not connected');
+            return;
+        }
+
         const adminJid = `${phone.replace(/\D/g, '')}@s.whatsapp.net`;
         await sendMessage(adminJid, `🚨 *${name ?? 'Padel Bot'} — Alert*\n\n${message}`);
         notificationCooldowns.set(key, Date.now());

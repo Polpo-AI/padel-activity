@@ -1,0 +1,101 @@
+
+[1m[46m RUN [49m[22m [36mv4.1.0 [39m[90mC:/Workspace/Padel/padel-activity[39m
+
+ [32m✓[39m src/tests/matchmaker.test.ts [2m([22m[2m7 tests[22m[2m)[22m[32m 15[2mms[22m[39m
+{"level":30,"time":1773352815887,"pid":13156,"hostname":"DESKTOP-0AK9TL6","msg":"Player p1: showUpRate 0.330 → 0.430 (showed=true, preavviso=360min)"}
+{"level":30,"time":1773352815892,"pid":13156,"hostname":"DESKTOP-0AK9TL6","msg":"Player p2: showUpRate 0.800 → 0.830 (showed=true, preavviso=360min)"}
+{"level":30,"time":1773352815895,"pid":13156,"hostname":"DESKTOP-0AK9TL6","msg":"Player p3: showUpRate 0.500 → 0.425 (showed=false, preavviso=360min)"}
+{"level":30,"time":1773352815896,"pid":13156,"hostname":"DESKTOP-0AK9TL6","msg":"Player p4: showUpRate 0.950 → 0.958 (showed=true, preavviso=60min +LM bonus)"}
+{"level":30,"time":1773352815898,"pid":13156,"hostname":"DESKTOP-0AK9TL6","msg":"Player p5: showUpRate 0.500 → 0.575 (showed=true, preavviso=360min)"}
+{"level":30,"time":1773352815898,"pid":13156,"hostname":"DESKTOP-0AK9TL6","msg":"Player p6: showUpRate 0.500 → 0.425 (showed=false, preavviso=60min)"}
+ [32m✓[39m src/tests/scoring.test.ts [2m([22m[2m15 tests[22m[2m)[22m[32m 28[2mms[22m[39m
+ [31m❯[39m src/tests/intent-resolver.test.ts [2m([22m[2m9 tests[22m[2m | [22m[31m4 failed[39m[2m)[22m[32m 34[2mms[22m[39m
+[31m     [31m×[31m setUnclearState salva il payload su Redis[39m[32m 16[2mms[22m[39m
+     [32m✓[39m getUnclearState ritorna null se Redis non ha la chiave[32m 1[2mms[22m[39m
+[31m     [31m×[31m getUnclearState deserializza correttamente il payload[39m[32m 7[2mms[22m[39m
+[31m     [31m×[31m clearUnclearState chiama del su Redis[39m[32m 2[2mms[22m[39m
+     [32m✓[39m ritorna shouldRetry=true per i primi tentativi[32m 1[2mms[22m[39m
+     [32m✓[39m invia un messaggio WhatsApp ad ogni tentativo[32m 0[2mms[22m[39m
+     [32m✓[39m ritorna shouldRetry=false dopo MAX_ATTEMPTS (5)[32m 0[2mms[22m[39m
+[31m     [31m×[31m al limite MAX_ATTEMPTS pulisce lo stato Redis[39m[32m 1[2mms[22m[39m
+     [32m✓[39m al tentativo 4 (CLOSED_QUESTION_AT) invia il menu numerato[32m 1[2mms[22m[39m
+
+[31m⎯⎯⎯⎯⎯⎯⎯[39m[1m[41m Failed Tests 4 [49m[22m[31m⎯⎯⎯⎯⎯⎯⎯[39m
+
+[41m[1m FAIL [22m[49m src/tests/intent-resolver.test.ts[2m > [22mUnclear state (Redis)[2m > [22msetUnclearState salva il payload su Redis
+[31m[1mAssertionError[22m: expected "vi.fn()" to be called with arguments: [ …(4) ][90m
+
+Number of calls: [1m0[22m
+[31m[39m
+[36m [2m❯[22m src/tests/intent-resolver.test.ts:[2m55:27[22m[39m
+    [90m 53|[39m         [35mconst[39m redis [33m=[39m [34mgetRedis[39m()[33m;[39m
+    [90m 54|[39m         await setUnclearState('jid@s.whatsapp.net', 1, 'contesto test'…
+    [90m 55|[39m         [34mexpect[39m(redis[33m.[39m[35mset[39m)[33m.[39m[34mtoHaveBeenCalledWith[39m(
+    [90m   |[39m                           [31m^[39m
+    [90m 56|[39m             [32m'state:unclear:jid@s.whatsapp.net'[39m[33m,[39m
+    [90m 57|[39m             expect[33m.[39m[34mstringContaining[39m([32m'"attempt":1'[39m)[33m,[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/4]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m src/tests/intent-resolver.test.ts[2m > [22mUnclear state (Redis)[2m > [22mgetUnclearState deserializza correttamente il payload
+[31m[1mAssertionError[22m: expected null to deeply equal { attempt: 2, context: 'test', …(1) }[39m
+
+[32m- Expected:[39m
+{
+  "attempt": 2,
+  "availableIntents": [
+    "YES",
+    "NO",
+  ],
+  "context": "test",
+}
+
+[31m+ Received:[39m
+null
+
+[36m [2m❯[22m src/tests/intent-resolver.test.ts:[2m73:24[22m[39m
+    [90m 71|[39m         ([34mgetRedis[39m()[33m.[39m[35mget[39m [35mas[39m any)[33m.[39m[34mmockResolvedValue[39m(payload)[33m;[39m
+    [90m 72|[39m         [35mconst[39m result [33m=[39m [35mawait[39m [34mgetUnclearState[39m([32m'jid@s.whatsapp.net'[39m)[33m;[39m
+    [90m 73|[39m         expect(result).toEqual({ attempt: 2, context: 'test', availabl…
+    [90m   |[39m                        [31m^[39m
+    [90m 74|[39m     })[33m;[39m
+    [90m 75|[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/4]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m src/tests/intent-resolver.test.ts[2m > [22mUnclear state (Redis)[2m > [22mclearUnclearState chiama del su Redis
+[31m[1mAssertionError[22m: expected "vi.fn()" to be called with arguments: [ 'state:unclear:jid@s.whatsapp.net' ][90m
+
+Number of calls: [1m0[22m
+[31m[39m
+[36m [2m❯[22m src/tests/intent-resolver.test.ts:[2m78:32[22m[39m
+    [90m 76|[39m     [34mit[39m([32m'clearUnclearState chiama del su Redis'[39m[33m,[39m [35masync[39m () [33m=>[39m {
+    [90m 77|[39m         [35mawait[39m [34mclearUnclearState[39m([32m'jid@s.whatsapp.net'[39m)[33m;[39m
+    [90m 78|[39m         expect(getRedis().del).toHaveBeenCalledWith('state:unclear:jid…
+    [90m   |[39m                                [31m^[39m
+    [90m 79|[39m     })[33m;[39m
+    [90m 80|[39m })[33m;[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/4]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m src/tests/intent-resolver.test.ts[2m > [22mhandleUnclearIntent[2m > [22mal limite MAX_ATTEMPTS pulisce lo stato Redis
+[31m[1mAssertionError[22m: expected "vi.fn()" to be called with arguments: [ 'state:unclear:test@s.whatsapp.net' ][90m
+
+Number of calls: [1m0[22m
+[31m[39m
+[36m [2m❯[22m src/tests/intent-resolver.test.ts:[2m115:32[22m[39m
+    [90m113|[39m     [34mit[39m([32m'al limite MAX_ATTEMPTS pulisce lo stato Redis'[39m[33m,[39m [35masync[39m () [33m=>[39m {
+    [90m114|[39m         [35mawait[39m [34mhandleUnclearIntent[39m(jid[33m,[39m [32m'boh'[39m[33m,[39m [34m5[39m[33m,[39m [32m'contesto'[39m[33m,[39m intents)[33m;[39m
+    [90m115|[39m         expect(getRedis().del).toHaveBeenCalledWith(`state:unclear:${j…
+    [90m   |[39m                                [31m^[39m
+    [90m116|[39m     })[33m;[39m
+    [90m117|[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/4]⎯[22m[39m
+
+
+[2m Test Files [22m [1m[31m1 failed[39m[22m[2m | [22m[1m[32m2 passed[39m[22m[90m (3)[39m
+[2m      Tests [22m [1m[31m4 failed[39m[22m[2m | [22m[1m[32m27 passed[39m[22m[90m (31)[39m
+[2m   Start at [22m 23:00:14
+[2m   Duration [22m 1.01s[2m (transform 418ms, setup 0ms, import 878ms, tests 77ms, environment 1ms)[22m
+
