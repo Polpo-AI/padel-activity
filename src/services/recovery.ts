@@ -278,7 +278,31 @@ export async function checkMatchTimeouts(): Promise<void> {
     for (const match of expiredMatches) {
         const confirmed = match.MatchPlayer.filter(mp => !mp.leftAt).length;
         const deadlineMinutes = match.club?.deadlineMinutesBeforeMatch ?? 60;
+        const warningMinutes = deadlineMinutes + 30; // 30 min prima del fischio finale
         const minutesUntilMatch = (match.startTime.getTime() - now.getTime()) / 60000;
+
+        // Warning pre-timeout
+        if (minutesUntilMatch < warningMinutes && minutesUntilMatch >= deadlineMinutes && confirmed < match.playersNeeded) {
+            // Usa Redis per non mandare doppioni
+            const { getRedis } = await import('./queue');
+            const redis = getRedis();
+            const warningKey = `warning:timeout:${match.id}`;
+            const alreadySent = await redis.get(warningKey);
+
+            if (!alreadySent) {
+                const timeStr = match.startTime.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
+                const msg = `⚠️ *ULTIMA CHIAMATA*: mancano 30 minuti alla scadenza per la partita delle ${timeStr}. Siamo ancora in ${confirmed}/${match.playersNeeded}. Se non troviamo gli altri a breve, dovrò annullare 😔`;
+                
+                // Notifica referenti
+                const referents = match.MatchPlayer.filter(mp => !mp.leftAt);
+                for (const rp of referents) {
+                    await simulateTypingAndSend(rp.player.phoneNumber, msg);
+                }
+                
+                await redis.set(warningKey, 'sent', 'EX', 60 * 60); // Scade dopo 1h
+                logger.info({ matchId: match.id }, 'Pre-timeout warning sent');
+            }
+        }
 
         if (minutesUntilMatch < deadlineMinutes && confirmed < match.playersNeeded) {
             logger.info(`Match ${match.id} timeout: ${confirmed}/${match.playersNeeded} — cancelling`);

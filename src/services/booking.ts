@@ -33,6 +33,7 @@ interface BookingContext {
     specificTime?: string;      // es. "20:30" se specificato
     specificDay?: string | null; // es. "martedì"
     guaranteesFull: boolean;    // Mario dice "siamo già in 4" o simile
+    friendLevel?: number | null; // se specificato "un amico livello 3"
 }
 
 export async function extractBookingContext(messageText: string): Promise<BookingContext> {
@@ -45,7 +46,8 @@ Estrai le seguenti informazioni e rispondi SOLO con un JSON:
   "timeSlot": "morning" | "afternoon" | "evening" | "specific" | "unknown",
   "specificTime": "HH:MM" oppure null,
   "specificDay": "lunedì" | "martedì" | "mercoledì" | "giovedì" | "venerdì" | "sabato" | "domenica" | "oggi" | "domani" | null,
-  "guaranteesFull": true se dice che sono già in 4 o che chiudono il campo da soli, false altrimenti
+  "guaranteesFull": true se dice che sono già in 4 o che chiudono il campo da soli, false altrimenti,
+  "friendLevel": numero intero 1-4 se specifica il livello dell'amico/i, altrimenti null
 }
 
 Regole per timeSlot:
@@ -378,7 +380,7 @@ export async function continueBookingFlow(
         }
 
         if (state.step === 'AWAITING_TIME_FOR_NEW_MATCH') {
-            await createNewMatch(jid, player, from, state.playerCount, messageKey);
+            await createNewMatch(jid, player, from, state, messageKey);
         } else {
             await searchAndProposeMatches(jid, player, state, from, to!, messageKey);
         }
@@ -401,7 +403,7 @@ export async function continueBookingFlow(
         }
 
         const chosenMatch = matches[choiceIndex];
-        await addPlayerToMatch(jid, player, chosenMatch.id, state.playerCount, messageKey);
+        await addPlayerToMatch(jid, player, chosenMatch.id, state, messageKey);
         await clearBookingState(jid);
         return;
     }
@@ -429,6 +431,25 @@ export async function continueBookingFlow(
         return;
     }
 
+    if (state.step === 'AWAITING_FRIEND_LEVEL') {
+        const match = messageText.match(/[1-4]/);
+        if (match) {
+            const level = parseInt(match[0]);
+            await prisma.player.updateMany({
+                where: { phoneNumber: { startsWith: `FRIEND_${state.matchId}` } },
+                data: { skillLevel: level }
+            });
+            await simulateTypingAndSend(jid, `Ottimo, ho aggiornato il livello! Cerco sostituti adatti 🎾`, messageKey);
+            await clearBookingState(jid);
+        } else {
+            // Se parla di altro o non capisco, non blocchiamo la conversazione fluida.
+            // Il Conversational Manager riprenderà il controllo al prossimo messaggio
+            // se non chiamiamo return o se puliamo qui.
+            // Per ora lasciamo lo stato così l'utente può riprovare o ignorare.
+            return;
+        }
+        return;
+    }
     if (state.step === 'AWAITING_TIME_FOR_GUARANTEED') {
         const timeContext = await extractBookingContext(messageText);
         const now = new Date();
@@ -452,9 +473,10 @@ async function createNewMatch(
     jid: string,
     player: any,
     startTime: Date,
-    playerCount: number,
+    context: BookingContext,
     messageKey?: any
 ): Promise<void> {
+    const playerCount = context.playerCount;
     // ✅ FIX J/M: usa clubId dal player — non findFirst()
     const clubId = player.clubId;
 
@@ -484,6 +506,21 @@ async function createNewMatch(
     await prisma.matchPlayer.create({ data: { matchId: match.id, playerId: player.id } });
     await prisma.invitation.create({ data: { matchId: match.id, playerId: player.id, status: 'ACCEPTED' } });
 
+    // ✅ ADD FRIENDS: Register placeholders for friends
+    for (let i = 1; i < playerCount; i++) {
+        // Create an "anonymous" friend if not already detailed
+        const friend = await prisma.player.create({
+            data: {
+                phoneNumber: `FRIEND_${match.id}_${i}`,
+                name: `Amico di ${player.name || 'Giocatore'}`,
+                skillLevel: context.friendLevel ?? player.skillLevel,
+                active: false, // Temporary player
+                clubId,
+            }
+        });
+        await prisma.matchPlayer.create({ data: { matchId: match.id, playerId: friend.id } });
+    }
+
     const spotsNeeded = 4 - playerCount;
     if (spotsNeeded > 0) {
         await waveQueue.add('process-wave', {
@@ -498,9 +535,21 @@ async function createNewMatch(
     const timeStr = startTime.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
     await simulateTypingAndSend(
         jid,
-        `Fatto! Ho aperto una partita alle ${timeStr} 🎾 ${spotsNeeded > 0 ? `Cerco altri ${spotsNeeded} giocatori e ti aggiorno!` : 'Siete al completo!'}`,
+        `Fatto! Ho aperto una partita alle ${timeStr} 🏟️ ${spotsNeeded > 0 ? `Cerco altri ${spotsNeeded} giocatori e ti aggiorno!` : 'Siete al completo!'}`,
         messageKey
     );
+
+    if (playerCount > 1 && !context.friendLevel) {
+        // Ask for friend's level after a small organic delay
+        setTimeout(async () => {
+            await simulateTypingAndSend(jid, `A proposito, che livello ${playerCount === 2 ? 'è il tuo amico' : 'sono i tuoi amici'} (1-4)?`);
+            await setBookingState(jid, { 
+                step: 'AWAITING_FRIEND_LEVEL', 
+                matchId: match.id,
+                friendCount: playerCount - 1 
+            });
+        }, 3000);
+    }
 }
 
 // ─────────────────────────────────────────────
@@ -511,9 +560,10 @@ async function addPlayerToMatch(
     jid: string,
     player: any,
     matchId: string,
-    playerCount: number,
+    context: BookingContext,
     messageKey?: any
 ): Promise<void> {
+    const playerCount = context.playerCount;
     const match = await prisma.match.findUnique({
         where: { id: matchId },
         include: { MatchPlayer: true, court: true },
@@ -546,13 +596,38 @@ async function addPlayerToMatch(
         });
     }
 
+    // ✅ ADD FRIENDS: Register placeholders for friends
+    for (let i = 1; i < playerCount; i++) {
+        const friend = await prisma.player.create({
+            data: {
+                phoneNumber: `FRIEND_${match.id}_${player.id}_${i}`,
+                name: `Amico di ${player.name || 'Giocatore'}`,
+                skillLevel: player.skillLevel,
+                active: false,
+                clubId: player.clubId,
+            }
+        });
+        await prisma.matchPlayer.create({ data: { matchId: match.id, playerId: friend.id } });
+    }
+
     const timeStr = match.startTime.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
-    const spotsLeft = match.playersNeeded - match.MatchPlayer.filter((mp: any) => !mp.leftAt).length - 1;
+    const spotsLeft = match.playersNeeded - match.MatchPlayer.filter((mp: any) => !mp.leftAt).length - playerCount;
     await simulateTypingAndSend(
         jid,
-        `Perfetto! Ti ho segnato per le ${timeStr} 🎾 ${spotsLeft > 0 ? `Mancano ancora ${spotsLeft} giocatori, ti aggiorno!` : 'Siete al completo!'}`,
+        `Perfetto! Vi ho segnato per le ${timeStr} 🏟️ ${spotsLeft > 0 ? `Mancano ancora ${spotsLeft} giocatori, ti aggiorno!` : 'Siete al completo!'}`,
         messageKey
     );
+
+    if (playerCount > 1) {
+        setTimeout(async () => {
+            await simulateTypingAndSend(jid, `Che livello ${playerCount === 2 ? 'è il tuo amico' : 'sono i tuoi amici'}? (1-4) 🎾`);
+            await setBookingState(jid, { 
+                step: 'AWAITING_FRIEND_LEVEL', 
+                matchId: match.id,
+                friendCount: playerCount - 1 
+            });
+        }, 3000);
+    }
 }
 
 async function addFriendToMatch(
