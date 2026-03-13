@@ -69,16 +69,18 @@ app.use((req, res, next) => {
 // ROUTES
 // ─────────────────────────────────────────────
 
-app.use('/api', webhooksRouter);
-app.use('/api/dashboard', dashboardRouter);
-
 // Dashboard React in produzione
 if (process.env.NODE_ENV === 'production') {
     const buildPath = path.join(__dirname, '../dashboard/dist');
     logger.info({ buildPath }, 'Serving dashboard from');
     app.use('/dashboard', express.static(buildPath));
-    app.get(/\/dashboard\/.*/, (_, res) => res.sendFile(path.join(buildPath, 'index.html')));
+    app.get(['/dashboard', '/dashboard/*'], (req, res) => {
+        res.sendFile(path.join(buildPath, 'index.html'));
+    });
 }
+
+app.use('/api', webhooksRouter);
+app.use('/api/dashboard', dashboardRouter);
 
 // ─────────────────────────────────────────────
 // HEALTH CHECK REALE
