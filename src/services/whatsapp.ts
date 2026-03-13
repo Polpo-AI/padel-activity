@@ -114,7 +114,7 @@ export async function connectToWhatsApp() {
             if (process.env.BOT_PHONE_NUMBER && !sock!.authState.creds.registered && !isPairingCodeRequested) {
                 isPairingCodeRequested = true;
                 try {
-                    const cleanNumber = process.env.BOT_PHONE_NUMBER.replace('+', '');
+                    const cleanNumber = process.env.BOT_PHONE_NUMBER.replace(/\D/g, '');
                     console.log(`[AUTH] Requesting pairing code for: ${cleanNumber}`);
                     const code = await sock!.requestPairingCode(cleanNumber);
                     console.log(`\n======================================================`);
