@@ -54,7 +54,7 @@ export const connection = {
 // QUEUES
 // ─────────────────────────────────────────────
 
-const prefix = process.env.QUEUE_PREFIX ? `${process.env.QUEUE_PREFIX}:` : '';
+const prefix = process.env.QUEUE_PREFIX ? `${process.env.QUEUE_PREFIX}-` : '';
 
 export const waveQueue = new Queue(`${prefix}wave`, {
     connection,

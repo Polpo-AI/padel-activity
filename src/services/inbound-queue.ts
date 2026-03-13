@@ -16,7 +16,7 @@ const DEBOUNCE_MS = 5000;
 const REDIS_TTL_S = 600;         // 10 minuti
 const RECOVERY_DELAY_MS = 30000; // 30s dopo startup
 
-const prefix = process.env.QUEUE_PREFIX ? `${process.env.QUEUE_PREFIX}:` : '';
+const prefix = process.env.QUEUE_PREFIX ? `${process.env.QUEUE_PREFIX}-` : '';
 
 export interface NormalizedMessage {
     type: 'text' | 'audio' | 'contact' | 'other';
