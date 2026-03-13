@@ -18,6 +18,7 @@ dotenv.config();
 import express from 'express';
 import pino from 'pino';
 import path from 'path';
+import fs from 'fs';
 
 import webhooksRouter from './api/webhooks';
 import dashboardRouter from './api/dashboard.api';
@@ -71,14 +72,15 @@ app.use((req, res, next) => {
 
 // Dashboard React in produzione
 if (process.env.NODE_ENV === 'production') {
-    const buildPath = path.join(__dirname, '../dashboard/dist');
-    const fs = require('fs');
     const indexExists = fs.existsSync(path.join(buildPath, 'index.html'));
     logger.info({ buildPath, indexExists }, 'Serving dashboard from');
     
+    app.get('/ping-dashboard', (req, res) => res.send('PONG DASH v1'));
+
     app.use('/dashboard', express.static(buildPath));
-    app.get('/dashboard', (req, res) => res.sendFile(path.join(buildPath, 'index.html')));
-    app.get('/dashboard/*', (req, res) => res.sendFile(path.join(buildPath, 'index.html')));
+    app.get('/dashboard*', (req, res) => {
+        res.sendFile(path.join(buildPath, 'index.html'));
+    });
 }
 
 app.use('/api', webhooksRouter);
