@@ -110,10 +110,10 @@ export async function generateInvitation(
                 model: 'claude-haiku-4-5-20251001',
                 max_tokens: 150,
                 temperature: 0.7,
-                system: aiTone || 'Sei il bot di un circolo padel. Scrivi messaggi brevi e amichevoli in italiano.',
+                system: aiTone || 'Sei il bot di un circolo padel. Scrivi messaggi SUPER BREVI, diretti e amichevoli in italiano. Vai subito al punto.',
                 messages: [{
                     role: 'user',
-                    content: `Scrivi un invito WhatsApp breve (max 2 righe) per ${playerName} per una partita ${dateStr} alle ${timeStr} al ${court}. ${isFriend ? 'È stato invitato da un amico.' : ''} Solo il testo del messaggio.`,
+                    content: `Scrivi un invito WhatsApp brevissimo (max 10-15 parole) per ${playerName} per una partita ${dateStr} alle ${timeStr} al ${court}. ${isFriend ? 'Invito da un amico.' : ''} Solo il testo del messaggio.`,
                 }],
             }),
             {
