@@ -34,6 +34,7 @@ interface BookingContext {
     specificDay?: string | null; // es. "martedì"
     guaranteesFull: boolean;    // Mario dice "siamo già in 4" o simile
     friendLevel?: number | null; // se specificato "un amico livello 3"
+    isCountExplicit: boolean;   // l'utente ha detto apertamente quanti sono?
 }
 
 export async function extractBookingContext(messageText: string, maxLevel: number = 3): Promise<BookingContext> {
@@ -47,7 +48,8 @@ Estrai le seguenti informazioni e rispondi SOLO con un JSON:
   "specificTime": "HH:MM" oppure null,
   "specificDay": "lunedì" | "martedì" | "mercoledì" | "giovedì" | "venerdì" | "sabato" | "domenica" | "oggi" | "domani" | null,
   "guaranteesFull": true se dice che sono già in 4 o che chiudono il campo da soli, false altrimenti,
-  "friendLevel": numero intero da 1 a \${maxLevel} se specifica il livello dell'amico/i, altrimenti null
+  "friendLevel": numero intero da 1 a ${maxLevel} se specifica il livello dell'amico/i, altrimenti null,
+  "isCountExplicit": true se l'utente ha specificato un numero di giocatori (es: "siamo in 2", "uno per stasera"), false se è un'intenzione generica senza quantità
 }
 
 Regole per timeSlot:
@@ -82,7 +84,7 @@ Rispondi SOLO con il JSON.
         logger.error({ err }, 'Error extracting booking context');
     }
 
-    return { playerCount: 1, timeSlot: 'unknown', guaranteesFull: false, specificDay: null };
+    return { playerCount: 1, timeSlot: 'unknown', guaranteesFull: false, specificDay: null, isCountExplicit: false };
 }
 
 // ─────────────────────────────────────────────
@@ -109,6 +111,15 @@ export async function startBookingFlow(
             context.specificTime = overrides.specificTime;
             context.timeSlot = 'specific';
         }
+        if (overrides.playerCount) context.playerCount = overrides.playerCount;
+        if (overrides.isCountExplicit) context.isCountExplicit = overrides.isCountExplicit;
+    }
+
+    // ✅ NEW CHECK: Se non è specificato quanti sono, chiediamo "Quanti siete?"
+    if (!context.isCountExplicit && !context.guaranteesFull) {
+        await simulateTypingAndSend(jid, "Ottimo! Quanti siete in totale? 🎾", messageKey);
+        await setBookingState(jid, { ...context, step: 'AWAITING_PLAYER_COUNT' });
+        return;
     }
 
     logger.info(`Booking context: ${JSON.stringify(context)}`);
@@ -368,6 +379,19 @@ export async function continueBookingFlow(
     const phoneNumber = jid.split('@')[0];
     const player = await prisma.player.findFirst({ where: { phoneNumber } });
     if (!player) return;
+
+    if (state.step === 'AWAITING_PLAYER_COUNT') {
+        const match = messageText.match(/\d+/);
+        if (match) {
+            const count = parseInt(match[0]);
+            const updatedState = { ...state, playerCount: count, isCountExplicit: true };
+            // Continua il flusso originale con il count aggiornato
+            await startBookingFlow(jid, phoneNumber, messageText, messageKey, updatedState as any);
+        } else {
+            await simulateTypingAndSend(jid, "Scusa, in quanti siete? Prova a dirmelo a numero (es. 1, 2, 4...) 🎾", messageKey);
+        }
+        return;
+    }
 
     if (state.step === 'AWAITING_TIME' || state.step === 'AWAITING_TIME_FOR_NEW_MATCH') {
         // Estrai orario dal testo
