@@ -1,5 +1,8 @@
 import { prisma } from '../src/services/db';
 import * as bcrypt from 'bcrypt';
+import dotenv from 'dotenv';
+
+dotenv.config();
 
 async function main() {
   console.log('🌱 Reseeding staging database...');
