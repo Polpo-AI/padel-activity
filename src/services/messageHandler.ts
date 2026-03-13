@@ -92,16 +92,20 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[]): Pr
     // ── Persisti ─────────────────────────────────────────────────
     for (const msg of messages) {
         try {
-            await prisma.whatsAppMessage.create({
-                data: {
-                    chatId: jid,
-                    sender: phoneNumber,
-                    role: 'USER',
-                    content: msg.type === 'contact'
-                        ? `[Contatto] ${msg.contactName || ''} ${msg.contactPhone || ''}`
-                        : msg.type === 'audio' ? '[Audio]' : msg.text || '',
-                },
-            });
+            const content = msg.type === 'contact'
+                ? `[Contatto] ${msg.contactName || ''} ${msg.contactPhone || ''}`
+                : msg.type === 'audio' ? '[Audio]' : (msg.text || '').trim();
+
+            if (content) {
+                await prisma.whatsAppMessage.create({
+                    data: {
+                        chatId: jid,
+                        sender: phoneNumber,
+                        role: 'USER',
+                        content,
+                    },
+                });
+            }
         } catch (err) {
             logger.error({ err }, 'Failed to persist message');
         }
