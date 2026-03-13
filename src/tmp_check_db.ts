@@ -1,4 +1,4 @@
-import { prisma } from './src/services/db';
+import { prisma } from './services/db';
 
 async function main() {
   console.log('--- PLAYERS ---');
