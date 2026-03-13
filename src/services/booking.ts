@@ -650,7 +650,7 @@ async function addPlayerToMatch(
         messageKey
     );
 
-    if (playerCount > 1) {
+    if (playerCount > 1 && playerCount < 4) {
         setTimeout(async () => {
             const playerRec = await prisma.player.findFirst({ where: { id: player.id }, include: { club: true } });
             const maxL = playerRec?.club?.skillLevelCount ?? 3;
