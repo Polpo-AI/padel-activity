@@ -72,9 +72,12 @@ app.use((req, res, next) => {
 // Dashboard React in produzione
 if (process.env.NODE_ENV === 'production') {
     const buildPath = path.join(__dirname, '../dashboard/dist');
-    logger.info({ buildPath }, 'Serving dashboard from');
+    const fs = require('fs');
+    const indexExists = fs.existsSync(path.join(buildPath, 'index.html'));
+    logger.info({ buildPath, indexExists }, 'Serving dashboard from');
+    
     app.use('/dashboard', express.static(buildPath));
-    app.get(['/dashboard', '/dashboard/*'], (req, res) => {
+    app.get('/dashboard*', (req, res) => {
         res.sendFile(path.join(buildPath, 'index.html'));
     });
 }
