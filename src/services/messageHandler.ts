@@ -578,6 +578,11 @@ async function routeIntent(
     if (intent === 'NO') {
         await prisma.invitation.update({ where: { id: invitation.id }, data: { status: 'REJECTED' } });
         await simulateTypingAndSend(jid, "Tranquillo! Sarà per la prossima volta 💪");
+        
+        // Verifica matematica se la partita è diventata impossibile da riempire a seguito di questo NO
+        const { checkAndCancelIfUnfillable } = await import('./matchmaker');
+        await checkAndCancelIfUnfillable(invitation.matchId);
+        
         return;
     }
 

@@ -87,8 +87,17 @@ export async function processWave(matchId: string, waveNumber: number): Promise<
 
     if (playersList.length === 0) {
         logger.warn(`Wave ${waveNumber} for match ${matchId}: no players available`);
-        const { handleMatchUnfillable } = await import('./recovery');
-        await handleMatchUnfillable(matchId);
+        
+        // Prima controlliamo se possiamo cancellare matematicamente (lista esaurita)
+        const isCancelled = await checkAndCancelIfUnfillable(matchId);
+        
+        // Se non l'ha cancellata matematicamente (perché es. in_attesa bastano ancora) ma semplicemente
+        // non abbiamo più gente da chiamare per questa wave, non facciamo nulla. Il webhook o il timeout agiranno.
+        if (!isCancelled) {
+            // Se in pending ce ne sono, la speranza c'è ancora. Lo mettiamo in UNFILLED per far scattare alert.
+            const { handleMatchUnfillable } = await import('./recovery');
+            await handleMatchUnfillable(matchId, false);
+        }
         return;
     }
 
@@ -209,5 +218,37 @@ export async function findOpenMatchForPlayer(
     return null;
 }
 
-// Riesporta per recovery.ts (che lo importava da qui prima)
+// ─────────────────────────────────────────────
+// CONTROLLO ESAURIMENTO LISTA E CANCELLAZIONE
+// ─────────────────────────────────────────────
+
+export async function checkAndCancelIfUnfillable(matchId: string): Promise<boolean> {
+    const match = await prisma.match.findUnique({
+        where: { id: matchId },
+        include: { MatchPlayer: { where: { leftAt: null } }, invitations: { where: { status: 'PENDING' } } }
+    });
+
+    if (!match || match.status !== 'OPEN') return false;
+
+    const confirmed = match.MatchPlayer.length;
+    const pending = match.invitations.length;
+
+    // Se matematicamente abbiamo ancora chance (i PENDING basterebbero)
+    if (confirmed + pending >= match.playersNeeded) return false;
+
+    // Se matematicamente non bastano, controlliamo se il serbatoio eligibili è a 0
+    const { getPlayersForRecovery } = await import('./scoring');
+    const targets = await getPlayersForRecovery(matchId);
+    
+    if (targets.length === 0) {
+        logger.warn(`Match ${matchId} mathematically unfillable (${confirmed} conf + ${pending} pending < ${match.playersNeeded}) AND pool exhausted. Cancelling.`);
+        
+        const { handleMatchUnfillable } = await import('./recovery');
+        await handleMatchUnfillable(matchId, true); // true = forceCancel
+        return true;
+    }
+    return false;
+}
+
+// Riesporta per recovery.ts
 export { getPlayersForRecovery };

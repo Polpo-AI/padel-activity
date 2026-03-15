@@ -196,7 +196,7 @@ export async function launchRecoveryWave(
 // MATCH NON RIEMPIBILE
 // ─────────────────────────────────────────────
 
-export async function handleMatchUnfillable(matchId: string): Promise<void> {
+export async function handleMatchUnfillable(matchId: string, forceCancel: boolean = false): Promise<void> {
     const match = await prisma.match.findUnique({
         where: { id: matchId },
         include: {
@@ -215,7 +215,7 @@ export async function handleMatchUnfillable(matchId: string): Promise<void> {
     const timeStr = match.startTime.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
     const confirmedPlayers = match.MatchPlayer.filter(mp => !mp.leftAt);
 
-    if (minutesUntilMatch < deadlineMinutes) {
+    if (minutesUntilMatch < deadlineMinutes || forceCancel) {
         await prisma.match.update({
             where: { id: matchId },
             data: {

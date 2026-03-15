@@ -38,7 +38,7 @@ export async function updateShowUpRate(
 
     let eventValue = showed ? 1.0 : 0.0;
     if (showed && minutesUntilMatchWhenInvited <= LAST_MINUTE_THRESHOLD_MIN) {
-        eventValue = Math.min(1.0, 1.0 * LAST_MINUTE_BONUS);
+        eventValue = 1.3;
     }
 
     const newRate = Math.min(1.0, (1 - ALPHA) * currentRate + ALPHA * eventValue);
@@ -206,16 +206,23 @@ export async function selectPlayersForWave(
 
     const sortedEligible = [...perfectMatches, ...adjacentMatches];
 
-    const avgRate = sortedEligible.reduce((s, p) => s + (p.reliabilityScore || PRIOR), 0) / sortedEligible.length;
-    let multiplier = clubWaveMultiplier;
-    if (avgRate > 0.5) multiplier = Math.max(2, clubWaveMultiplier - 1);
-    else if (avgRate < 0.3) multiplier = clubWaveMultiplier + 1;
+    let targetCount = 0;
+    let currentEmaSum = 0;
 
-    const targetCount = Math.min(spotsNeeded * multiplier, sortedEligible.length);
+    for (let i = 0; i < sortedEligible.length; i++) {
+        const player = sortedEligible[i];
+        const ema = player.reliabilityScore === 0 ? PRIOR : player.reliabilityScore;
+        currentEmaSum += ema;
+        targetCount++;
+        
+        if (currentEmaSum >= spotsNeeded) {
+            break;
+        }
+    }
 
     logger.info(
-        `Wave selection: ${spotsNeeded} spots, perfect ${perfectMatches.length}, adjacent ${adjacentMatches.length}, ` +
-        `gender: ${targetGender || 'any'}, avgRate ${avgRate.toFixed(2)}, targeting ${targetCount}`
+        `Wave selection: ${spotsNeeded} spots needed, perfect ${perfectMatches.length}, adjacent ${adjacentMatches.length}, ` +
+        `gender: ${targetGender || 'any'}, sumEMA: ${currentEmaSum.toFixed(2)}, targeting ${targetCount} players`
     );
 
     return { players: sortedEligible.slice(0, targetCount), targetCount };
