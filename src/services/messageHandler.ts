@@ -177,7 +177,13 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[]): Pr
     if (bookingState) {
         const contactInfo = firstCard ? { phone: firstCard.contactPhone, name: firstCard.contactName } : null;
         // Se il giocatore non esiste ancora, consideriamo lo stato 'stale' e procediamo a conversazione fluida
-        const playerExists = await prisma.player.findFirst({ where: { phoneNumber } });
+        const currentClubId = process.env.CLUB_ID;
+        const playerExists = await prisma.player.findFirst({ 
+            where: { 
+                phoneNumber, 
+                clubId: currentClubId ? currentClubId : { not: '' } 
+            } 
+        });
         if (playerExists) {
             await continueBookingFlow(jid, combinedText, contactInfo, bookingState);
             return;
@@ -265,15 +271,25 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[]): Pr
     // STEP 2: risoluzione club e caricamento player
     // ─────────────────────────────────────────
 
-    const player = await prisma.player.findFirst({ where: { phoneNumber, clubId: { not: '' } } });
+    const currentClubId = process.env.CLUB_ID;
+    const player = await prisma.player.findFirst({ 
+        where: { 
+            phoneNumber, 
+            clubId: currentClubId ? currentClubId : { not: '' } 
+        } 
+    });
     
     // Identifica il club
     let club = null;
-    const clubCount = await prisma.club.count();
-    if (clubCount === 1) {
-        club = await prisma.club.findFirst();
+    if (currentClubId) {
+        club = await prisma.club.findUnique({ where: { id: currentClubId } });
     } else {
-        club = await prisma.club.findFirst({ where: { groupJids: { has: jid } } });
+        const clubCount = await prisma.club.count();
+        if (clubCount === 1) {
+            club = await prisma.club.findFirst();
+        } else {
+            club = await prisma.club.findFirst({ where: { groupJids: { has: jid } } });
+        }
     }
     if (!club) club = await prisma.club.findFirst(); // fallback al primo se proprio non lo sappiamo
 
@@ -309,7 +325,7 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[]): Pr
         // Se l'AI fluida ha rilevato un impegno concreto (BOOK o BRING_FRIEND), bridge verso business logic
         if (fluidAction) {
             logger.info({ jid, action: fluidAction.intent, params: fluidAction.params }, 'Bridging fluid action to structured flow');
-            await routeIntent(jid, phoneNumber, fluidAction.intent, combinedText, contactCards, fluidAction.params);
+            await routeIntent(jid, phoneNumber, fluidAction.intent, combinedText, contactCards, club?.id, fluidAction.params);
         }
         return;
     }
@@ -317,7 +333,7 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[]): Pr
     // Delay umano per intent confermati
     await sleep(randomInt(8, 35) * 1000);
 
-    await routeIntent(jid, phoneNumber, intent as any, combinedText, contactCards);
+    await routeIntent(jid, phoneNumber, intent as any, combinedText, contactCards, club?.id);
 }
 
 // ─────────────────────────────────────────────
@@ -330,9 +346,15 @@ async function routeIntent(
     intent: string,
     combinedText: string,
     contactCards: NormalizedMessage[],
+    resolvedClubId?: string,
     params?: any
 ): Promise<void> {
-    const player = await prisma.player.findFirst({ where: { phoneNumber } });
+    const player = await prisma.player.findFirst({ 
+        where: { 
+            phoneNumber, 
+            clubId: resolvedClubId || { not: '' } 
+        } 
+    });
     if (!player) return;
 
     const firstCard = contactCards[0];
@@ -555,7 +577,12 @@ async function handleOpenMatchCancellation(
     });
 
     const { decreaseReliability } = await import('./reliability');
-    const player = await prisma.player.findFirst({ where: { phoneNumber } });
+    const player = await prisma.player.findFirst({ 
+        where: { 
+            phoneNumber, 
+            clubId: matchPlayer.match.clubId || { not: '' } 
+        } 
+    });
     if (player) await decreaseReliability(player.id, 5);
 
     // Ricalcola situazione
