@@ -19,7 +19,7 @@ import pino from 'pino';
 const logger = pino({ level: 'info' });
 
 const STATE_TTL_SEC = 24 * 60 * 60; // 24h
-const AWAITING_ROLES = ['AWAITING_FRIEND_PHONE', 'AWAITING_GROUP_PHONES', 'AWAITING_FRIEND_LEVEL'] as const;
+const AWAITING_ROLES = ['AWAITING_FRIEND_PHONE', 'AWAITING_GROUP_PHONES', 'AWAITING_FRIEND_LEVEL', 'AWAITING_SKILL_TEST_CONFIRM'] as const;
 type AwaitingRole = typeof AWAITING_ROLES[number];
 
 // ─────────────────────────────────────────────
@@ -339,6 +339,36 @@ export async function processFriendLevel(
 }
 
 // ─────────────────────────────────────────────
+// GESTIONE SKILL TEST CONFIRM
+// ─────────────────────────────────────────────
+
+export async function handleSkillTestConfirm(
+    senderJid: string,
+    messageText: string,
+    pendingState: { clubId?: string | null },
+    messageKey?: any
+): Promise<void> {
+    const { clubId } = pendingState;
+    const text = messageText.toLowerCase().trim();
+
+    const isPositive = ['sì', 'si', 'ok', 'va bene', 'volentieri', 'confermo'].some(word => text.includes(word));
+
+    if (isPositive) {
+        const club = await prisma.club.findUnique({ where: { id: clubId || undefined } });
+        await notifyAdmin(club, `Richiesta Skill Test da parte di ${senderJid.split('@')[0]}`);
+        
+        let msg = "✅ Perfetto! Ho inviato la tua richiesta alla segreteria del club. Ti ricontatteranno presto per fissare l'orario del tuo test! 🎾";
+        if (club?.adminAlternativePhone) {
+            msg += `\n\nSe preferisci chiamare tu, puoi contattare il numero: ${club.adminAlternativePhone}`;
+        }
+        await simulateTypingAndSend(senderJid, msg, messageKey);
+    } else {
+        await simulateTypingAndSend(senderJid, "Ok! Ricordati che senza livello non puoi partecipare alle partite. Scrivimi quando vuoi iniziare! 🎾", messageKey);
+    }
+    await clearAwaitingState(senderJid);
+}
+
+// ─────────────────────────────────────────────
 // OPT-OUT
 // ─────────────────────────────────────────────
 
@@ -364,7 +394,7 @@ function awaitingKey(jid: string): string {
     return `state:awaiting:${jid}`;
 }
 
-async function setAwaitingState(jid: string, role: AwaitingRole, data: object): Promise<void> {
+export async function setAwaitingState(jid: string, role: AwaitingRole, data: object): Promise<void> {
     try {
         const redis = getRedis();
         await redis.set(awaitingKey(jid), JSON.stringify({ role, data }), 'EX', STATE_TTL_SEC);

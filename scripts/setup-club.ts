@@ -33,6 +33,7 @@ async function main() {
     // ── Dati base ──────────────────────────────
     const name = await ask('\nNome del circolo: ');
     const adminPhone = await ask('Numero WhatsApp admin (es. +393471234567): ');
+    const adminAlternativePhone = await ask('Numero alternativo per contatti/Skill Test (es. +393470000000) [opzionale]: ');
     const timezone = await ask('Timezone [default: Europe/Rome]: ') || 'Europe/Rome';
     const openTime = await ask('Orario apertura campi [default: 08:00]: ') || '08:00';
     const closeTime = await ask('Orario chiusura campi [default: 23:30]: ') || '23:30';
@@ -85,6 +86,7 @@ async function main() {
     console.log('\n📋 RIEPILOGO CONFIGURAZIONE:\n');
     console.log(`  Circolo:        ${name}`);
     console.log(`  Admin WA:       ${adminPhone}`);
+    console.log(`  Admin ALT WA:   ${adminAlternativePhone || 'non configurato'}`);
     console.log(`  Campi (${courtCount}):     ${courts.join(', ')}`);
     console.log(`  Livelli:        ${skillLevelCount}`);
     console.log(`  Livelli misti:  ${allowMixedLevels ? `sì (±${mixedLevelRange})` : 'no'}`);
@@ -105,6 +107,7 @@ async function main() {
         data: {
             name,
             adminPhone,
+            adminAlternativePhone: adminAlternativePhone || null,
             timezone,
             openTime,
             closeTime,

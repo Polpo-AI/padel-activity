@@ -198,6 +198,12 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[]): Pr
     // 1d. Awaiting friend phone/level
     const awaitingState = await getAwaitingState(jid);
     if (awaitingState) {
+        if (awaitingState.role === 'AWAITING_SKILL_TEST_CONFIRM') {
+            const { handleSkillTestConfirm } = await import('./onboarding');
+            await handleSkillTestConfirm(jid, combinedText, awaitingState.data, batchFirstKey);
+            return;
+        }
+
         if (awaitingState.role === 'AWAITING_FRIEND_PHONE' || awaitingState.role === 'AWAITING_GROUP_PHONES') {
             if (contactCards.length > 0) {
                 // Processa TUTTE le card ricevute in sequenza

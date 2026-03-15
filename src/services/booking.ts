@@ -163,7 +163,11 @@ async function searchAndProposeMatches(
 ): Promise<void> {
     if (player.skillLevel === 0) {
         const { simulateTypingAndSend } = await import('./whatsapp');
-        await simulateTypingAndSend(jid, "⚠️ Ciao! Risulti a sistema con livello **0**. Per poter partecipare o prenotare partite devi effettuare uno **Skill Test** di valutazione con il maestro del club.");
+        const { setAwaitingState } = await import('./onboarding');
+        
+        await simulateTypingAndSend(jid, "⚠️ Ciao! Risulti a sistema con livello **0**.\n\nPer partecipare o prenotare partite devi effettuare uno **Skill Test** di valutazione col maestro.\nVuoi che ti metta in contatto con la segreteria per fissare un test?\n\nRispondi **SÌ** o **NO**! 🎾", messageKey);
+        
+        await setAwaitingState(jid, 'AWAITING_SKILL_TEST_CONFIRM', { clubId: player.clubId });
         return;
     }
 

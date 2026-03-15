@@ -121,6 +121,7 @@ model Club {
   closeTime                  String   @default("23:30")
   aiTone                     String?
   adminPhone                 String?
+  adminAlternativePhone      String?
   waveMultiplier             Int      @default(3)
   deadlineMinutesBeforeMatch Int      @default(60)
   allowMixedLevels           Boolean  @default(false)
