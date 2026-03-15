@@ -342,4 +342,72 @@ router.post('/players/toggle', authMiddleware, async (req: Request, res: Respons
     });
 });
 
+// ─────────────────────────────────────────────
+// GESTIONE TARIFFE (Standard & Eccezioni)
+// ─────────────────────────────────────────────
+
+router.get('/prices', authMiddleware, async (req: Request, res: Response) => {
+    const clubId = (req as any).clubId;
+    try {
+        const courts = await prisma.court.findMany({
+            where: { clubId, active: true },
+            include: { prices: { orderBy: { startTime: 'asc' } } },
+            orderBy: { name: 'asc' },
+        });
+        res.json(courts);
+    } catch (e: any) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+router.post('/prices', authMiddleware, async (req: Request, res: Response) => {
+    const clubId = (req as any).clubId;
+    const { prices } = req.body; // Array di oggetti CourtPrice
+
+    if (!Array.isArray(prices)) {
+        return res.status(400).json({ error: 'Payload malformato: atteso array "prices"' });
+    }
+
+    try {
+        const results = [];
+        for (const p of prices) {
+            // Verifica che il campo appartenga al club per sicurezza
+            const court = await prisma.court.findFirst({ where: { id: p.courtId, clubId } });
+            if (!court) continue; // Salta se il campo non appartiene al club
+
+            if (p._delete && p.id) {
+                await prisma.courtPrice.delete({ where: { id: p.id } });
+                results.push({ id: p.id, action: 'deleted' });
+            } else if (p.id) {
+                const updated = await prisma.courtPrice.update({
+                    where: { id: p.id },
+                    data: {
+                        startTime: p.startTime,
+                        endTime: p.endTime,
+                        price: parseFloat(p.price),
+                        startDate: p.startDate ? new Date(p.startDate) : null,
+                        endDate: p.endDate ? new Date(p.endDate) : null,
+                    }
+                });
+                results.push({ id: updated.id, action: 'updated' });
+            } else {
+                const created = await prisma.courtPrice.create({
+                    data: {
+                        courtId: p.courtId,
+                        startTime: p.startTime,
+                        endTime: p.endTime,
+                        price: parseFloat(p.price),
+                        startDate: p.startDate ? new Date(p.startDate) : null,
+                        endDate: p.endDate ? new Date(p.endDate) : null,
+                    }
+                });
+                results.push({ id: created.id, action: 'created' });
+            }
+        }
+        res.json({ success: true, results });
+    } catch (e: any) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
 export default router;

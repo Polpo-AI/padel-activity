@@ -180,7 +180,7 @@ async function searchAndProposeMatches(
             ],
             startTime: { gte: from, lte: to },
         },
-        include: { MatchPlayer: true, court: true },
+        include: { MatchPlayer: true, court: { include: { prices: true } } },
         orderBy: [
             { startTime: 'asc' },
         ],
@@ -223,12 +223,17 @@ async function searchAndProposeMatches(
         return;
     }
 
-    // Costruisci messaggio con opzioni
-    const options = ordered.slice(0, 5).map((m, i) => {
+    const { calculateCostFromPrices } = await import('./pricing');
+
+    const options = ordered.slice(0, 5).map((m: any, i) => {
         const spotsLeft = m.playersNeeded - m.MatchPlayer.filter((mp: any) => !mp.leftAt).length;
         const timeStr = m.startTime.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
         const willLock = spotsLeft === context.playerCount;
-        return `${i + 1}. ${m.court} alle ${timeStr} — ${willLock
+
+        const cost = calculateCostFromPrices(m.startTime, m.court.prices);
+        const costStr = cost > 0 ? ` [Costo: €${cost.toFixed(2)}]` : '';
+
+        return `${i + 1}. ${m.court.name} alle ${timeStr}${costStr} — ${willLock
             ? `mancate solo voi ${context.playerCount > 1 ? `${context.playerCount}` : ''}, se confermi chiudo 🔒`
             : `mancano ${spotsLeft} posti, voi ${context.playerCount > 1 ? 'entrate' : 'entri'} e cerco gli altri`
         }`;
