@@ -436,46 +436,7 @@ async function routeIntent(
 
         const spotsLeft = targetMatch.playersNeeded - targetMatch.MatchPlayer.filter((mp: any) => !mp.leftAt).length;
 
-        if (intent === 'BRING_FRIEND') {
-            if (contactCards.length > 0) {
-                // Processa tutte le card ricevute
-                for (const card of contactCards) {
-                    await processFriendPhone(
-                        jid,
-                        `${card.contactPhone} ${card.contactName || ''}`.trim(),
-                        { matchId: targetMatch.id, spotsAvailable: spotsLeft, invitedByPhone: phoneNumber },
-                        undefined,
-                        { phone: card.contactPhone!, name: card.contactName }
-                    );
-                }
-            } else {
-                await handleBringFriend(jid, phoneNumber, targetMatch.id, spotsLeft);
-            }
-        } else if (intent === 'BRING_GROUP') {
-            // Estrai quanti sono dal testo
-            const groupCount = await extractGroupCount(combinedText);
-            if (contactCards.length > 0) {
-                const missing = groupCount - contactCards.length;
-                for (const card of contactCards) {
-                    await processFriendPhone(
-                        jid,
-                        `${card.contactPhone} ${card.contactName || ''}`.trim(),
-                        { matchId: targetMatch.id, spotsAvailable: spotsLeft, invitedByPhone: phoneNumber },
-                        undefined,
-                        { phone: card.contactPhone!, name: card.contactName }
-                    );
-                }
-                if (missing > 0) {
-                    await simulateTypingAndSend(
-                        jid,
-                        `Ho ricevuto ${contactCards.length} contatt${contactCards.length === 1 ? 'o' : 'i'} su ${groupCount}. Mancano ${missing} — mandameli quando puoi, intanto segno il posto 👍`,
-                        undefined
-                    );
-                }
-            } else {
-                await handleBringGroup(jid, phoneNumber, targetMatch.id, spotsLeft);
-            }
-        } else if (intent === 'WHOLE_COURT') {
+        if (intent === 'WHOLE_COURT') {
             await handleWholeCourt(jid, phoneNumber, targetMatch.id);
         }
         return;

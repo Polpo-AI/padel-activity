@@ -33,7 +33,6 @@ interface BookingContext {
     specificTime?: string;      // es. "20:30" se specificato
     specificDay?: string | null; // es. "martedì"
     guaranteesFull: boolean;    // Mario dice "siamo già in 4" o simile
-    friendLevel?: number | null; // se specificato "un amico livello 3"
     isCountExplicit: boolean;   // l'utente ha detto apertamente quanti sono?
     isMixed?: boolean;          // true se mista, false se uomo/donna, null se any
 }
@@ -49,7 +48,6 @@ Estrai le seguenti informazioni e rispondi SOLO con un JSON:
   "specificTime": "HH:MM" oppure null,
   "specificDay": "lunedì" | "martedì" | "mercoledì" | "giovedì" | "venerdì" | "sabato" | "domenica" | "oggi" | "domani" | null,
   "guaranteesFull": true se dice che sono già in 4 o che chiudono il campo da soli, false altrimenti,
-  "friendLevel": numero intero da 1 a ${maxLevel} se specifica il livello dell'amico/i, altrimenti null,
   "isCountExplicit": true se l'utente ha specificato un numero di giocatori (es: "siamo in 2", "uno per stasera"), false se è un'intenzione generica senza quantità,
   "isMixed": true se specifica "mista" o "misto", false se uomo/donna o se non specifica nulla (default false)
 }
@@ -174,16 +172,10 @@ async function searchAndProposeMatches(
             clubId: player.clubId,
             status: 'OPEN',
             isMixed: context.isMixed ?? false,
-            OR: [
-                { skillLevel: player.skillLevel },
-                { 
-                    allowMixedLevels: true, 
-                    skillLevel: { 
-                        gte: player.skillLevel - (player.club?.matchLowerRange ?? 1.0), 
-                        lte: player.skillLevel + (player.club?.matchUpperRange ?? 1.0) 
-                    } 
-                }
-            ],
+            skillLevel: { 
+                gte: player.skillLevel - (player.club?.matchLowerRange ?? 1.0), 
+                lte: player.skillLevel + (player.club?.matchUpperRange ?? 1.0) 
+            },
             startTime: { gte: from, lte: to },
         },
         include: { MatchPlayer: true, court: { include: { prices: true } } },
@@ -626,20 +618,7 @@ async function createNewMatch(
     await prisma.matchPlayer.create({ data: { matchId: match.id, playerId: player.id } });
     await prisma.invitation.create({ data: { matchId: match.id, playerId: player.id, status: 'ACCEPTED' } });
 
-    // ✅ ADD FRIENDS: Register placeholders for friends
-    for (let i = 1; i < playerCount; i++) {
-        // Create an "anonymous" friend if not already detailed
-        const friend = await prisma.player.create({
-            data: {
-                phoneNumber: `FRIEND_${match.id}_${i}`,
-                name: `Amico di ${player.name || 'Giocatore'}`,
-                skillLevel: context.friendLevel ?? player.skillLevel,
-                active: false, // Temporary player
-                clubId,
-            }
-        });
-        await prisma.matchPlayer.create({ data: { matchId: match.id, playerId: friend.id } });
-    }
+    // ✅ ADD FRIENDS: Placeholder creation for non-registered friends (+1) removed for compliance
 
     const spotsNeeded = 4 - playerCount;
     if (spotsNeeded > 0) {

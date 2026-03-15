@@ -28,7 +28,7 @@ const STATE_TTL_SEC = 24 * 60 * 60;   // 24h — TTL stato conversazionale
 // ─────────────────────────────────────────────
 
 export type Intent =
-    | 'YES' | 'NO' | 'CANCEL' | 'BRING_FRIEND' | 'BRING_GROUP'
+    | 'YES' | 'NO' | 'CANCEL'
     | 'WHOLE_COURT' | 'OPT_OUT' | 'QUESTION' | 'BOOK' | 'UNKNOWN';
 
 interface ClassificationResult {
@@ -54,9 +54,6 @@ Valori possibili per intent:
 - NO (rifiuta, "non posso", "passo")
 - CANCEL (disdice dopo aver già confermato)
 - BOOK (vuole prenotare una nuova partita spontaneamente, anche se menziona amici es. "voglio venire martedì con un amico")
-- BRING_FRIEND (porta 1 amico a una partita A CUI È GIÀ ISCRITTO)
-- BRING_GROUP (porta più persone a una partita A CUI È GIÀ ISCRITTO)
-- WHOLE_COURT (chiude il campo per una partita a cui è già iscritto)
 
 confident: true SOLO se sei molto sicuro basandoti anche sulla cronologia (es. se l'utente dice un orario dopo che gli è stato chiesto). Se l'utente menziona un giorno o un'ora per una NUOVA partita, usa BOOK.
 
@@ -155,8 +152,6 @@ function buildClosedQuestion(intents: Intent[], _context: string): string {
         YES: '✅ Sì, confermo',
         NO: '❌ No, non vengo',
         CANCEL: '🚫 Devo disdire',
-        BRING_FRIEND: '👤 Porto un amico',
-        BRING_GROUP: '👥 Porto più persone',
         WHOLE_COURT: '🎾 Prenotiamo tutto il campo',
         OPT_OUT: '🔕 Non voglio più ricevere inviti',
         BOOK: '📅 Voglio prenotare una partita',
