@@ -278,13 +278,20 @@ router.post('/matches/:id/cancel', authMiddleware, async (req: Request, res: Res
 // ─────────────────────────────────────────────
 
 router.get('/players', authMiddleware, async (req: Request, res: Response) => {
-    const { search, active, skillLevel } = req.query;
+    const { search, active, skillLevel, minLevel, maxLevel } = req.query;
 
     const clubId = (req as any).clubId;
     // ✅ FIX A: filtra sempre per clubId — nessun dato cross-club nella dashboard
     const where: any = { clubId };
     if (active !== undefined) where.active = active === 'true';
-    if (skillLevel) where.skillLevel = parseInt(skillLevel as string);
+    
+    if (skillLevel) {
+        where.skillLevel = parseFloat(skillLevel as string);
+    } else if (minLevel || maxLevel) {
+        where.skillLevel = {};
+        if (minLevel) where.skillLevel.gte = parseFloat(minLevel as string);
+        if (maxLevel) where.skillLevel.lte = parseFloat(maxLevel as string);
+    }
     if (search) {
         where.OR = [
             { name: { contains: search as string, mode: 'insensitive' } },

@@ -163,6 +163,12 @@ async function searchAndProposeMatches(
     to: Date,
     messageKey?: any
 ): Promise<void> {
+    if (player.skillLevel === 0) {
+        const { simulateTypingAndSend } = await import('./whatsapp');
+        await simulateTypingAndSend(jid, "⚠️ Ciao! Risulti a sistema con livello **0**. Per poter partecipare o prenotare partite devi effettuare uno **Skill Test** di valutazione con il maestro del club.");
+        return;
+    }
+
     const openMatches = await prisma.match.findMany({
         where: {
             clubId: player.clubId,
