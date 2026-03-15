@@ -334,6 +334,85 @@ router.get('/players', authMiddleware, async (req: Request, res: Response) => {
 });
 
 // ─────────────────────────────────────────────
+// PROFILO GIOCATORE (Dettaglio e Modifica)
+// ─────────────────────────────────────────────
+
+router.get('/players/:id', authMiddleware, async (req: Request, res: Response) => {
+    const clubId = (req as any).clubId as string;
+    const { id } = req.params;
+
+    try {
+        const player = await prisma.player.findFirst({
+            where: { id: id as string, clubId }
+        });
+
+        if (!player) {
+            return res.status(404).json({ error: 'Giocatore non trovato' });
+        }
+
+        // Calcola statistiche aggregate
+        const totalInvited = await prisma.invitation.count({ where: { playerId: id as string } });
+        const totalAccepted = await prisma.invitation.count({ where: { playerId: id as string, status: 'ACCEPTED' } });
+        const totalNoShow = 0; 
+
+        res.json({
+            ...player,
+            stats: {
+                totalInvited,
+                totalAccepted,
+                totalNoShow
+            }
+        });
+    } catch (e: any) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+router.patch('/players/:id', authMiddleware, async (req: Request, res: Response) => {
+    const clubId = (req as any).clubId as string;
+    const { id } = req.params;
+    const { name, skillLevel, active } = req.body;
+
+    try {
+        const player = await prisma.player.findFirst({
+            where: { id: id as string, clubId }
+        });
+
+        if (!player) {
+            return res.status(404).json({ error: 'Giocatore non trovato' });
+        }
+
+        const data: any = {};
+        if (name !== undefined) data.name = name;
+        if (skillLevel !== undefined) data.skillLevel = parseFloat(skillLevel);
+        if (active !== undefined) data.active = active;
+
+        const updated = await prisma.player.update({
+            where: { id: id as string },
+            data
+        });
+
+        // ✅ Notifica WhatsApp al cambio livello
+        if (skillLevel !== undefined && parseFloat(skillLevel) !== player.skillLevel) {
+            const { sendMessage } = await import('../services/whatsapp');
+            try {
+                await sendMessage(
+                    player.phoneNumber, 
+                    `🎉 *Bravissimo!* Il tuo livello Padel è stato aggiornato a: *${skillLevel}*! Continua così! 💪🎾`
+                );
+                logger.info({ phone: player.phoneNumber, level: skillLevel }, 'WhatsApp notification for level update sent');
+            } catch (err) {
+                logger.error({ err }, 'Failed to send WhatsApp notification for level update');
+            }
+        }
+
+        res.json(updated);
+    } catch (e: any) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// ─────────────────────────────────────────────
 // TOGGLE ACTIVE — form con solo numero telefono
 // ─────────────────────────────────────────────
 
