@@ -399,16 +399,16 @@ function CreateMatchModal({ courts, club, token, onClose, onCreated }) {
           <input type="date" value={date} onChange={e => setDate(e.target.value)} style={inputSt} />
         </div>
         <div>
-          <label style={labelSt}>Livello (1–{club?.skillLevelCount || 3})</label>
-          <div style={{ display: "flex", gap: 8 }}>
-            {Array.from({ length: club?.skillLevelCount || 3 }, (_, i) => i + 1).map(l => (
-              <button key={l} onClick={() => setSkillLevel(l)} style={{
-                flex: 1, padding: "8px 0", borderRadius: 8, border: `1px solid ${l === skillLevel ? C.accent : C.border}`,
-                background: l === skillLevel ? C.accentDim : "transparent",
-                color: l === skillLevel ? C.accent : C.muted, cursor: "pointer", fontSize: 13, fontWeight: 700,
-              }}>{l}</button>
-            ))}
-          </div>
+          <label style={labelSt}>Livello di gioco</label>
+          <input 
+            type="number" 
+            step="0.5" 
+            min="1" 
+            max="10" 
+            value={skillLevel} 
+            onChange={e => setSkillLevel(parseFloat(e.target.value) || 1)} 
+            style={{ ...inputSt, width: "100%" }} 
+          />
         </div>
 
         <div>
@@ -707,16 +707,27 @@ function PlayerProfile({ playerId, token, onClose, onUpdated, skillLevelCount = 
       <div>
         <label style={labelSt}>Livello di gioco</label>
         <div style={{ display: "flex", gap: 8 }}>
-          {Array.from({ length: skillLevelCount }, (_, i) => i + 1).map(l => (
-            <button key={l} disabled={saving} onClick={() => patch({ skillLevel: l })} style={{
-              flex: 1, padding: "9px 0", borderRadius: 8, cursor: "pointer",
-              border: `1px solid ${l === player.skillLevel ? C.accent : C.border}`,
-              background: l === player.skillLevel ? C.accentDim : "transparent",
-              color: l === player.skillLevel ? C.accent : C.muted,
-              fontSize: 14, fontWeight: 700,
-            }}>{l}</button>
-          ))}
+          <input 
+            type="number" 
+            step="0.5" 
+            min="1" 
+            max="10"
+            defaultValue={player.skillLevel}
+            disabled={saving}
+            style={{ ...inputSt, flex: 1, fontSize: 16, fontWeight: 700, textAlign: "center" }}
+            onBlur={e => {
+                const val = parseFloat(e.target.value);
+                if (!isNaN(val) && val !== player.skillLevel) patch({ skillLevel: val });
+            }}
+            onKeyDown={e => {
+                if (e.key === "Enter") {
+                    const val = parseFloat(e.currentTarget.value);
+                    if (!isNaN(val) && val !== player.skillLevel) patch({ skillLevel: val });
+                }
+            }}
+          />
         </div>
+        <div style={{ fontSize: 11, color: C.muted, marginTop: 4 }}>Premi Invio o esci dal campo per salvare (es. 2.5)</div>
       </div>
 
       {/* Active toggle */}
