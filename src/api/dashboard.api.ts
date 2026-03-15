@@ -106,6 +106,31 @@ router.get('/club', authMiddleware, async (req: Request, res: Response) => {
 });
 
 // ─────────────────────────────────────────────
+// AGGIORNA IMPOSTAZIONI CLUB (Dashboard Slider)
+// ─────────────────────────────────────────────
+
+router.patch('/club', authMiddleware, async (req: Request, res: Response) => {
+    const clubId = (req as any).clubId;
+    const { name, skillLevelCount, aiTone, maxDailyMessages } = req.body;
+
+    try {
+        const updated = await prisma.club.update({
+            where: { id: clubId },
+            data: {
+                name: name !== undefined ? name : undefined,
+                skillLevelCount: skillLevelCount !== undefined ? parseInt(skillLevelCount) : undefined,
+                aiTone: aiTone !== undefined ? aiTone : undefined,
+                maxDailyMessages: maxDailyMessages !== undefined ? parseInt(maxDailyMessages) : undefined,
+            }
+        });
+        res.json(updated);
+    } catch (err) {
+        logger.error({ err, clubId }, 'Error updating club settings');
+        res.status(500).json({ error: 'Errore nel salvataggio delle impostazioni' });
+    }
+});
+
+// ─────────────────────────────────────────────
 // CAMPI CON STATO REAL-TIME
 // ─────────────────────────────────────────────
 

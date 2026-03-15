@@ -180,7 +180,7 @@ export async function selectPlayersForWave(
             skillLevel: { gte: skillMin, lte: skillMax },
             gender: targetGender ? targetGender : undefined,
             active: true,
-            dailyMessagesCount: { lt: 2 },
+            dailyMessagesCount: { lt: match.club?.maxDailyMessages ?? 2 },
             id: { notIn: excludedIds },
         },
     });

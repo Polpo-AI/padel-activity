@@ -68,7 +68,7 @@ export async function processWave(matchId: string, waveNumber: number): Promise<
             where: {
                 id: { in: match.preferredPlayerIds },
                 active: true,
-                dailyMessagesCount: { lt: 2 } 
+                dailyMessagesCount: { lt: match.club?.maxDailyMessages ?? 2 } 
             }
         });
 
