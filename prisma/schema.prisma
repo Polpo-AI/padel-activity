@@ -53,6 +53,7 @@ model Match {
   allowMixedLevels  Boolean       @default(false)
   playersNeeded     Int           @default(4)
   status            MatchStatus   @default(OPEN)
+  preferredPlayerIds String[]     @default([])
   groupId           String?
   cancelledAt       DateTime?
   cancelledReason   String?

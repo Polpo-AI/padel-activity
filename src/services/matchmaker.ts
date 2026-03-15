@@ -61,7 +61,31 @@ export async function processWave(matchId: string, waveNumber: number): Promise<
         match.club?.waveMultiplier ?? 3
     );
 
-    if (players.length === 0) {
+    let playersList = [...players];
+
+    if (waveNumber === 1 && match.preferredPlayerIds && match.preferredPlayerIds.length > 0) {
+        const preferred = await prisma.player.findMany({
+            where: {
+                id: { in: match.preferredPlayerIds },
+                active: true,
+                dailyMessagesCount: { lt: 2 } 
+            }
+        });
+
+        const skillMin = match.skillLevel - (match.club?.matchLowerRange ?? 1.0);
+        const skillMax = match.skillLevel + (match.club?.matchUpperRange ?? 1.0);
+
+        for (const p of preferred) {
+            if (p.skillLevel >= skillMin && p.skillLevel <= skillMax) {
+                if (!playersList.some(fp => fp.id === p.id)) {
+                    playersList.unshift(p); // Prepend so they are invited FIRST
+                    logger.info(`Adding preferred player ${p.name} (${p.id}) to Wave 1 prioritisation`);
+                }
+            }
+        }
+    }
+
+    if (playersList.length === 0) {
         logger.warn(`Wave ${waveNumber} for match ${matchId}: no players available`);
         const { handleMatchUnfillable } = await import('./recovery');
         await handleMatchUnfillable(matchId);
@@ -76,7 +100,7 @@ export async function processWave(matchId: string, waveNumber: number): Promise<
     let currentSpots = spotsNeeded;
     let currentStatus = 'OPEN';
 
-    for (let i = 0; i < players.length; i++) {
+    for (let i = 0; i < playersList.length; i++) {
         if (currentStatus !== 'OPEN' || currentSpots <= 0) break;
 
         // Ricarica stato ogni 3 invii o al primo
@@ -91,7 +115,7 @@ export async function processWave(matchId: string, waveNumber: number): Promise<
             if (currentStatus !== 'OPEN' || currentSpots <= 0) break;
         }
 
-        const player = players[i];
+        const player = playersList[i];
         const currentMinutes = (match.startTime.getTime() - Date.now()) / 60000;
 
         await prisma.invitation.create({

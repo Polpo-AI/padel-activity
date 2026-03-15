@@ -19,7 +19,7 @@ import pino from 'pino';
 const logger = pino({ level: 'info' });
 
 const STATE_TTL_SEC = 24 * 60 * 60; // 24h
-const AWAITING_ROLES = ['AWAITING_FRIEND_PHONE', 'AWAITING_GROUP_PHONES', 'AWAITING_FRIEND_LEVEL', 'AWAITING_SKILL_TEST_CONFIRM'] as const;
+const AWAITING_ROLES = ['AWAITING_FRIEND_PHONE', 'AWAITING_GROUP_PHONES', 'AWAITING_FRIEND_LEVEL', 'AWAITING_SKILL_TEST_CONFIRM', 'AWAITING_PREFERRED_PLAYERS'] as const;
 type AwaitingRole = typeof AWAITING_ROLES[number];
 
 // ─────────────────────────────────────────────
@@ -366,6 +366,66 @@ export async function handleSkillTestConfirm(
         await simulateTypingAndSend(senderJid, "Ok! Ricordati che senza livello non puoi partecipare alle partite. Scrivimi quando vuoi iniziare! 🎾", messageKey);
     }
     await clearAwaitingState(senderJid);
+}
+
+// ─────────────────────────────────────────────
+// GESTIONE GIOCATORI PREFERITI
+// ─────────────────────────────────────────────
+
+export async function processPreferredPlayers(
+    senderJid: string,
+    messageText: string,
+    pendingState: { matchId: string },
+    messageKey?: any
+): Promise<void> {
+    const { matchId } = pendingState;
+    const text = messageText.trim();
+
+    if (text.toLowerCase() === 'no' || text.toLowerCase() === 'salta') {
+        await simulateTypingAndSend(senderJid, "Ok, nessuna preferenza salvata! Procedo con la ricerca standard 🎾", messageKey);
+        await clearAwaitingState(senderJid);
+        return;
+    }
+
+    // Split by comma or newline-ish separators
+    const names = text.split(/,|\n/).map(n => n.trim()).filter(Boolean);
+    const foundPlayerIds: string[] = [];
+    const notFoundNames: string[] = [];
+
+    for (const name of names) {
+        const matchingPlayers = await prisma.player.findMany({
+            where: {
+                name: { contains: name, mode: 'insensitive' },
+                active: true,
+            },
+            take: 3
+        });
+
+        if (matchingPlayers.length > 0) {
+            foundPlayerIds.push(matchingPlayers[0].id);
+        } else {
+            notFoundNames.push(name);
+        }
+    }
+
+    // ... (scope fallback deleted)
+
+    if (foundPlayerIds.length > 0) {
+        await prisma.match.update({
+            where: { id: matchId },
+            data: { preferredPlayerIds: foundPlayerIds }
+        });
+
+        let reply = `✅ Ho trovato e aggiunto **${foundPlayerIds.length}** amici alla lista prioritaria!`;
+        if (notFoundNames.length > 0) {
+            reply += `\n\n⚠️ Non ho trovato: *${notFoundNames.join(', ')}*. Verifica che siano registrati al club con quel nome!`;
+        }
+        reply += `\n\nProcedo con la ricerca! 🎾`;
+        await simulateTypingAndSend(senderJid, reply, messageKey);
+        await clearAwaitingState(senderJid);
+    } else {
+        await simulateTypingAndSend(senderJid, "❌ Non ho trovato nessun giocatore con questi nomi nel club. Prova a scriverli diversamente o premi **SALTA** per inviti standard 🎾", messageKey);
+    }
 }
 
 // ─────────────────────────────────────────────

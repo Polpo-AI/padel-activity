@@ -645,17 +645,15 @@ async function createNewMatch(
         messageKey
     );
 
-    if (playerCount > 1 && playerCount < 4) {
-        // Scusa del gruppo: chiedi nomi, numeri e livelli
+    if (match.status === 'OPEN') {
+        const { setAwaitingState } = await import('./onboarding');
         setTimeout(async () => {
-            await simulateTypingAndSend(jid, `A proposito, mandami i nomi, i numeri (o le card) e i livelli dei tuoi amici, così li aggiungo al gruppo del circolo e rendiamo le partite equilibrate! 🎾`);
-            await setBookingState(jid, { 
-                ...context,
-                step: 'AWAITING_GROUP_CARDS', 
-                matchId: match.id,
-                collectedCount: 1,
-                clubId // ensure clubId is in context for next steps
-            });
+            await simulateTypingAndSend(
+                jid, 
+                `Vuoi invitare prioritariamente 1 o 2 amici iscritti al circolo? 👥\n\nMandami **Nome e Cognome** (es. "Mario Rossi") e li cerco nel sistema!\nAltrimenti rispondi **NO** o **SALTA** 🎾`,
+                messageKey
+            );
+            await setAwaitingState(jid, 'AWAITING_PREFERRED_PLAYERS', { matchId: match.id });
         }, 3000);
     }
 }

@@ -204,6 +204,12 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[]): Pr
             return;
         }
 
+        if (awaitingState.role === 'AWAITING_PREFERRED_PLAYERS') {
+            const { processPreferredPlayers } = await import('./onboarding');
+            await processPreferredPlayers(jid, combinedText, awaitingState.data, batchFirstKey);
+            return;
+        }
+
         if (awaitingState.role === 'AWAITING_FRIEND_PHONE' || awaitingState.role === 'AWAITING_GROUP_PHONES') {
             if (contactCards.length > 0) {
                 // Processa TUTTE le card ricevute in sequenza
