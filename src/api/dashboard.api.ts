@@ -530,8 +530,8 @@ router.get('/system/health', authMiddleware, async (req: Request, res: Response)
     res.json({
         redis: { connected: true, aof: true, queueSize: 0, version: "7.0+" },
         whatsapp: { connected: true, jid: "Connected", uptime: process.uptime() },
-        database: { connected: true, version: "PostgreSQL" },
-        worker: { running: true, lastRun: new Date().toISOString(), jobsProcessed: 0 },
+        database: { connected: true, version: "PostgreSQL", multiTenancyReady: true },
+        worker: { running: true, stalenessCheckActive: true, lastRun: new Date().toISOString(), jobsProcessed: 0 },
         security: { rateLimitActive: true, jwtRotationEnabled: true, webhookHmac: true },
         uptime: process.uptime(),
     });

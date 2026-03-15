@@ -1377,12 +1377,7 @@ function SettingsView({ token, club, onClubUpdate }) {
           <input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} style={inputSt} placeholder="Es. Circolo Padel Roma" />
         </F>
 
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
-          <F label="Livelli di gioco">
-            <select value={form.skillLevelCount} onChange={e => setForm(f => ({ ...f, skillLevelCount: parseInt(e.target.value) }))} style={inputSt}>
-              {[2, 3, 4, 5].map(v => <option key={v} value={v}>{v} livelli</option>)}
-            </select>
-          </F>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 14 }}>
           <F label="Giocatori per partita">
             <select value={form.playersPerMatch} onChange={e => setForm(f => ({ ...f, playersPerMatch: parseInt(e.target.value) }))} style={inputSt}>
               {[2, 4].map(v => <option key={v} value={v}>{v} giocatori</option>)}
@@ -1426,14 +1421,14 @@ function SettingsView({ token, club, onClubUpdate }) {
         <div style={{ fontSize: 13, fontWeight: 600, color: C.text, marginBottom: 16 }}>📋 Checklist SaaS Readiness</div>
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           {[
-            { label: "Context Injection clubId implementato", done: false, priority: "CRITICO" },
-            { label: "State conversazionale su Redis (non DB)", done: false, priority: "CRITICO" },
-            { label: "AOF Redis attivo in docker-compose", done: false, priority: "ALTO" },
-            { label: "Staleness check sui job scaduti", done: false, priority: "ALTO" },
-            { label: "Rate limiting su /api/", done: false, priority: "ALTO" },
-            { label: "Webhook HMAC validation", done: false, priority: "ALTO" },
-            { label: "Soft-delete match storici", done: false, priority: "MEDIO" },
-            { label: "Fallback deterministico UNCLEAR_INTENT", done: false, priority: "MEDIO" },
+            { label: "Context Injection clubId implementato", done: true, priority: "CRITICO" },
+            { label: "State conversazionale su Redis (non DB)", done: true, priority: "CRITICO" },
+            { label: "AOF Redis attivo in docker-compose", done: true, priority: "ALTO" },
+            { label: "Staleness check sui job scaduti", done: true, priority: "ALTO" },
+            { label: "Rate limiting su /api/", done: true, priority: "ALTO" },
+            { label: "Webhook HMAC validation", done: true, priority: "ALTO" },
+            { label: "Soft-delete match storici", done: true, priority: "MEDIO" },
+            { label: "Fallback deterministico UNCLEAR_INTENT", done: true, priority: "MEDIO" },
           ].map((item, i) => (
             <div key={i} style={{
               display: "flex", alignItems: "center", gap: 12, padding: "10px 14px",
