@@ -98,6 +98,7 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[]): Pr
     logger.info(`Batch: ${messages.length} msg from ${phoneNumber}`);
 
     // ── Persisti ─────────────────────────────────────────────────
+    const filteredMessages = [];
     for (const msg of messages) {
         try {
             const content = msg.type === 'contact'
@@ -105,19 +106,40 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[]): Pr
                 : msg.type === 'audio' ? '[Audio]' : (msg.text || '').trim();
 
             if (content) {
+                const messageId = msg.raw.key?.id;
+                
+                if (messageId) {
+                    const existing = await prisma.whatsAppMessage.findFirst({
+                        where: { messageId }
+                    });
+                    if (existing) {
+                        logger.info({ messageId }, 'Deduplication: message already processed, skipping');
+                        continue; // Salta per non creare doppioni
+                    }
+                }
+
                 await prisma.whatsAppMessage.create({
                     data: {
                         chatId: jid,
                         sender: phoneNumber,
                         role: 'USER',
                         content,
+                        messageId: messageId || null,
                     },
                 });
+                filteredMessages.push(msg); // solo quelli non duplicati
             }
         } catch (err) {
             logger.error({ err }, 'Failed to persist message');
         }
     }
+
+    // Se tutti i messaggi sono stati skippati (duplicati), esci presto
+    if (filteredMessages.length === 0 && messages.length > 0) {
+         logger.info({ jid }, 'All messages in batch were duplicates, stopping early');
+         return;
+    }
+    messages = filteredMessages; // lavora solo su quelli nuovi
 
     // ── Trascrivi audio ──────────────────────────────────────────
     for (const msg of messages) {

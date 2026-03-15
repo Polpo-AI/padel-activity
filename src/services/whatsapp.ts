@@ -36,6 +36,9 @@ const logger = pino({ level: 'info' });
 
 let sock: ReturnType<typeof makeWASocket> | null = null;
 let connectionStatus: 'open' | 'connecting' | 'closed' = 'connecting';
+let syncTimer: NodeJS.Timeout | null = null;
+let syncCount = 0;
+let isResyncing = false;
 
 // ✅ FIX I: backoff esponenziale per reconnect — evita loop infinito e accelerazione ban
 let reconnectAttempts = 0;
@@ -154,11 +157,48 @@ export async function connectToWhatsApp() {
             logger.info('✅ WhatsApp Connected Successfully!');
             reconnectAttempts = 0; // ✅ reset counter su connessione riuscita
             connectionStatus = 'open';
+
+            // ✅ Notifica Startup alla Segreteria
+            setTimeout(async () => {
+                try {
+                    const { prisma } = await import('./db');
+                    const club = await prisma.club.findFirst({
+                        where: { adminPhone: { not: null } },
+                    });
+                    if (club?.adminPhone) {
+                        isResyncing = true;
+                        logger.info({ adminPhone: club.adminPhone }, 'Sending startup notification to admin');
+                        await sendMessage(club.adminPhone, "🤖 *Servizio Padel Bot Riavviato!*\nRecupero messaggi offline in corso...");
+                    }
+                } catch (err) {
+                    logger.error({ err }, 'Failed to send startup notification');
+                }
+            }, 5000); // 5s di respiro dopo la connessione
         }
     });
 
     sock.ev.on('messages.upsert', async (m) => {
-        if (m.type !== 'notify') return;
+        if (m.type !== 'notify' && m.type !== 'append') return;
+
+        if (isResyncing) {
+             syncCount += m.messages.length;
+             
+             if (syncTimer) clearTimeout(syncTimer);
+             syncTimer = setTimeout(async () => {
+                 try {
+                     const { prisma } = await import('./db');
+                     const club = await prisma.club.findFirst({
+                         where: { adminPhone: { not: null } }
+                     });
+                     if (club?.adminPhone && syncCount > 0) {
+                         await sendMessage(club.adminPhone, `✅ *Recovery Completata!*\nMessaggi sincronizzati: ${syncCount}. Tutti i processi sono stati riallineati.`);
+                     }
+                 } catch (err) {}
+                 isResyncing = false;
+                 syncCount = 0;
+             }, 15000); // 15 secondi di silenzio = sync finito
+        }
+
         for (const msg of m.messages) {
             if (!msg.key.fromMe && msg.message) {
                 wahEvents.emit('message', msg);
