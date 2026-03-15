@@ -119,7 +119,7 @@ Genera la risposta per l'utente. Mantieni il filo del discorso senza ricominciar
     return null;
 }
 
-async function detectActionSignal(userInput: string, history: string, botResponse?: string): Promise<FluidAction | null> {
+export async function detectActionSignal(userInput: string, history: string, botResponse?: string): Promise<FluidAction | null> {
     try {
         const prompt = loadPrompt('detect_action_signal', {
             history: history,

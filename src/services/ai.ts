@@ -66,8 +66,13 @@ export async function classifyIntent(
 
         const content = result.content[0];
         if (content.type === 'text') {
-            const parsed = JSON.parse(content.text.trim());
-            return { intent: parsed.intent as Intent, confident: parsed.confident === true };
+            const text = content.text.trim();
+            const startIdx = text.indexOf('{');
+            const endIdx = text.lastIndexOf('}');
+            if (startIdx !== -1 && endIdx !== -1) {
+                const parsed = JSON.parse(text.substring(startIdx, endIdx + 1));
+                return { intent: parsed.intent as Intent, confident: parsed.confident === true };
+            }
         }
     } catch (err) {
         logger.error({ err }, 'classifyIntent failed after retries — UNKNOWN fallback');
