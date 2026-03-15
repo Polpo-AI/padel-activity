@@ -293,6 +293,18 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[]): Pr
     }
     if (!club) club = await prisma.club.findFirst(); // fallback al primo se proprio non lo sappiamo
 
+    if (player && player.skillLevel === 0) {
+        logger.info({ jid, phoneNumber }, 'Player has skillLevel 0 - redirecting to Skill Test');
+        const { simulateTypingAndSend } = await import('./whatsapp');
+        const { setBookingState } = await import('./booking');
+        await simulateTypingAndSend(
+            jid,
+            `Ciao! 👋 Per poter iniziare a prenotare o essere cercato per le partite, devi prima effettuare uno **Skill Test** con un nostro maestro per valutare il tuo livello (1.0-7.0).\n\nVuoi che ti prenoti una sessione di valutazione? 🎾`
+        );
+        await setBookingState(jid, { step: 'AWAITING_SKILL_TEST_CONFIRMATION' });
+        return;
+    }
+
     // ─────────────────────────────────────────
     // STEP 3: classifica intent e routing fluido
     // ─────────────────────────────────────────

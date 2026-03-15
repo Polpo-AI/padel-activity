@@ -11,7 +11,7 @@ model Player {
   phoneNumber        String
   name               String?
   gender             Gender              @default(UNKNOWN)
-  skillLevel         Int                 @default(3)
+  skillLevel         Float               @default(0)
   reliabilityScore   Float               @default(0)
   lastContactedAt    DateTime?
   dailyMessagesCount Int                 @default(0)
@@ -20,6 +20,7 @@ model Player {
   clubId             String?
   invitations        Invitation[]
   MatchPlayer        MatchPlayer[]
+  feedbacks          MatchFeedback[]
   pendingOnboardings PendingOnboarding[] @relation("InvitedBy")
   club               Club?               @relation(fields: [clubId], references: [id])
 
@@ -35,6 +36,7 @@ model Court {
   active  Boolean @default(true)
   club    Club    @relation(fields: [clubId], references: [id])
   matches Match[]
+  feedbacks MatchFeedback[]
 }
 
 model Match {
@@ -43,7 +45,8 @@ model Match {
   courtId           String?
   startTime         DateTime
   endTime           DateTime?
-  skillLevel        Int
+  skillLevel        Float
+  isMixed           Boolean       @default(false)
   allowMixedLevels  Boolean       @default(false)
   playersNeeded     Int           @default(4)
   status            MatchStatus   @default(OPEN)
@@ -55,6 +58,7 @@ model Match {
   club              Club?         @relation(fields: [clubId], references: [id])
   court             Court?        @relation(fields: [courtId], references: [id])
   MatchPlayer       MatchPlayer[]
+  feedbacks         MatchFeedback[]
 
   @@index([status, startTime])
   @@index([clubId, status])
@@ -98,7 +102,7 @@ model PendingOnboarding {
   matchId           String
   phoneNumber       String
   name              String?
-  skillLevel        Int?
+  skillLevel        Float?
   invitedByPlayerId String
   createdAt         DateTime @default(now())
   resolved          Boolean  @default(false)
@@ -119,6 +123,10 @@ model Club {
   allowMixedLevels           Boolean  @default(false)
   allowMixedGenderMatchmaking Boolean  @default(false)
   mixedLevelRange            Int      @default(1)
+  matchUpperRange            Float    @default(1.0)
+  matchLowerRange            Float    @default(1.0)
+  skillTestDuration          Int      @default(60)
+  skillTestCost              Float    @default(0.0)
   skillLevelCount            Int      @default(3)
   dashboardUsername          String?  @unique
   dashboardPasswordHash      String?
@@ -162,3 +170,20 @@ enum Gender {
   FEMALE
   UNKNOWN
 }
+
+model MatchFeedback {
+  id        String   @id @default(uuid())
+  matchId   String
+  playerId  String
+  courtId   String
+  content   String
+  timestamp DateTime @default(now())
+
+  match  Match  @relation(fields: [matchId], references: [id])
+  player Player @relation(fields: [playerId], references: [id])
+  court  Court  @relation(fields: [courtId], references: [id])
+
+  @@index([matchId])
+  @@index([playerId])
+}
+

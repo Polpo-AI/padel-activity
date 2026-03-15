@@ -169,7 +169,10 @@ async function searchAndProposeMatches(
                 { skillLevel: player.skillLevel },
                 { 
                     allowMixedLevels: true, 
-                    skillLevel: { gte: player.skillLevel - 1, lte: player.skillLevel + 1 } 
+                    skillLevel: { 
+                        gte: player.skillLevel - (player.club?.matchLowerRange ?? 1.0), 
+                        lte: player.skillLevel + (player.club?.matchUpperRange ?? 1.0) 
+                    } 
                 }
             ],
             startTime: { gte: from, lte: to },
@@ -397,6 +400,19 @@ export async function continueBookingFlow(
     const phoneNumber = jid.split('@')[0];
     const player = await prisma.player.findFirst({ where: { phoneNumber } });
     if (!player) return;
+
+    if (state.step === 'AWAITING_SKILL_TEST_CONFIRMATION') {
+        const text = messageText.toLowerCase();
+        if (text.includes('si') || text.includes('sno') || text.includes('ok') || text.includes('certo') || text.includes('confermo')) {
+            await simulateTypingAndSend(jid, "Ottimo! Ti ho messo in lista. Riceverai un messaggio dal nostro maestro per fissare l'orario della valutazione! 🎾", messageKey);
+            // Opzionale: notifiche al gestore o salvataggio da qualche parte
+        } else {
+            await simulateTypingAndSend(jid, "Nessun problema. Se cambi idea, scrivimi pure per prenotare il tuo Skill Test! 🎾", messageKey);
+        }
+        const { clearBookingState } = await import('./booking');
+        await clearBookingState(jid);
+        return;
+    }
 
     if (state.step === 'AWAITING_PLAYER_COUNT') {
         const match = messageText.match(/\d+/);

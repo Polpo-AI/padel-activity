@@ -141,8 +141,8 @@ export async function selectPlayersForWave(
         ...match.MatchPlayer.map(mp => mp.playerId),
     ];
 
-    const skillMin = match.allowMixedLevels ? match.skillLevel - 1 : match.skillLevel;
-    const skillMax = match.allowMixedLevels ? match.skillLevel + 1 : match.skillLevel;
+    const skillMin = match.allowMixedLevels ? match.skillLevel - (match.club?.matchLowerRange ?? 1.0) : match.skillLevel;
+    const skillMax = match.allowMixedLevels ? match.skillLevel + (match.club?.matchUpperRange ?? 1.0) : match.skillLevel;
 
     const pool = await prisma.player.findMany({
         where: {
@@ -219,8 +219,8 @@ export async function getPlayersForRecovery(matchId: string): Promise<any[]> {
         ...match.MatchPlayer.map(mp => mp.playerId),
     ];
 
-    const skillMin = match.allowMixedLevels ? match.skillLevel - 1 : match.skillLevel;
-    const skillMax = match.allowMixedLevels ? match.skillLevel + 1 : match.skillLevel;
+    const skillMin = match.allowMixedLevels ? match.skillLevel - (match.club?.matchLowerRange ?? 1.0) : match.skillLevel;
+    const skillMax = match.allowMixedLevels ? match.skillLevel + (match.club?.matchUpperRange ?? 1.0) : match.skillLevel;
 
     const pool = await prisma.player.findMany({
         where: {
