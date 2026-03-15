@@ -561,7 +561,10 @@ async function routeIntent(
 
     if (intent === 'YES') {
         try {
-            const result = await prisma.$transaction(async (tx: PrismaTransactionClient) => {
+            const result = await prisma.$transaction(async (tx: any) => {
+                // ✅ FIX A (Race Condition): Acquisisce lock sulla riga per evitare sovraffollamento
+                await tx.$executeRaw`SELECT 1 FROM "Match" WHERE id = ${invitation.matchId} FOR UPDATE`;
+
                 const match = await tx.match.findUnique({
                     where: { id: invitation.matchId },
                     include: { MatchPlayer: true },

@@ -11,6 +11,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import OpenAI from 'openai';
 import { withRetry, isTransientNetworkError } from '../utils/retry';
+import { loadPrompt } from '../utils/prompts';
 import pino from 'pino';
 
 const logger = pino({ level: 'info' });
@@ -48,17 +49,11 @@ export async function classifyIntent(
                 temperature: 0.1,
                 messages: [{
                     role: 'user',
-                    content: `Classifica questa risposta WhatsApp (matchmaking padel).
-${context ? `Contesto: ${context}` : ''}
-${history ? `Cronologia recente:\n${history}` : ''}
- 
-Rispondi SOLO con JSON: {"intent":"VALORE","confident":true/false}
-Valori: YES, NO, CANCEL, BRING_FRIEND, BRING_GROUP, WHOLE_COURT, OPT_OUT, QUESTION, BOOK, INVITE_PREFERRED, UNKNOWN
-confident: true solo se molto sicuro basandoti anche sulla cronologia.
-
-Esempio INVITE_PREFERRED: "invita Giuseppe", "puoi aggiungere Mario Rossi?", "voglio giocare con luca"
-
-Messaggio: "${text}"`,
+                    content: loadPrompt('classify_intent', {
+                        context: context ? `Contesto: ${context}` : '',
+                        history: history ? `Cronologia recente:\n${history}` : '',
+                        text: text
+                    })
                 }],
             }),
             {
@@ -115,7 +110,13 @@ export async function generateInvitation(
                 system: aiTone || 'Sei il bot di un circolo padel. Scrivi messaggi SUPER BREVI, diretti e amichevoli in italiano. Vai subito al punto.',
                 messages: [{
                     role: 'user',
-                    content: `Scrivi un invito WhatsApp brevissimo (max 10-15 parole) per ${playerName} per una partita ${dateStr} alle ${timeStr} al ${court}. ${isFriend ? 'Invito da un amico.' : ''} Solo il testo del messaggio.`,
+                    content: loadPrompt('generate_invitation', {
+                        playerName: playerName,
+                        dateStr: dateStr,
+                        timeStr: timeStr,
+                        court: court,
+                        isFriend: isFriend ? 'Invito da un amico.' : ''
+                    })
                 }],
             }),
             {
