@@ -57,7 +57,7 @@ async function run() {
     console.log(`✅ Match di test creato (lv 2.0, tra 4 ore): ${testMatch.id}`);
     
     // Eseguiamo la selezione
-    const selected = await selectPlayersForWave(testMatch.id, 1, club as any);
+    const { players: selected } = await selectPlayersForWave(testMatch.id, 1, club as any);
     
     console.log(`\n🔍 Giocatori selezionati (${selected.length}):`);
     for (const p of selected) {
