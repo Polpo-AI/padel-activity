@@ -37,6 +37,7 @@ model Court {
   club    Club    @relation(fields: [clubId], references: [id])
   matches Match[]
   feedbacks MatchFeedback[]
+  prices    CourtPrice[]
 }
 
 model Match {
@@ -187,3 +188,16 @@ model MatchFeedback {
   @@index([playerId])
 }
 
+model CourtPrice {
+  id        String    @id @default(uuid())
+  courtId   String
+  startTime String    // "08:00"
+  endTime   String    // "09:00"
+  price     Float
+  startDate DateTime?
+  endDate   DateTime?
+  
+  court     Court     @relation(fields: [courtId], references: [id])
+
+  @@index([courtId])
+}

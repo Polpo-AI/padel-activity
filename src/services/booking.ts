@@ -638,10 +638,13 @@ async function createNewMatch(
         });
     }
 
+    const { calculateMatchCost } = await import('./pricing');
+    const cost = await calculateMatchCost(match.id);
+
     const timeStr = startTime.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
     await simulateTypingAndSend(
         jid,
-        `Fatto! Ho aperto una partita alle ${timeStr} 🏟️ ${spotsNeeded > 0 ? `Cerco altri ${spotsNeeded} giocatori e ti aggiorno!` : 'Siete al completo!'}`,
+        `Fatto! Ho aperto una partita alle ${timeStr} 🏟️ ${cost > 0 ? `Costo: €${cost.toFixed(2)} (€${(cost / 4).toFixed(2)} a testa). ` : ''}${spotsNeeded > 0 ? `Cerco altri ${spotsNeeded} giocatori!` : 'Siete al completo!'}`,
         messageKey
     );
 
@@ -718,11 +721,14 @@ async function addPlayerToMatch(
         await prisma.matchPlayer.create({ data: { matchId: match.id, playerId: friend.id } });
     }
 
+    const { calculateMatchCost } = await import('./pricing');
+    const cost = await calculateMatchCost(match.id);
+
     const timeStr = match.startTime.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
     const spotsLeft = match.playersNeeded - match.MatchPlayer.filter((mp: any) => !mp.leftAt).length - playerCount;
     await simulateTypingAndSend(
         jid,
-        `Perfetto! Vi ho segnato per le ${timeStr} 🏟️ ${spotsLeft > 0 ? `Mancano ancora ${spotsLeft} giocatori, ti aggiorno!` : 'Siete al completo!'}`,
+        `Perfetto! Vi ho segnato per le ${timeStr} 🏟️ ${cost > 0 ? `Costo: €${cost.toFixed(2)} (€${(cost / 4).toFixed(2)} a testa). ` : ''}${spotsLeft > 0 ? `Mancano ancora ${spotsLeft} giocatori, ti aggiorno!` : 'Siete al completo!'}`,
         messageKey
     );
 
