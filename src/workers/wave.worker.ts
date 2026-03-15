@@ -15,9 +15,10 @@ import { STALE_THRESHOLD_MS } from '../api/webhooks';
 import pino from 'pino';
 
 const logger = pino({ level: 'info' });
+const prefix = process.env.QUEUE_PREFIX ? `${process.env.QUEUE_PREFIX}-` : '';
 
 const waveWorker = new Worker(
-    'wave',
+    `${prefix}wave`,
     async (job) => {
         const { matchId, waveNumber, scheduledAt } = job.data;
 

@@ -5,8 +5,10 @@ import pino from 'pino';
 
 const logger = pino({ level: 'info' });
 
+const prefix = process.env.QUEUE_PREFIX ? `${process.env.QUEUE_PREFIX}-` : '';
+
 const recoveryWorker = new Worker(
-    'recovery',
+    `${prefix}recovery`,
     async (job) => {
         const { matchId, spotsNeeded, isUrgent } = job.data;
         logger.info(`Recovery worker: match ${matchId}, spots ${spotsNeeded}, urgent: ${isUrgent}`);

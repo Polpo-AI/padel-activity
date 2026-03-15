@@ -11,8 +11,10 @@ interface ReminderJobData {
     timeStr: string;
 }
 
+const prefix = process.env.QUEUE_PREFIX ? `${process.env.QUEUE_PREFIX}-` : '';
+
 export const reminderWorker = new Worker<ReminderJobData>(
-    'reminder-queue',
+    `${prefix}reminder`,
     async (job: Job<ReminderJobData>) => {
         const { matchId, groupId, timeStr } = job.data;
         logger.info(`Sending Reminder for Match ${matchId} to Group ${groupId}`);

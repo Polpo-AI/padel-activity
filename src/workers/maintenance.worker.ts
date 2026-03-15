@@ -7,8 +7,10 @@ import pino from 'pino';
 
 const logger = pino({ level: 'info' });
 
+const prefix = process.env.QUEUE_PREFIX ? `${process.env.QUEUE_PREFIX}-` : '';
+
 const maintenanceWorker = new Worker(
-    'maintenance',
+    `${prefix}maintenance`,
     async (job) => {
         logger.info(`Running maintenance job: ${job.name}`);
 
