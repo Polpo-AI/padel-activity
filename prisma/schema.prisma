@@ -148,11 +148,13 @@ model WhatsAppMessage {
   sender    String
   role      String
   content   String
+  messageId String?
   timestamp DateTime @default(now())
 
   @@index([chatId])
   @@index([chatId, role])
   @@index([timestamp])
+  @@index([messageId])
 }
 
 enum MatchStatus {
