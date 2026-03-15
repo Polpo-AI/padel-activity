@@ -35,6 +35,7 @@ interface BookingContext {
     guaranteesFull: boolean;    // Mario dice "siamo già in 4" o simile
     friendLevel?: number | null; // se specificato "un amico livello 3"
     isCountExplicit: boolean;   // l'utente ha detto apertamente quanti sono?
+    isMixed?: boolean;          // true se mista, false se uomo/donna, null se any
 }
 
 export async function extractBookingContext(messageText: string, maxLevel: number = 3): Promise<BookingContext> {
@@ -49,7 +50,8 @@ Estrai le seguenti informazioni e rispondi SOLO con un JSON:
   "specificDay": "lunedì" | "martedì" | "mercoledì" | "giovedì" | "venerdì" | "sabato" | "domenica" | "oggi" | "domani" | null,
   "guaranteesFull": true se dice che sono già in 4 o che chiudono il campo da soli, false altrimenti,
   "friendLevel": numero intero da 1 a ${maxLevel} se specifica il livello dell'amico/i, altrimenti null,
-  "isCountExplicit": true se l'utente ha specificato un numero di giocatori (es: "siamo in 2", "uno per stasera"), false se è un'intenzione generica senza quantità
+  "isCountExplicit": true se l'utente ha specificato un numero di giocatori (es: "siamo in 2", "uno per stasera"), false se è un'intenzione generica senza quantità,
+  "isMixed": true se specifica "mista" o "misto", false se uomo/donna o se non specifica nulla (default false)
 }
 
 Regole per timeSlot:
@@ -84,7 +86,7 @@ Rispondi SOLO con il JSON.
         logger.error({ err }, 'Error extracting booking context');
     }
 
-    return { playerCount: 1, timeSlot: 'unknown', guaranteesFull: false, specificDay: null, isCountExplicit: false };
+    return { playerCount: 1, timeSlot: 'unknown', guaranteesFull: false, specificDay: null, isCountExplicit: false, isMixed: false };
 }
 
 // ─────────────────────────────────────────────
@@ -165,6 +167,7 @@ async function searchAndProposeMatches(
         where: {
             clubId: player.clubId,
             status: 'OPEN',
+            isMixed: context.isMixed ?? false,
             OR: [
                 { skillLevel: player.skillLevel },
                 { 
@@ -576,6 +579,7 @@ async function createNewMatch(
             clubId,
             courtId: freeCourt?.id,
             startTime,
+            isMixed: context.isMixed ?? false,
             skillLevel: player.skillLevel,
             allowMixedLevels: player.club?.allowMixedLevels ?? false,
             playersNeeded: 4,
