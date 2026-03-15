@@ -404,6 +404,28 @@ export async function continueBookingFlow(
     const player = await prisma.player.findFirst({ where: { phoneNumber } });
     if (!player) return;
 
+    if (state.step === 'AWAITING_POST_MATCH_FEEDBACK') {
+        const { simulateTypingAndSend } = await import('./whatsapp');
+        const { clearBookingState } = await import('./booking');
+        
+        try {
+            await prisma.matchFeedback.create({
+                data: {
+                    matchId: state.matchId,
+                    playerId: player.id,
+                    courtId: state.courtId || '',
+                    content: messageText,
+                }
+            });
+            await simulateTypingAndSend(jid, "Grazie per il tuo feedback! Lo terremo in considerazione 🎾", messageKey);
+        } catch (err) {
+            logger.error({ err }, 'Error saving match feedback');
+            await simulateTypingAndSend(jid, "Grazie per il messaggio! 🎾", messageKey);
+        }
+        await clearBookingState(jid);
+        return;
+    }
+
     if (state.step === 'AWAITING_SKILL_TEST_CONFIRMATION') {
         const text = messageText.toLowerCase();
         if (text.includes('si') || text.includes('sno') || text.includes('ok') || text.includes('certo') || text.includes('confermo')) {
