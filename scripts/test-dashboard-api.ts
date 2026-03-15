@@ -1,3 +1,4 @@
+import { prisma } from '../src/services/db';
 import * as jwt from 'jsonwebtoken';
 import axios from 'axios';
 import * as dotenv from 'dotenv';
@@ -12,19 +13,26 @@ const CLUB_ID = 'ebff5173-3fd4-4beb-b919-f904343bd551';
 async function run() {
     console.log(`🧪 Test Endpoints Dashboard API su ${BASE_URL}...`);
 
-    // 1. Genera Token JWT
     const token = jwt.sign({ clubId: CLUB_ID }, JWT_SECRET, { expiresIn: '1h' });
     const headers = { Authorization: `Bearer ${token}` };
 
     try {
-        // 2. Test GET /players
         console.log("\n1. Test GET /players...");
-        const resPlayers = await axios.get(`${BASE_URL}/players`, { headers });
+        let resPlayers = await axios.get(`${BASE_URL}/players`, { headers });
         console.log(`✅ GET /players: ${resPlayers.status} ok. Trovati ${resPlayers.data.length} giocatori.`);
 
         if (resPlayers.data.length === 0) {
-            console.log("⚠️ Nessun giocatore a DB per fare test individuali.");
-            return;
+            console.log("🛠️ Inserisco un giocatore di test a DB...");
+            await prisma.player.create({
+                data: {
+                    clubId: CLUB_ID,
+                    phoneNumber: '+393457991255',
+                    name: 'Test Dashboard',
+                    skillLevel: 2.0,
+                    active: true
+                }
+            });
+            resPlayers = await axios.get(`${BASE_URL}/players`, { headers });
         }
 
         const testPlayer = resPlayers.data[0];
