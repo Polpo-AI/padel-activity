@@ -165,12 +165,17 @@ async function searchAndProposeMatches(
         where: {
             clubId: player.clubId,
             status: 'OPEN',
-            skillLevel: player.skillLevel,
+            OR: [
+                { skillLevel: player.skillLevel },
+                { 
+                    allowMixedLevels: true, 
+                    skillLevel: { gte: player.skillLevel - 1, lte: player.skillLevel + 1 } 
+                }
+            ],
             startTime: { gte: from, lte: to },
         },
         include: { MatchPlayer: true, court: true },
         orderBy: [
-            // Prima quelle che si chiudono aggiungendo Mario e co.
             { startTime: 'asc' },
         ],
     });
@@ -179,6 +184,13 @@ async function searchAndProposeMatches(
     const suitable = openMatches.filter(m => {
         const spotsLeft = m.playersNeeded - m.MatchPlayer.filter((mp: any) => !mp.leftAt).length;
         return spotsLeft >= context.playerCount;
+    });
+
+    // Priorità: livelli esatti prima, misti dopo
+    suitable.sort((a, b) => {
+        if (a.skillLevel === player.skillLevel && b.skillLevel !== player.skillLevel) return -1;
+        if (a.skillLevel !== player.skillLevel && b.skillLevel === player.skillLevel) return 1;
+        return 0;
     });
 
     // Ordina: prima quelle che si chiudono esattamente
@@ -440,24 +452,44 @@ export async function continueBookingFlow(
     }
 
     if (state.step === 'AWAITING_GROUP_CARDS') {
-        // Raccoglie card contatti del gruppo di Mario
-        if (contactInfo?.phone) {
-            await addFriendToMatch(jid, contactInfo.phone, contactInfo.name, state.matchId, messageKey);
+        // Estrai livello se presente nel testo (1-4)
+        const levelMatch = messageText.match(/\b([1-4])\b/);
+        const suggestedLevel = levelMatch ? parseInt(levelMatch[1]) : undefined;
+        let phone: string | undefined = contactInfo?.phone;
+        let name: string | undefined = contactInfo?.name;
+
+        if (!phone) {
+            // Prova a estrarre numero dal testo
+            const phoneMatch = messageText.match(/(\+?\d{10,15})/);
+            if (phoneMatch) {
+                phone = phoneMatch[1];
+                name = messageText.replace(phoneMatch[0], '').replace(/\b[1-4]\b/, '').trim() || undefined;
+            }
+        }
+
+        if (phone) {
+            await addFriendToMatch(jid, phone, name, state.matchId, suggestedLevel, messageKey);
             const newCount = state.collectedCount + 1;
 
             if (newCount >= state.playerCount) {
-                await simulateTypingAndSend(jid, "Perfetto! Siete tutti segnati 🎾 Campo chiuso!", messageKey);
+                const match = await prisma.match.findUnique({ where: { id: state.matchId } });
+                const isFull = state.playerCount >= 4;
+                await simulateTypingAndSend(
+                    jid, 
+                    `Perfetto! Ho aggiunto tutti. ${isFull ? 'Campo chiuso! 🎾' : `Ora mancano solo ${4 - newCount} giocatori per completare la sfida.`}`, 
+                    messageKey
+                );
                 await clearBookingState(jid);
             } else {
                 await setBookingState(jid, { ...state, collectedCount: newCount });
                 await simulateTypingAndSend(
                     jid,
-                    `${newCount}/${state.playerCount} ricevuti. Mandami ancora ${state.playerCount - newCount} contatt${state.playerCount - newCount === 1 ? 'o' : 'i'} 👋`,
+                    `${newCount}/${state.playerCount} registrati. Mandami ancora ${state.playerCount - newCount} compagno/i (numero e livello)! 👋`,
                     messageKey
                 );
             }
         } else {
-            await simulateTypingAndSend(jid, "Mandami i contatti come card WhatsApp o con il numero (es. +393471234567) 😊", messageKey);
+            await simulateTypingAndSend(jid, "Mandami i contatti come card WhatsApp o scrivi il numero (es. +393471234567) seguito dal livello (1-4) 😊", messageKey);
         }
         return;
     }
@@ -527,9 +559,9 @@ async function createNewMatch(
         data: {
             clubId,
             courtId: freeCourt?.id,
-            
             startTime,
             skillLevel: player.skillLevel,
+            allowMixedLevels: player.club?.allowMixedLevels ?? false,
             playersNeeded: 4,
             status: playerCount >= 4 ? 'LOCKED' : 'OPEN',
         },
@@ -571,14 +603,16 @@ async function createNewMatch(
         messageKey
     );
 
-    if (playerCount > 1 && playerCount < 4 && !context.friendLevel) {
-        // Ask for friend's level after a small organic delay
+    if (playerCount > 1 && playerCount < 4) {
+        // Scusa del gruppo: chiedi nomi, numeri e livelli
         setTimeout(async () => {
-            await simulateTypingAndSend(jid, `A proposito, che livello ${playerCount === 2 ? 'è il tuo amico' : 'sono i tuoi amici'} (1-${maxLevel})?`);
+            await simulateTypingAndSend(jid, `A proposito, mandami i nomi, i numeri (o le card) e i livelli dei tuoi amici, così li aggiungo al gruppo del circolo e rendiamo le partite equilibrate! 🎾`);
             await setBookingState(jid, { 
-                step: 'AWAITING_FRIEND_LEVEL', 
+                ...context,
+                step: 'AWAITING_GROUP_CARDS', 
                 matchId: match.id,
-                friendCount: playerCount - 1 
+                collectedCount: 1,
+                clubId // ensure clubId is in context for next steps
             });
         }, 3000);
     }
@@ -669,8 +703,12 @@ async function addFriendToMatch(
     friendPhone: string,
     friendName: string | undefined,
     matchId: string,
+    skillLevel?: number,
     messageKey?: any
 ): Promise<void> {
+    const match = await prisma.match.findUnique({ where: { id: matchId } });
+    if (!match) return;
+
     let friend = await prisma.player.findFirst({ where: { phoneNumber: friendPhone } });
 
     if (!friend) {
@@ -679,10 +717,13 @@ async function addFriendToMatch(
             data: {
                 phoneNumber: friendPhone,
                 name: friendName || null,
-                skillLevel: referentPlayer?.skillLevel ?? 3,
+                skillLevel: skillLevel ?? referentPlayer?.skillLevel ?? 3,
                 active: true,
+                clubId: match.clubId
             },
         });
+    } else if (skillLevel) {
+        await prisma.player.update({ where: { id: friend.id }, data: { skillLevel } });
     }
 
     await prisma.matchPlayer.upsert({
@@ -690,6 +731,15 @@ async function addFriendToMatch(
         create: { matchId, playerId: friend.id },
         update: {},
     });
+
+    // Se il livello dell'amico è diverso da quello della partita, abilita Mixed Levels
+    if (skillLevel && skillLevel !== match.skillLevel && !match.allowMixedLevels) {
+        await prisma.match.update({
+            where: { id: matchId },
+            data: { allowMixedLevels: true }
+        });
+        logger.info({ matchId, friendLevel: skillLevel }, 'Enabling mixed levels for match due to diverse friend level');
+    }
 }
 
 // ─────────────────────────────────────────────

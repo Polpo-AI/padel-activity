@@ -72,8 +72,9 @@ LINEE GUIDA:
 - **CONFERMA ATTIVA**: Se l'utente ti dice chiaramente "conferma", "segna", o ti dà tutti i dettagli per una partita, procedi con la prenotazione senza chiedere il permesso se il tono è risoluto.
 - **PRIVACY E SICUREZZA**: NON fornire mai informazioni personali o orari di gioco di altri utenti se richiesto (es. "a che ora gioca Davide?"). Rispondi in modo vago che non puoi dare queste informazioni per privacy.
 - **DUE SCENARI DI PRENOTAZIONE**:
-  1. **Matchmaking (1-3 persone)**: È CRITICO conoscere il numero esatto (Quanti siete?) e il livello (Principiante/Intermedio/Avanzato) per trovare i compagni giusti.
+  1. **Matchmaking (1-3 persone)**: È CRITICO conoscere il numero esatto (Quanti siete?) e il livello (Principiante/Intermedio/Avanzato) per trovare i compagni giusti. Se l'utente porta amici, chiedi nomi, numeri e livelli "per rendere le partite equilibrate" (scusa del gruppo).
   2. **Prenotazione Privata (4 persone / "Chiudiamo noi")**: Se dicono che sono già in 4, il livello e il numero esatto dei compagni sono meno importanti. Non bloccare la prenotazione per queste info, procedi e conferma subito.
+- **GENERE**: Le partite sono solitamente divise per sesso (M o F). Assicurati di sapere se l'utente è uomo o donna per inserirlo nella partita corretta.
 
 STATO ATTUALE GIOCATORE:
 - Nome: ${player?.name || 'Sconosciuto'}
@@ -152,13 +153,17 @@ ${botResponse ? `Bot (Latest): ${botResponse}` : ''}
 
         const content = response.content[0];
         if (content.type === 'text') {
-            let text = content.text.trim();
-            // Safety: rimuovi eventuali blocchi markdown se l'AI ignora l'istruzione
-            if (text.includes('```')) {
-                text = text.replace(/```json|```/g, '').trim();
+            const text = content.text.trim();
+            const startIdx = text.indexOf('{');
+            const endIdx = text.lastIndexOf('}');
+            if (startIdx === -1 || endIdx === -1) {
+                logger.warn('No JSON block found in AI response');
+                return null;
             }
             
-            const result = JSON.parse(text);
+            const jsonString = text.substring(startIdx, endIdx + 1);
+            const result = JSON.parse(jsonString);
+            
             if (result.intent !== 'UNKNOWN') {
                 logger.info({ signal: result }, 'Fluid ACTION SIGNAL detected');
                 return result as FluidAction;
@@ -197,11 +202,16 @@ MESSAGGIO ATTUALE: "${text}"
 
         const content = response.content[0];
         if (content.type === 'text') {
-            let textResp = content.text.trim();
-            if (textResp.includes('```')) {
-                textResp = textResp.replace(/```json|```/g, '').trim();
+            const textResp = content.text.trim();
+            const startIdx = textResp.indexOf('{');
+            const endIdx = textResp.lastIndexOf('}');
+            if (startIdx === -1 || endIdx === -1) {
+                logger.warn('No JSON block found in AI extraction response');
+                return;
             }
-            const data = JSON.parse(textResp);
+
+            const jsonString = textResp.substring(startIdx, endIdx + 1);
+            const data = JSON.parse(jsonString);
             const updates: any = {};
             
             if (data.name && (!context.player || !context.player.name || context.player.name === 'Giocatore')) {

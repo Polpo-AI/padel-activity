@@ -119,9 +119,22 @@ export async function selectPlayersForWave(
 ): Promise<{ players: any[]; targetCount: number }> {
     const match = await prisma.match.findUnique({
         where: { id: matchId },
-        include: { invitations: true, MatchPlayer: true },
+        include: { invitations: true, MatchPlayer: { include: { player: true } }, club: true },
     });
     if (!match) return { players: [], targetCount: 0 };
+
+    // 1. GENDER RESTRICTION (Always same sex unless club allows mixed)
+    let targetGender: any = null;
+    if (!match.club?.allowMixedGenderMatchmaking) {
+        const participants = match.MatchPlayer.map(mp => mp.player).filter(Boolean);
+        if (participants.length > 0) {
+            const genders = Array.from(new Set(participants.map(p => p.gender)));
+            // Se sono tutti dello stesso sesso (e non UNKNOWN), restringiamo a quello
+            if (genders.length === 1 && genders[0] !== 'UNKNOWN') {
+                targetGender = genders[0];
+            }
+        }
+    }
 
     const excludedIds = [
         ...match.invitations.map(i => i.playerId),
@@ -133,15 +146,13 @@ export async function selectPlayersForWave(
 
     const pool = await prisma.player.findMany({
         where: {
+            clubId: match.clubId,
             skillLevel: { gte: skillMin, lte: skillMax },
+            gender: targetGender ? targetGender : undefined,
             active: true,
             dailyMessagesCount: { lt: 2 },
             id: { notIn: excludedIds },
         },
-        orderBy: [
-            { lastContactedAt: 'asc' },
-            { reliabilityScore: 'desc' },
-        ],
     });
 
     if (pool.length === 0) return { players: [], targetCount: 0 };
@@ -149,32 +160,59 @@ export async function selectPlayersForWave(
     const eligible = await filterExcluded(pool);
     if (eligible.length === 0) return { players: [], targetCount: 0 };
 
-    const avgRate = eligible.reduce((s, p) => s + (p.reliabilityScore || PRIOR), 0) / eligible.length;
+    // 2. LEVEL PRIORITIZATION: Exact Level First
+    const perfectMatches = eligible.filter(p => p.skillLevel === match.skillLevel);
+    const adjacentMatches = eligible.filter(p => p.skillLevel !== match.skillLevel);
+
+    const sortEligible = (a: any, b: any) => {
+        const lastA = a.lastContactedAt?.getTime() || 0;
+        const lastB = b.lastContactedAt?.getTime() || 0;
+        if (lastA !== lastB) return lastA - lastB; // Chi non contattiamo da più tempo va prima
+        return (b.reliabilityScore || PRIOR) - (a.reliabilityScore || PRIOR); // A parità di tempo, chi è più affidabile
+    };
+
+    perfectMatches.sort(sortEligible);
+    adjacentMatches.sort(sortEligible);
+
+    const sortedEligible = [...perfectMatches, ...adjacentMatches];
+
+    const avgRate = sortedEligible.reduce((s, p) => s + (p.reliabilityScore || PRIOR), 0) / sortedEligible.length;
     let multiplier = clubWaveMultiplier;
     if (avgRate > 0.5) multiplier = Math.max(2, clubWaveMultiplier - 1);
     else if (avgRate < 0.3) multiplier = clubWaveMultiplier + 1;
 
-    const targetCount = Math.min(spotsNeeded * multiplier, eligible.length);
+    const targetCount = Math.min(spotsNeeded * multiplier, sortedEligible.length);
 
     logger.info(
-        `Wave selection: ${spotsNeeded} spots, eligible ${eligible.length}, ` +
-        `avgRate ${avgRate.toFixed(2)}, ×${multiplier}, targeting ${targetCount}`
+        `Wave selection: ${spotsNeeded} spots, perfect ${perfectMatches.length}, adjacent ${adjacentMatches.length}, ` +
+        `gender: ${targetGender || 'any'}, avgRate ${avgRate.toFixed(2)}, targeting ${targetCount}`
     );
 
-    return { players: eligible.slice(0, targetCount), targetCount };
+    return { players: sortedEligible.slice(0, targetCount), targetCount };
 }
 
 // ─────────────────────────────────────────────
 // SELEZIONE RECOVERY — pool più ampio, ignora cap giornaliero
 // Usato da recovery.ts (sostituisce getPlayersForRecovery da matchmaker)
 // ─────────────────────────────────────────────
-
+ 
 export async function getPlayersForRecovery(matchId: string): Promise<any[]> {
     const match = await prisma.match.findUnique({
         where: { id: matchId },
-        include: { invitations: true, MatchPlayer: true, club: true },
+        include: { invitations: true, MatchPlayer: { include: { player: true } }, club: true },
     });
     if (!match) return [];
+
+    let targetGender: any = null;
+    if (!match.club?.allowMixedGenderMatchmaking) {
+        const participants = match.MatchPlayer.map(mp => mp.player).filter(Boolean);
+        if (participants.length > 0) {
+            const genders = Array.from(new Set(participants.map(p => p.gender)));
+            if (genders.length === 1 && genders[0] !== 'UNKNOWN') {
+                targetGender = genders[0];
+            }
+        }
+    }
 
     const excludedIds = [
         ...match.invitations.map(i => i.playerId),
@@ -184,20 +222,32 @@ export async function getPlayersForRecovery(matchId: string): Promise<any[]> {
     const skillMin = match.allowMixedLevels ? match.skillLevel - 1 : match.skillLevel;
     const skillMax = match.allowMixedLevels ? match.skillLevel + 1 : match.skillLevel;
 
-    // In recovery: ignoriamo dailyMessagesCount — la partita deve essere riempita
     const pool = await prisma.player.findMany({
         where: {
+            clubId: match.clubId,
             skillLevel: { gte: skillMin, lte: skillMax },
+            gender: targetGender ? targetGender : undefined,
             active: true,
             id: { notIn: excludedIds },
         },
-        orderBy: [
-            { reliabilityScore: 'desc' },  // in recovery vogliamo i più affidabili prima
-            { lastContactedAt: 'asc' },
-        ],
     });
 
-    return filterExcluded(pool);
+    const eligible = await filterExcluded(pool);
+
+    const perfectMatches = eligible.filter(p => p.skillLevel === match.skillLevel);
+    const adjacentMatches = eligible.filter(p => p.skillLevel !== match.skillLevel);
+
+    const sortRecovery = (a: any, b: any) => {
+        const lastA = a.lastContactedAt?.getTime() || 0;
+        const lastB = b.lastContactedAt?.getTime() || 0;
+        if (lastA !== lastB) return lastA - lastB;
+        return (b.reliabilityScore || PRIOR) - (a.reliabilityScore || PRIOR);
+    };
+
+    perfectMatches.sort(sortRecovery);
+    adjacentMatches.sort(sortRecovery);
+
+    return [...perfectMatches, ...adjacentMatches];
 }
 
 // ─────────────────────────────────────────────

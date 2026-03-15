@@ -117,6 +117,7 @@ model Club {
   waveMultiplier             Int      @default(3)
   deadlineMinutesBeforeMatch Int      @default(60)
   allowMixedLevels           Boolean  @default(false)
+  allowMixedGenderMatchmaking Boolean  @default(false)
   mixedLevelRange            Int      @default(1)
   skillLevelCount            Int      @default(3)
   dashboardUsername          String?  @unique
