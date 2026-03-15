@@ -218,10 +218,10 @@ router.get('/matches/:id', authMiddleware, async (req: Request, res: Response) =
 
 router.post('/matches', authMiddleware, async (req: Request, res: Response) => {
     const clubId = (req as any).clubId;
-    const { courtId, startTime, skillLevel, playersNeeded = 4 } = req.body;
+    const { courtId, startTime, skillLevel, playersNeeded = 4, type = 'MATCH', duration } = req.body;
 
-    if (!courtId || !startTime || !skillLevel) {
-        return res.status(400).json({ error: 'courtId, startTime e skillLevel sono richiesti' });
+    if (!courtId || !startTime) {
+        return res.status(400).json({ error: 'courtId e startTime sono richiesti' });
     }
 
     // Verifica che il campo appartenga al club

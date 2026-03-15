@@ -357,6 +357,8 @@ function CreateMatchModal({ courts, club, token, onClose, onCreated }) {
   const [courtId, setCourtId] = useState(courts[0]?.id || "");
   const [date, setDate] = useState(today());
   const [skillLevel, setSkillLevel] = useState(Math.ceil((club?.skillLevelCount || 3) / 2));
+  const [matchType, setMatchType] = useState("MATCH");
+  const [duration, setDuration] = useState(club?.matchDuration || 90);
   const [slots, setSlots] = useState([]);
   const [selectedSlot, setSelectedSlot] = useState(null);
   const [loadingSlots, setLoadingSlots] = useState(false);
@@ -379,7 +381,7 @@ function CreateMatchModal({ courts, club, token, onClose, onCreated }) {
     if (!selectedSlot) return;
     setSaving(true); setErr("");
     try {
-      await api("/matches", token, { method: "POST", body: JSON.stringify({ courtId, startTime: selectedSlot, skillLevel }) });
+      await api("/matches", token, { method: "POST", body: JSON.stringify({ courtId, startTime: selectedSlot, skillLevel, type: matchType, duration }) });
       onCreated(); onClose();
     } catch (e) { setErr(e.message); }
     finally { setSaving(false); }
@@ -388,6 +390,23 @@ function CreateMatchModal({ courts, club, token, onClose, onCreated }) {
   return (
     <Modal title="Nuova partita" onClose={onClose}>
       <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        {/* Toggle Tipo Evento */}
+        <div style={{ display: "flex", gap: 6, background: C.bg, padding: 4, borderRadius: 10, border: `1px solid ${C.dim}` }}>
+          {[
+            { id: "MATCH", label: "🎾 Partita" },
+            { id: "LESSON", label: "👨‍🏫 Lezione" },
+            { id: "UNAVAILABLE", label: "⛔ Occupato" }
+          ].map(t => (
+            <button key={t.id} onClick={() => setMatchType(t.id)} style={{
+              flex: 1, padding: "8px 0", borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: "pointer",
+              background: matchType === t.id ? C.surface : "transparent",
+              color: matchType === t.id ? C.text : C.muted,
+              border: `1px solid ${matchType === t.id ? C.border : "transparent"}`,
+              boxShadow: matchType === t.id ? "0 2px 4px rgba(0,0,0,0.2)" : "none"
+            }}>{t.label}</button>
+          ))}
+        </div>
+
         <div>
           <label style={labelSt}>Campo</label>
           <select value={courtId} onChange={e => setCourtId(e.target.value)} style={inputSt}>
@@ -398,18 +417,30 @@ function CreateMatchModal({ courts, club, token, onClose, onCreated }) {
           <label style={labelSt}>Data</label>
           <input type="date" value={date} onChange={e => setDate(e.target.value)} style={inputSt} />
         </div>
-        <div>
-          <label style={labelSt}>Livello di gioco</label>
-          <input 
-            type="number" 
-            step="0.5" 
-            min="1" 
-            max="10" 
-            value={skillLevel} 
-            onChange={e => setSkillLevel(parseFloat(e.target.value) || 1)} 
-            style={{ ...inputSt, width: "100%" }} 
-          />
-        </div>
+        
+        {matchType === "MATCH" && (
+          <div>
+            <label style={labelSt}>Livello di gioco</label>
+            <input 
+              type="number" 
+              step="0.5" 
+              min="1" 
+              max="10" 
+              value={skillLevel} 
+              onChange={e => setSkillLevel(parseFloat(e.target.value) || 1)} 
+              style={{ ...inputSt, width: "100%" }} 
+            />
+          </div>
+        )}
+
+        {matchType !== "MATCH" && (
+          <div>
+            <label style={labelSt}>Durata (minuti)</label>
+            <select value={duration} onChange={e => setDuration(parseInt(e.target.value))} style={inputSt}>
+              {[30, 45, 60, 90, 120].map(v => <option key={v} value={v}>{v} minuti</option>)}
+            </select>
+          </div>
+        )}
 
         <div>
           <label style={labelSt}>Orario</label>
@@ -440,7 +471,7 @@ function CreateMatchModal({ courts, club, token, onClose, onCreated }) {
       <div style={{ display: "flex", gap: 10 }}>
         <button onClick={onClose} style={{ ...btnGhost, flex: 1, padding: "10px 0" }}>Annulla</button>
         <button onClick={create} disabled={saving || !selectedSlot} style={{ ...btnPrimary, flex: 2, opacity: selectedSlot ? 1 : 0.4 }}>
-          {saving ? "Creazione..." : "Crea e lancia wave →"}
+          {saving ? "Creazione..." : matchType === "MATCH" ? "Crea e lancia wave →" : "Blocca Campo →"}
         </button>
       </div>
     </Modal>

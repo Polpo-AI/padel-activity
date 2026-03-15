@@ -44,6 +44,7 @@ model Court {
 
 model Match {
   id                String        @id @default(uuid())
+  type              MatchType     @default(MATCH)
   clubId            String?
   courtId           String?
   startTime         DateTime
@@ -163,6 +164,12 @@ enum MatchStatus {
   CANCELLED
   UNFILLED
   ARCHIVED
+}
+
+enum MatchType {
+  MATCH
+  LESSON
+  UNAVAILABLE
 }
 
 enum InvitationStatus {
