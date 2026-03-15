@@ -33,7 +33,7 @@ export const openai = new OpenAI({
 
 export type Intent =
     | 'YES' | 'NO' | 'CANCEL' | 'BRING_FRIEND' | 'BRING_GROUP'
-    | 'WHOLE_COURT' | 'OPT_OUT' | 'QUESTION' | 'BOOK' | 'UNKNOWN';
+    | 'WHOLE_COURT' | 'OPT_OUT' | 'QUESTION' | 'BOOK' | 'INVITE_PREFERRED' | 'UNKNOWN';
 
 export async function classifyIntent(
     text: string,
@@ -44,17 +44,19 @@ export async function classifyIntent(
         const result = await withRetry(
             () => anthropic.messages.create({
                 model: 'claude-haiku-4-5-20251001',
-                max_tokens: 30,
+                max_tokens: 40,
                 temperature: 0.1,
                 messages: [{
                     role: 'user',
                     content: `Classifica questa risposta WhatsApp (matchmaking padel).
 ${context ? `Contesto: ${context}` : ''}
 ${history ? `Cronologia recente:\n${history}` : ''}
-
+ 
 Rispondi SOLO con JSON: {"intent":"VALORE","confident":true/false}
-Valori: YES, NO, CANCEL, BRING_FRIEND, BRING_GROUP, WHOLE_COURT, OPT_OUT, QUESTION, BOOK, UNKNOWN
-confident: true solo se molto sicuro basandoti anche sulla cronologia (es. se l'utente dice orario dopo che gli è stato chiesto).
+Valori: YES, NO, CANCEL, BRING_FRIEND, BRING_GROUP, WHOLE_COURT, OPT_OUT, QUESTION, BOOK, INVITE_PREFERRED, UNKNOWN
+confident: true solo se molto sicuro basandoti anche sulla cronologia.
+
+Esempio INVITE_PREFERRED: "invita Giuseppe", "puoi aggiungere Mario Rossi?", "voglio giocare con luca"
 
 Messaggio: "${text}"`,
                 }],
@@ -209,6 +211,38 @@ export async function extractPhoneNumber(text: string): Promise<string | null> {
         logger.error({ err }, 'extractPhoneNumber AI failed');
     }
 
+    return null;
+}
+
+// ─────────────────────────────────────────────
+// ESTRAI NOME GIOCATORE CORRISPONDENTE (PREFERITO)
+// ─────────────────────────────────────────────
+
+export async function extractPreferredPlayerName(text: string): Promise<string | null> {
+    try {
+        const result = await withRetry(
+            () => anthropic.messages.create({
+                model: 'claude-haiku-4-5-20251001',
+                max_tokens: 30,
+                temperature: 0,
+                messages: [{
+                    role: 'user',
+                    content: `Estrai il nome e cognome del giocatore da invitare. 
+Rispondi SOLO con "Nome Cognome" (es. "Giuseppe Rossi") o "NULL". 
+Esempi: "invita Giuseppe Rossi" -> Giuseppe Rossi. "aggiungi Mario" -> Mario. "voglio Luca" -> Luca.
+Dati: "${text}"`,
+                }],
+            }),
+            { maxAttempts: 2, context: 'extractPreferredPlayerName' }
+        );
+        const content = result.content[0];
+        if (content.type === 'text') {
+            const val = content.text.trim();
+            return val === 'NULL' ? null : val;
+        }
+    } catch (err) {
+        logger.error({ err }, 'extractPreferredPlayerName failed');
+    }
     return null;
 }
 

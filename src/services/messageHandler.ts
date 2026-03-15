@@ -383,6 +383,82 @@ async function routeIntent(
 
     const firstCard = contactCards[0];
 
+    if (intent === 'INVITE_PREFERRED') {
+        const { extractPreferredPlayerName } = await import('./ai');
+        const nameToSearch = await extractPreferredPlayerName(combinedText);
+        if (!nameToSearch) {
+            const { simulateTypingAndSend } = await import('./whatsapp');
+            await simulateTypingAndSend(jid, "❌ Non ho capito bene chi vuoi invitare. Prova a scriverlo chiaramente (es. 'Invita Giuseppe Rossi') 🎾");
+            return;
+        }
+
+        const match = await prisma.match.findFirst({
+            where: {
+                status: 'OPEN',
+                MatchPlayer: { some: { playerId: player.id } }
+            },
+            include: { club: true },
+            orderBy: { startTime: 'asc' }
+        });
+
+        const { simulateTypingAndSend } = await import('./whatsapp');
+
+        if (!match) {
+            await simulateTypingAndSend(jid, "❌ Non ho trovato nessuna partita aperta creata da te a cui invitare giocatori. 🎾");
+            return;
+        }
+
+        const targets = await prisma.player.findMany({
+            where: {
+                name: { contains: nameToSearch, mode: 'insensitive' },
+                active: true,
+                clubId: match.clubId
+            },
+            take: 3
+        });
+
+        if (targets.length === 0) {
+            await simulateTypingAndSend(jid, `❌ Non ho trovato nessuno nel club col nome **${nameToSearch}**. Assicurati che sia registrato! 🎾`);
+            return;
+        }
+
+        const target = targets[0];
+
+        const skillMin = match.skillLevel - (match.club?.matchLowerRange ?? 1.0);
+        const skillMax = match.skillLevel + (match.club?.matchUpperRange ?? 1.0);
+
+        if (target.skillLevel < skillMin || target.skillLevel > skillMax) {
+            await simulateTypingAndSend(jid, `⚠️ **${target.name}** ha un livello incompatibile (${target.skillLevel}) per questa partita (range ${skillMin.toFixed(1)} - ${skillMax.toFixed(1)}).`);
+            return;
+        }
+
+        // Add to preferred array
+        await prisma.match.update({
+            where: { id: match.id },
+            data: { preferredPlayerIds: { push: target.id } }
+        });
+
+        await prisma.invitation.create({
+            data: {
+                matchId: match.id,
+                playerId: target.id,
+                status: 'PENDING',
+                isFriendInvite: true,
+                invitedById: player.id
+            }
+        });
+
+        const { generateInvitation } = await import('./ai');
+        const court = match.courtId ? await prisma.court.findUnique({ where: { id: match.courtId } }) : null;
+        const courtName = court?.name ?? 'Campo';
+
+        const textToInvite = await generateInvitation(target.name || 'Amico', match.startTime, courtName, match.clubId || undefined, true);
+        await simulateTypingAndSend(target.phoneNumber, textToInvite);
+
+        await simulateTypingAndSend(jid, `✅ Invito prioritario inviato a **${target.name}** per la tua partita! 🎾`);
+        return;
+    }
+
     if (intent === 'OPT_OUT') {
         await handleOptOut(jid, phoneNumber);
         return;
