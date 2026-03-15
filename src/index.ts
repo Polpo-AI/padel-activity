@@ -219,9 +219,8 @@ process.on('SIGINT',  () => shutdown('SIGINT'));
 
 process.on('unhandledRejection', async (reason: any) => {
     logger.error({ reason }, 'Unhandled promise rejection');
-    if (reason?.message?.includes('Cannot reach') || reason?.code === 'P1001') {
-        await notifyAdminCritical(`Errore critico non gestito: ${reason?.message}`).catch(() => {});
-    }
+    const msg = reason instanceof Error ? reason.message : String(reason);
+    await notifyAdminCritical(`Eccezione Async Silente: ${msg.substring(0, 150)}`).catch(() => {});
 });
 
 process.on('uncaughtException', async (err) => {

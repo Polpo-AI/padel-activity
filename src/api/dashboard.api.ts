@@ -135,34 +135,39 @@ router.patch('/club', authMiddleware, async (req: Request, res: Response) => {
 // ─────────────────────────────────────────────
 
 router.get('/courts', authMiddleware, async (req: Request, res: Response) => {
-    const clubId = (req as any).clubId;
-    const { date } = req.query;
+    try {
+        const clubId = (req as any).clubId;
+        const { date } = req.query;
 
-    const targetDate = date ? new Date(date as string) : new Date();
-    const dayStart = new Date(targetDate);
-    dayStart.setHours(0, 0, 0, 0);
-    const dayEnd = new Date(targetDate);
-    dayEnd.setHours(23, 59, 59, 999);
+        const targetDate = date ? new Date(date as string) : new Date();
+        const dayStart = new Date(targetDate);
+        dayStart.setHours(0, 0, 0, 0);
+        const dayEnd = new Date(targetDate);
+        dayEnd.setHours(23, 59, 59, 999);
 
-    const courts = await prisma.court.findMany({
-        where: { clubId, active: true },
-        include: {
-            matches: {
-                where: { startTime: { gte: dayStart, lte: dayEnd } },
-                include: {
-                    MatchPlayer: { include: { player: true } },
-                    invitations: {
-                        where: { status: 'PENDING' },
-                        include: { player: true },
+        const courts = await prisma.court.findMany({
+            where: { clubId, active: true },
+            include: {
+                matches: {
+                    where: { startTime: { gte: dayStart, lte: dayEnd } },
+                    include: {
+                        MatchPlayer: { include: { player: true } },
+                        invitations: {
+                            where: { status: 'PENDING' },
+                            include: { player: true },
+                        },
                     },
+                    orderBy: { startTime: 'asc' },
                 },
-                orderBy: { startTime: 'asc' },
             },
-        },
-        orderBy: { name: 'asc' },
-    });
+            orderBy: { name: 'asc' },
+        });
 
-    res.json(courts);
+        res.json(courts);
+    } catch (err) {
+        logger.error({ err }, 'Error fetching courts in dashboard');
+        res.status(500).json({ error: 'Errore nel recupero dei campi' });
+    }
 });
 
 // ─────────────────────────────────────────────
