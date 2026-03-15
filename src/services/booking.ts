@@ -231,9 +231,12 @@ async function searchAndProposeMatches(
         const willLock = spotsLeft === context.playerCount;
 
         const cost = calculateCostFromPrices(m.startTime, m.court.prices);
-        const costStr = cost > 0 ? ` [Costo: €${cost.toFixed(2)}]` : '';
+        const costPerPerson = m.playersNeeded > 0 ? cost / m.playersNeeded : cost / 4;
+        const costStr = cost > 0 ? ` [€${costPerPerson.toFixed(2)}/testa]` : '';
+        const mixedStr = m.isMixed ? ' (Mista 👫)' : ' (Genere Unico 👥)';
+        const coveredStr = m.court.isCovered ? ' (Coperto 🏠)' : ' (Scoperto ☀️)';
 
-        return `${i + 1}. ${m.court.name} alle ${timeStr}${costStr} — ${willLock
+        return `${i + 1}. ${m.court.name}${coveredStr}${mixedStr} alle ${timeStr}${costStr} — ${willLock
             ? `mancate solo voi ${context.playerCount > 1 ? `${context.playerCount}` : ''}, se confermi chiudo 🔒`
             : `mancano ${spotsLeft} posti, voi ${context.playerCount > 1 ? 'entrate' : 'entri'} e cerco gli altri`
         }`;

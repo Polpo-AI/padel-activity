@@ -34,6 +34,8 @@ model Court {
   clubId  String
   name    String
   active  Boolean @default(true)
+  isCovered Boolean @default(false)
+  notes     String? // Note (es. superficie, illuminazione)
   club    Club    @relation(fields: [clubId], references: [id])
   matches Match[]
   feedbacks MatchFeedback[]
