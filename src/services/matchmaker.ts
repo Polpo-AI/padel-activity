@@ -139,7 +139,7 @@ export async function processWave(matchId: string, waveNumber: number): Promise<
         const text = await generateInvitation(
             player.name || 'Amico',
             match.startTime,
-            courtName,
+            match.courtId,
             match.club?.id ?? undefined,  // ✅ usa relazione invece di clubId diretto
             false
         );

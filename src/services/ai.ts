@@ -88,16 +88,40 @@ export async function classifyIntent(
 export async function generateInvitation(
     playerName: string,
     matchTime: Date,
-    court: string,
-    clubId?: string,
+    courtId: string | null | undefined,
+    clubId?: string | null,
     isFriend = false
 ): Promise<string> {
     const timeStr = matchTime.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
     const dateStr = matchTime.toLocaleDateString('it-IT', { weekday: 'long', day: 'numeric', month: 'long' });
 
+    let courtName = 'il campo';
+    let courtInfo = 'scoperto';
+    let pricePerPerson = 0;
+
+    if (courtId) {
+        const { prisma } = await import('./db');
+        const court = await prisma.court.findUnique({
+            where: { id: courtId },
+            include: { prices: true }
+        });
+        if (court) {
+            courtName = court.name;
+            courtInfo = court.isCovered ? 'coperto' : 'scoperto';
+            
+            const matchTimeStr = `${matchTime.getHours().toString().padStart(2, '0')}:${matchTime.getMinutes().toString().padStart(2, '0')}`;
+            let matchedPrice = court.prices.find(p => p.startTime <= matchTimeStr && p.endTime > matchTimeStr);
+            if (!matchedPrice && court.prices.length > 0) matchedPrice = court.prices[0];
+            
+            if (matchedPrice) {
+                pricePerPerson = matchedPrice.price / 4;
+            }
+        }
+    }
+
     const fallback = isFriend
-        ? `Ciao ${playerName}! Un amico ti ha invitato a giocare a padel ${dateStr} alle ${timeStr} (${court}). Sei disponibile? 🎾`
-        : `Ciao ${playerName}! C'è una partita di padel ${dateStr} alle ${timeStr} (${court}). Sei dei nostri? 🎾`;
+        ? `Ciao ${playerName}! Un amico ti ha invitato a giocare a padel il ${dateStr} alle ${timeStr}. Campo: ${courtName} (${courtInfo}). Quota: ${pricePerPerson}€. Sei disponibile? 🎾`
+        : `Ciao ${playerName}! C'è una partita di padel il ${dateStr} alle ${timeStr}. Campo: ${courtName} (${courtInfo}). Quota: ${pricePerPerson}€. Sei dei nostri? 🎾`;
 
     try {
         let aiTone = '';
@@ -119,7 +143,9 @@ export async function generateInvitation(
                         playerName: playerName,
                         dateStr: dateStr,
                         timeStr: timeStr,
-                        court: court,
+                        courtName: courtName,
+                        courtInfo: courtInfo,
+                        pricePerPerson: pricePerPerson.toString(),
                         isFriend: isFriend ? 'Invito da un amico.' : ''
                     })
                 }],

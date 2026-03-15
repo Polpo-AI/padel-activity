@@ -169,7 +169,7 @@ export async function launchRecoveryWave(
         const text = await generateInvitation(
             player.name || 'Amico',
             match.startTime,
-            courtName,
+            match.courtId,
             match.clubId ?? undefined,
             false
         );

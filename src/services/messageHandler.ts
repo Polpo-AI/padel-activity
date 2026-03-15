@@ -471,10 +471,7 @@ async function routeIntent(
         });
 
         const { generateInvitation } = await import('./ai');
-        const court = match.courtId ? await prisma.court.findUnique({ where: { id: match.courtId } }) : null;
-        const courtName = court?.name ?? 'Campo';
-
-        const textToInvite = await generateInvitation(target.name || 'Amico', match.startTime, courtName, match.clubId || undefined, true);
+        const textToInvite = await generateInvitation(target.name || 'Amico', match.startTime, match.courtId, match.clubId || undefined, true);
         await simulateTypingAndSend(target.phoneNumber, textToInvite);
 
         await simulateTypingAndSend(jid, `✅ Invito prioritario inviato a **${target.name}** per la tua partita! 🎾`);
@@ -530,7 +527,14 @@ async function routeIntent(
             include: { match: { include: { MatchPlayer: true, club: true } } },
         });
 
-        const targetMatch = confirmedMatchPlayer?.match;
+        const activeInvitations = await prisma.invitation.findMany({
+            where: { playerId: player.id, status: 'PENDING', match: { status: 'OPEN' } },
+            include: { match: { include: { MatchPlayer: true, club: true } } },
+            orderBy: { sentAt: 'desc' },
+        });
+
+        const targetMatch = confirmedMatchPlayer?.match || activeInvitations[0]?.match;
+        
         if (!targetMatch) {
             // Se non c'è un match attivo ma l'utente vuole portare amici, probabilmente è un BOOKING intent
             // che contiene menzione di amici (es. "Vorrei venire con un amico martedì").
@@ -548,6 +552,12 @@ async function routeIntent(
 
         if (intent === 'WHOLE_COURT') {
             await handleWholeCourt(jid, phoneNumber, targetMatch.id);
+        } else if (intent === 'BRING_FRIEND' || intent === 'BRING_GROUP') {
+            await simulateTypingAndSend(
+                jid,
+                "Per preservare il livello tecnico della partita, non è più possibile inserire amici esterni singolarmente 🛡️\n" +
+                "L'unico modo per giocare con amici è prenotare l'intero campo (prendendo tutti i posti rimanenti). Se vuoi farlo, scrivimi «prendo tutto il campo»."
+            );
         }
         return;
     }
