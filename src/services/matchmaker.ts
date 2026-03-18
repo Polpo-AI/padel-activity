@@ -57,7 +57,7 @@ export async function processWave(matchId: string, waveNumber: number): Promise<
     const context = await withMatchLock(matchId, async () => {
         const match = await prisma.match.findUnique({
             where: { id: matchId },
-            include: { MatchPlayer: true, court: true, club: true },
+            include: { MatchPlayer: { include: { player: true } }, court: true, club: true },
         });
 
         if (!match || match.status !== 'OPEN') {
@@ -131,7 +131,12 @@ export async function processWave(matchId: string, waveNumber: number): Promise<
 
         logger.info(`Wave ${waveNumber} for ${matchId}: ${playersList.length}/${targetCount} invitations created, starting send loop`);
 
-        return { playersList, match, minutesUntilMatch, targetCount, empty: false };
+        // Giocatori già confermati — passati all'AI per il recap social
+        const confirmedPlayers = match.MatchPlayer
+            .filter((mp: any) => !mp.leftAt && mp.player)
+            .map((mp: any) => ({ name: mp.player.name || 'Giocatore', skillLevel: mp.player.skillLevel ?? 1 }));
+
+        return { playersList, match, minutesUntilMatch, targetCount, empty: false, confirmedPlayers };
     });
 
     if (!context) return;
@@ -146,10 +151,10 @@ export async function processWave(matchId: string, waveNumber: number): Promise<
         return;
     }
 
-    const { playersList, match, minutesUntilMatch, targetCount } = context;
+    const { playersList, match, minutesUntilMatch, targetCount, confirmedPlayers } = context;
 
     // ── FASE 2: Invio messaggi (fuori dal lock) ───────────────────────────
-    let currentSpots = match.playersNeeded - match.MatchPlayer.filter(mp => !mp.leftAt).length;
+    let currentSpots = match.playersNeeded - match.MatchPlayer.filter((mp: any) => !mp.leftAt).length;
     let currentStatus = 'OPEN';
 
     for (let i = 0; i < playersList.length; i++) {
@@ -163,7 +168,7 @@ export async function processWave(matchId: string, waveNumber: number): Promise<
             });
             if (!snapshot) { currentStatus = 'DELETED'; break; }
             currentStatus = snapshot.status;
-            currentSpots = snapshot.playersNeeded - snapshot.MatchPlayer.filter(mp => !mp.leftAt).length;
+            currentSpots = snapshot.playersNeeded - snapshot.MatchPlayer.filter((mp: any) => !mp.leftAt).length;
             if (currentStatus !== 'OPEN' || currentSpots <= 0) break;
         }
 
@@ -174,7 +179,8 @@ export async function processWave(matchId: string, waveNumber: number): Promise<
             match.startTime,
             match.courtId,
             match.club?.id ?? undefined,
-            false
+            false,
+            confirmedPlayers
         );
 
         if (i > 0) await sleep(randomInt(15, 45) * 1000);

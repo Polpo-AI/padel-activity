@@ -606,6 +606,28 @@ async function createNewMatch(
         orderBy: { name: 'asc' },
     });
 
+    // Tutti i campi occupati — proponi alternative tramite redirect service
+    if (!freeCourt) {
+        const { redirectGroup } = await import('./redirect');
+        const tempMatchId = `temp-${Date.now()}`;
+        await simulateTypingAndSend(
+            jid,
+            ["Ops! Tutti i campi sono occupati a quell'ora 😕 Guarda qui le alternative:", "Peccato, quell'orario è tutto esaurito! Ti propongo qualche alternativa:", "Nessun campo libero a quell'ora 😕 Ho trovato però queste opzioni per te:"][Math.floor(Math.random() * 3)],
+            messageKey
+        );
+        await redirectGroup({
+            referentPhone: player.phoneNumber,
+            referentJid: jid,
+            playerPhones: [player.phoneNumber],
+            playerCount: playerCount,
+            originalMatchId: tempMatchId,
+            originalStartTime: startTime,
+            reason: 'SLOT_TAKEN',
+            clubId,
+        });
+        return;
+    }
+
     const match = await prisma.match.create({
         data: {
             clubId,

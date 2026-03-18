@@ -94,13 +94,14 @@ export async function generateInvitation(
     matchTime: Date,
     courtId: string | null | undefined,
     clubId?: string | null,
-    isFriend = false
+    isFriend = false,
+    matchPlayers?: { name: string; skillLevel: number }[]
 ): Promise<string> {
-    const timeStr = matchTime.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
-    const dateStr = matchTime.toLocaleDateString('it-IT', { weekday: 'long', day: 'numeric', month: 'long' });
+    const timeStr = matchTime.toLocaleTimeString('it-IT', { timeZone: 'Europe/Rome', hour: '2-digit', minute: '2-digit' });
+    const dateStr = matchTime.toLocaleDateString('it-IT', { timeZone: 'Europe/Rome', day: 'numeric', month: 'long' });
 
     let courtName = 'il campo';
-    let courtInfo = 'scoperto';
+    let courtCovered = false;
     let pricePerPerson = 0;
 
     if (courtId) {
@@ -111,21 +112,32 @@ export async function generateInvitation(
         });
         if (court) {
             courtName = court.name;
-            courtInfo = court.isCovered ? 'coperto' : 'scoperto';
-            
+            courtCovered = court.isCovered;
+
             const matchTimeStr = `${matchTime.getHours().toString().padStart(2, '0')}:${matchTime.getMinutes().toString().padStart(2, '0')}`;
             let matchedPrice = court.prices.find(p => p.startTime <= matchTimeStr && p.endTime > matchTimeStr);
             if (!matchedPrice && court.prices.length > 0) matchedPrice = court.prices[0];
-            
-            if (matchedPrice) {
-                pricePerPerson = matchedPrice.price / 4;
-            }
+            if (matchedPrice) pricePerPerson = matchedPrice.price / 4;
         }
     }
 
+    const courtInfo = courtCovered ? 'coperto' : 'scoperto';
+    const courtIcon = courtCovered ? '🏠' : '☀️';
+
+    // Costruisce insight sui giocatori: ordina per livello decrescente (i più forti prima)
+    let playersInsight = '';
+    if (matchPlayers && matchPlayers.length > 0) {
+        const sorted = [...matchPlayers].sort((a, b) => b.skillLevel - a.skillLevel);
+        const names = sorted.map(p => p.name.split(' ')[0]).join(', ');
+        const maxSkill = sorted[0].skillLevel;
+        const avgSkill = sorted.reduce((s, p) => s + p.skillLevel, 0) / sorted.length;
+        const levelDesc = avgSkill >= 3 ? 'livello alto' : avgSkill >= 2 ? 'livello medio-alto' : 'livello medio';
+        playersInsight = `Ci sono già ${names} (${levelDesc}, il più forte è ${maxSkill}/5).`;
+    }
+
     const fallback = isFriend
-        ? `Ciao ${playerName}! Un amico ti ha invitato a giocare a padel il ${dateStr} alle ${timeStr}. Campo: ${courtName} (${courtInfo}). Quota: ${pricePerPerson}€. Sei disponibile? 🎾`
-        : `Ciao ${playerName}! C'è una partita di padel il ${dateStr} alle ${timeStr}. Campo: ${courtName} (${courtInfo}). Quota: ${pricePerPerson}€. Sei dei nostri? 🎾`;
+        ? `Ciao ${playerName}! Un amico ti ha invitato a padel il ${dateStr} alle ${timeStr} · ${courtName} ${courtIcon} · €${pricePerPerson.toFixed(2)} a testa. Sei disponibile? 🎾`
+        : `Ciao ${playerName}! Partita di padel il ${dateStr} alle ${timeStr} · ${courtName} ${courtIcon}${pricePerPerson > 0 ? ` · €${pricePerPerson.toFixed(2)} a testa` : ''}. ${playersInsight} Ci sei? 🎾`;
 
     let aiTone = '';
     if (clubId) {
@@ -139,19 +151,21 @@ export async function generateInvitation(
             const result = await withRetry(
                 () => anthropic.messages.create({
                     model: 'claude-haiku-4-5-20251001',
-                    max_tokens: 150,
-                    temperature: 0.7,
-                    system: aiTone || 'Sei il bot di un circolo padel. Scrivi messaggi SUPER BREVI, diretti e amichevoli in italiano. Vai subito al punto.',
+                    max_tokens: 220,
+                    temperature: 0.8,
+                    system: aiTone || 'Sei il bot di un circolo padel. Scrivi messaggi brevi, diretti e coinvolgenti in italiano. Vai subito al punto.',
                     messages: [{
                         role: 'user',
                         content: loadPrompt('generate_invitation', {
-                            playerName: playerName,
-                            dateStr: dateStr,
-                            timeStr: timeStr,
-                            courtName: courtName,
-                            courtInfo: courtInfo,
-                            pricePerPerson: pricePerPerson.toString(),
-                            isFriend: isFriend ? 'Invito da un amico.' : ''
+                            playerName,
+                            dateStr,
+                            timeStr,
+                            courtName,
+                            courtInfo,
+                            courtIcon,
+                            pricePerPerson: pricePerPerson.toFixed(2),
+                            isFriend: isFriend ? 'Invito da un amico.' : '',
+                            playersInsight,
                         })
                     }],
                 }),
