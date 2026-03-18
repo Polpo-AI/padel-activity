@@ -52,6 +52,7 @@ import pino from 'pino';
 import { simulateTypingAndSend, createGroupAndAddPlayers, downloadMediaMessage } from './whatsapp';
 import { reminderQueue } from './queue';
 import { handleFluidConversation } from './conversational-manager';
+import { runWithContext, getCorrelationId } from '../utils/request-context';
 
 const logger = pino({ level: 'info' });
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -69,16 +70,18 @@ registerBatchHandler(handleBatch);
 // ─────────────────────────────────────────────
 
 export async function handleBatch(jid: string, messages: NormalizedMessage[]): Promise<void> {
-    const messageKey = messages[0]?.raw?.key;
-    try {
-        await _handleBatchInner(jid, messages);
-    } catch (err) {
-        // REGOLA FEEDBACK: qualunque errore, l'utente riceve sempre una risposta.
-        logger.error({ err }, `Unhandled error in handleBatch for ${jid}`);
+    const correlationId = `${jid.split('@')[0]}-${Date.now()}`;
+    await runWithContext({ correlationId, jid }, async () => {
         try {
-            await simulateTypingAndSend(jid, "Scusa, ho avuto un piccolo problema tecnico 😅 Puoi ripetere?");
-        } catch {}
-    }
+            await _handleBatchInner(jid, messages);
+        } catch (err) {
+            // REGOLA FEEDBACK: qualunque errore, l'utente riceve sempre una risposta.
+            logger.error({ err, correlationId }, `Unhandled error in handleBatch for ${jid}`);
+            try {
+                await simulateTypingAndSend(jid, "Scusa, ho avuto un piccolo problema tecnico 😅 Puoi ripetere?");
+            } catch {}
+        }
+    });
 }
 
 async function _handleBatchInner(jid: string, messages: NormalizedMessage[]): Promise<void> {
@@ -890,22 +893,10 @@ ${playerList}
 // UTILITY
 // ─────────────────────────────────────────────
 
-// ✅ FIX B: legge da Redis con fallback DB per compatibilità durante migrazione
+// Legge stato da Redis con fallback su ConversationState (PostgreSQL)
 async function getStateByRole(jid: string, role: string): Promise<any | null> {
-    try {
-        const redis = getRedis();
-        const raw = await redis.get(`state:role:${jid}:${role}`);
-        if (raw) return JSON.parse(raw);
-    } catch (err) {
-        logger.error({ err, jid, role }, 'getStateByRole Redis error — falling back to DB');
-    }
-    // Fallback DB: mantiene compatibilità con stati scritti prima della migrazione
-    const msg = await prisma.whatsAppMessage.findFirst({
-        where: { chatId: jid, role },
-        orderBy: { timestamp: 'desc' },
-    });
-    if (!msg) return null;
-    try { return JSON.parse(msg.content); } catch { return null; }
+    const { getState } = await import('./conversation-state');
+    return await getState(`state:role:${jid}:${role}`);
 }
 
 function getAvailableIntents(player: any): string[] {

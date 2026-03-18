@@ -205,8 +205,9 @@ router.get('/matches', authMiddleware, async (req: Request, res: Response) => {
 });
 
 router.get('/matches/:id', authMiddleware, async (req: Request, res: Response) => {
-    const match = await prisma.match.findUnique({
-        where: { id: req.params.id as string },
+    const clubId = (req as any).clubId;
+    const match = await prisma.match.findFirst({
+        where: { id: req.params.id as string, clubId },
         include: {
             court: true,
             MatchPlayer: { include: { player: true } },
@@ -271,8 +272,9 @@ router.post('/matches', authMiddleware, async (req: Request, res: Response) => {
 // ─────────────────────────────────────────────
 
 router.post('/matches/:id/cancel', authMiddleware, async (req: Request, res: Response) => {
-    const match = await prisma.match.findUnique({
-        where: { id: req.params.id as string },
+    const clubId = (req as any).clubId;
+    const match = await prisma.match.findFirst({
+        where: { id: req.params.id as string, clubId },
         include: { MatchPlayer: { include: { player: true } }, club: true },
     });
 

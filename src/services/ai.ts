@@ -12,6 +12,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import OpenAI from 'openai';
 import { withRetry, isTransientNetworkError } from '../utils/retry';
 import { loadPrompt } from '../utils/prompts';
+import { claudeCircuitBreaker } from '../utils/circuit-breaker';
 import pino from 'pino';
 
 const logger = pino({ level: 'info' });
@@ -41,44 +42,47 @@ export async function classifyIntent(
     context?: string,
     history?: string
 ): Promise<{ intent: Intent; confident: boolean }> {
-    try {
-        const result = await withRetry(
-            () => anthropic.messages.create({
-                model: 'claude-haiku-4-5-20251001',
-                max_tokens: 40,
-                temperature: 0.1,
-                messages: [{
-                    role: 'user',
-                    content: loadPrompt('classify_intent', {
-                        context: context ? `Contesto: ${context}` : '',
-                        history: history ? `Cronologia recente:\n${history}` : '',
-                        text: text
-                    })
-                }],
-            }),
-            {
-                maxAttempts: 3,
-                baseDelayMs: 1000,
-                shouldRetry: isTransientNetworkError,
-                context: 'classifyIntent',
-            }
-        );
+    return claudeCircuitBreaker.call(
+        async () => {
+            const result = await withRetry(
+                () => anthropic.messages.create({
+                    model: 'claude-haiku-4-5-20251001',
+                    max_tokens: 40,
+                    temperature: 0.1,
+                    messages: [{
+                        role: 'user',
+                        content: loadPrompt('classify_intent', {
+                            context: context ? `Contesto: ${context}` : '',
+                            history: history ? `Cronologia recente:\n${history}` : '',
+                            text: text
+                        })
+                    }],
+                }),
+                {
+                    maxAttempts: 3,
+                    baseDelayMs: 1000,
+                    shouldRetry: isTransientNetworkError,
+                    context: 'classifyIntent',
+                }
+            );
 
-        const content = result.content[0];
-        if (content.type === 'text') {
-            const text = content.text.trim();
-            const startIdx = text.indexOf('{');
-            const endIdx = text.lastIndexOf('}');
-            if (startIdx !== -1 && endIdx !== -1) {
-                const parsed = JSON.parse(text.substring(startIdx, endIdx + 1));
-                return { intent: parsed.intent as Intent, confident: parsed.confident === true };
+            const content = result.content[0];
+            if (content.type === 'text') {
+                const raw = content.text.trim();
+                const startIdx = raw.indexOf('{');
+                const endIdx = raw.lastIndexOf('}');
+                if (startIdx !== -1 && endIdx !== -1) {
+                    const parsed = JSON.parse(raw.substring(startIdx, endIdx + 1));
+                    return { intent: parsed.intent as Intent, confident: parsed.confident === true };
+                }
             }
+            return { intent: 'UNKNOWN' as Intent, confident: false };
+        },
+        () => {
+            logger.warn('classifyIntent: circuit open — UNKNOWN fallback');
+            return { intent: 'UNKNOWN' as Intent, confident: false };
         }
-    } catch (err) {
-        logger.error({ err }, 'classifyIntent failed after retries — UNKNOWN fallback');
-    }
-
-    return { intent: 'UNKNOWN', confident: false };
+    );
 }
 
 // ─────────────────────────────────────────────
@@ -123,49 +127,50 @@ export async function generateInvitation(
         ? `Ciao ${playerName}! Un amico ti ha invitato a giocare a padel il ${dateStr} alle ${timeStr}. Campo: ${courtName} (${courtInfo}). Quota: ${pricePerPerson}€. Sei disponibile? 🎾`
         : `Ciao ${playerName}! C'è una partita di padel il ${dateStr} alle ${timeStr}. Campo: ${courtName} (${courtInfo}). Quota: ${pricePerPerson}€. Sei dei nostri? 🎾`;
 
-    try {
-        let aiTone = '';
-        if (clubId) {
-            const { prisma } = await import('./db');
-            const club = await prisma.club.findUnique({ where: { id: clubId }, select: { aiTone: true } });
-            aiTone = club?.aiTone || '';
-        }
-
-        const result = await withRetry(
-            () => anthropic.messages.create({
-                model: 'claude-haiku-4-5-20251001',
-                max_tokens: 150,
-                temperature: 0.7,
-                system: aiTone || 'Sei il bot di un circolo padel. Scrivi messaggi SUPER BREVI, diretti e amichevoli in italiano. Vai subito al punto.',
-                messages: [{
-                    role: 'user',
-                    content: loadPrompt('generate_invitation', {
-                        playerName: playerName,
-                        dateStr: dateStr,
-                        timeStr: timeStr,
-                        courtName: courtName,
-                        courtInfo: courtInfo,
-                        pricePerPerson: pricePerPerson.toString(),
-                        isFriend: isFriend ? 'Invito da un amico.' : ''
-                    })
-                }],
-            }),
-            {
-                maxAttempts: 3,
-                baseDelayMs: 1000,
-                shouldRetry: isTransientNetworkError,
-                context: 'generateInvitation',
-            }
-        );
-
-        const content = result.content[0];
-        if (content.type === 'text') return content.text.trim();
-    } catch (err) {
-        logger.error({ err }, 'generateInvitation failed — using fallback');
+    let aiTone = '';
+    if (clubId) {
+        const { prisma } = await import('./db');
+        const club = await prisma.club.findUnique({ where: { id: clubId }, select: { aiTone: true } });
+        aiTone = club?.aiTone || '';
     }
 
-    logger.warn({ playerName }, '⚠️ generateInvitation using FALLBACK text');
-    return fallback;
+    return claudeCircuitBreaker.call(
+        async () => {
+            const result = await withRetry(
+                () => anthropic.messages.create({
+                    model: 'claude-haiku-4-5-20251001',
+                    max_tokens: 150,
+                    temperature: 0.7,
+                    system: aiTone || 'Sei il bot di un circolo padel. Scrivi messaggi SUPER BREVI, diretti e amichevoli in italiano. Vai subito al punto.',
+                    messages: [{
+                        role: 'user',
+                        content: loadPrompt('generate_invitation', {
+                            playerName: playerName,
+                            dateStr: dateStr,
+                            timeStr: timeStr,
+                            courtName: courtName,
+                            courtInfo: courtInfo,
+                            pricePerPerson: pricePerPerson.toString(),
+                            isFriend: isFriend ? 'Invito da un amico.' : ''
+                        })
+                    }],
+                }),
+                {
+                    maxAttempts: 3,
+                    baseDelayMs: 1000,
+                    shouldRetry: isTransientNetworkError,
+                    context: 'generateInvitation',
+                }
+            );
+            const content = result.content[0];
+            if (content.type === 'text') return content.text.trim();
+            return fallback;
+        },
+        () => {
+            logger.warn({ playerName }, 'generateInvitation: circuit open — fallback text');
+            return fallback;
+        }
+    );
 }
 
 // ─────────────────────────────────────────────

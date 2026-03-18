@@ -14,7 +14,7 @@ import { prisma } from './db';
 import { selectPlayersForWave, computeNextWaveDelayMs, getPlayersForRecovery } from './scoring';
 import { generateInvitation } from './ai';
 import { simulateTypingAndSend } from './whatsapp';
-import { waveQueue } from './queue';
+import { waveQueue, getRedis } from './queue';
 import pino from 'pino';
 
 const logger = pino({ level: 'info' });
@@ -22,97 +22,140 @@ const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 const randomInt = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1)) + min;
 
 // ─────────────────────────────────────────────
+// DISTRIBUTED LOCK — protegge la fase di selezione + creazione invitation
+// TTL breve (15s) perché copre solo operazioni DB veloci, non il loop di invio
+// ─────────────────────────────────────────────
+
+async function withMatchLock<T>(matchId: string, fn: () => Promise<T>): Promise<T | null> {
+    const redis = getRedis();
+    const lockKey = `wave_lock:${matchId}`;
+    const lockToken = `${Date.now()}-${Math.random()}`;
+
+    const acquired = await redis.set(lockKey, lockToken, 'PX', 15_000, 'NX');
+    if (!acquired) {
+        logger.warn(`Wave lock for match ${matchId} already held — skipping parallel wave`);
+        return null;
+    }
+
+    try {
+        return await fn();
+    } finally {
+        // Rilascia solo se siamo ancora noi i proprietari del lock
+        const current = await redis.get(lockKey);
+        if (current === lockToken) await redis.del(lockKey);
+    }
+}
+
+// ─────────────────────────────────────────────
 // PROCESS WAVE
+// Fase 1 (con lock): selezione giocatori + creazione invitation in bulk
+// Fase 2 (senza lock): invio messaggi WhatsApp (lento, non reversibile)
 // ─────────────────────────────────────────────
 
 export async function processWave(matchId: string, waveNumber: number): Promise<void> {
-    const match = await prisma.match.findUnique({
-        where: { id: matchId },
-        include: {
-            MatchPlayer: true,
-            court: true,   // relazione FK — non stringa
-            club: true,
-        },
-    });
-
-    if (!match || match.status !== 'OPEN') {
-        logger.info(`Match ${matchId} not OPEN, skipping wave ${waveNumber}`);
-        return;
-    }
-
-    const confirmedCount = match.MatchPlayer.filter(mp => !mp.leftAt).length;
-    const spotsNeeded = match.playersNeeded - confirmedCount;
-
-    if (spotsNeeded <= 0) {
-        logger.info(`Match ${matchId} already full, skipping wave ${waveNumber}`);
-        return;
-    }
-
-    const minutesUntilMatch = (match.startTime.getTime() - Date.now()) / 60000;
-
-    if (minutesUntilMatch < 60) {
-        logger.info(`Match ${matchId} < 1h away, no more waves`);
-        return;
-    }
-
-    const { players, targetCount } = await selectPlayersForWave(
-        matchId,
-        spotsNeeded,
-        match.club?.waveMultiplier ?? 3
-    );
-
-    let playersList = [...players];
-
-    if (waveNumber === 1 && match.preferredPlayerIds && match.preferredPlayerIds.length > 0) {
-        const preferred = await prisma.player.findMany({
-            where: {
-                id: { in: match.preferredPlayerIds },
-                active: true,
-                dailyMessagesCount: { lt: match.club?.maxDailyMessages ?? 2 } 
-            }
+    // ── FASE 1: Selezione e creazione invitation atomica ──────────────────
+    const context = await withMatchLock(matchId, async () => {
+        const match = await prisma.match.findUnique({
+            where: { id: matchId },
+            include: { MatchPlayer: true, court: true, club: true },
         });
 
-        const skillMin = match.skillLevel - (match.club?.matchLowerRange ?? 1.0);
-        const skillMax = match.skillLevel + (match.club?.matchUpperRange ?? 1.0);
+        if (!match || match.status !== 'OPEN') {
+            logger.info(`Match ${matchId} not OPEN, skipping wave ${waveNumber}`);
+            return null;
+        }
 
-        for (const p of preferred) {
-            if (p.skillLevel >= skillMin && p.skillLevel <= skillMax) {
-                if (!playersList.some(fp => fp.id === p.id)) {
-                    playersList.unshift(p); // Prepend so they are invited FIRST
-                    logger.info(`Adding preferred player ${p.name} (${p.id}) to Wave 1 prioritisation`);
+        const confirmedCount = match.MatchPlayer.filter(mp => !mp.leftAt).length;
+        const spotsNeeded = match.playersNeeded - confirmedCount;
+
+        if (spotsNeeded <= 0) {
+            logger.info(`Match ${matchId} already full, skipping wave ${waveNumber}`);
+            return null;
+        }
+
+        const minutesUntilMatch = (match.startTime.getTime() - Date.now()) / 60000;
+
+        if (minutesUntilMatch < 60) {
+            logger.info(`Match ${matchId} < 1h away, no more waves`);
+            return null;
+        }
+
+        const { players, targetCount } = await selectPlayersForWave(
+            matchId,
+            spotsNeeded,
+            match.club?.waveMultiplier ?? 3
+        );
+
+        let playersList = [...players];
+
+        if (waveNumber === 1 && match.preferredPlayerIds && match.preferredPlayerIds.length > 0) {
+            const preferred = await prisma.player.findMany({
+                where: {
+                    id: { in: match.preferredPlayerIds },
+                    active: true,
+                    dailyMessagesCount: { lt: match.club?.maxDailyMessages ?? 2 },
+                },
+            });
+
+            const skillMin = match.skillLevel - (match.club?.matchLowerRange ?? 1.0);
+            const skillMax = match.skillLevel + (match.club?.matchUpperRange ?? 1.0);
+
+            for (const p of preferred) {
+                if (p.skillLevel >= skillMin && p.skillLevel <= skillMax) {
+                    if (!playersList.some(fp => fp.id === p.id)) {
+                        playersList.unshift(p);
+                        logger.info(`Adding preferred player ${p.name} (${p.id}) to Wave 1 prioritisation`);
+                    }
                 }
             }
         }
-    }
 
-    if (playersList.length === 0) {
-        logger.warn(`Wave ${waveNumber} for match ${matchId}: no players available`);
-        
-        // Prima controlliamo se possiamo cancellare matematicamente (lista esaurita)
+        if (playersList.length === 0) {
+            logger.warn(`Wave ${waveNumber} for match ${matchId}: no players available`);
+            return { playersList: [], match, minutesUntilMatch, targetCount: 0, empty: true };
+        }
+
+        // Crea TUTTE le invitation in bulk prima di iniziare a inviare messaggi.
+        // Questo garantisce che una wave parallela che parta subito dopo vedrà
+        // già tutti questi giocatori in excludedIds e non li selezionerà di nuovo.
+        const minutesNow = Math.round(minutesUntilMatch);
+        await prisma.invitation.createMany({
+            data: playersList.map(p => ({
+                matchId,
+                playerId: p.id,
+                status: 'PENDING',
+                minutesUntilMatch: minutesNow,
+            })),
+            skipDuplicates: true,
+        });
+
+        logger.info(`Wave ${waveNumber} for ${matchId}: ${playersList.length}/${targetCount} invitations created, starting send loop`);
+
+        return { playersList, match, minutesUntilMatch, targetCount, empty: false };
+    });
+
+    if (!context) return;
+
+    // Pool esaurito → gestisci fuori dal lock (può fare import dinamici lenti)
+    if (context.empty) {
         const isCancelled = await checkAndCancelIfUnfillable(matchId);
-        
-        // Se non l'ha cancellata matematicamente (perché es. in_attesa bastano ancora) ma semplicemente
-        // non abbiamo più gente da chiamare per questa wave, non facciamo nulla. Il webhook o il timeout agiranno.
         if (!isCancelled) {
-            // Se in pending ce ne sono, la speranza c'è ancora. Lo mettiamo in UNFILLED per far scattare alert.
             const { handleMatchUnfillable } = await import('./recovery');
             await handleMatchUnfillable(matchId, false);
         }
         return;
     }
 
-    const courtName = match.court?.name ?? `Campo ${match.courtId ?? ''}`;
-    logger.info(`Wave ${waveNumber} for ${matchId}: contacting ${players.length}/${targetCount} players for ${spotsNeeded} spots`);
+    const { playersList, match, minutesUntilMatch, targetCount } = context;
 
-    // ── Stato partita prima del loop — aggiornato UNA sola volta per blocco ──
-    // Ogni 3 messaggi ricontrolliamo (anti N+1)
-    let currentSpots = spotsNeeded;
+    // ── FASE 2: Invio messaggi (fuori dal lock) ───────────────────────────
+    let currentSpots = match.playersNeeded - match.MatchPlayer.filter(mp => !mp.leftAt).length;
     let currentStatus = 'OPEN';
 
     for (let i = 0; i < playersList.length; i++) {
         if (currentStatus !== 'OPEN' || currentSpots <= 0) break;
 
-        // Ricarica stato ogni 3 invii o al primo
+        // Ricarica stato ogni 3 invii (anti N+1)
         if (i % 3 === 0) {
             const snapshot = await prisma.match.findUnique({
                 where: { id: matchId },
@@ -125,26 +168,15 @@ export async function processWave(matchId: string, waveNumber: number): Promise<
         }
 
         const player = playersList[i];
-        const currentMinutes = (match.startTime.getTime() - Date.now()) / 60000;
-
-        await prisma.invitation.create({
-            data: {
-                matchId,
-                playerId: player.id,
-                status: 'PENDING',
-                minutesUntilMatch: Math.round(currentMinutes),
-            },
-        });
 
         const text = await generateInvitation(
             player.name || 'Amico',
             match.startTime,
             match.courtId,
-            match.club?.id ?? undefined,  // ✅ usa relazione invece di clubId diretto
+            match.club?.id ?? undefined,
             false
         );
 
-        // Delay anti-ban tra messaggi
         if (i > 0) await sleep(randomInt(15, 45) * 1000);
 
         try {
@@ -158,6 +190,7 @@ export async function processWave(matchId: string, waveNumber: number): Promise<
             });
         } catch (err) {
             logger.error({ err }, `Failed to send invitation to ${player.phoneNumber}`);
+            // Invitation già in DB — aggiorna a IGNORED
             await prisma.invitation.updateMany({
                 where: { matchId, playerId: player.id, status: 'PENDING' },
                 data: { status: 'IGNORED' },

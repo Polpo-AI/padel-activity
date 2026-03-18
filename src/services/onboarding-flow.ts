@@ -394,38 +394,32 @@ async function sendWelcomeBatch(
 // STATO ONBOARDING
 // ─────────────────────────────────────────────
 
-// ✅ FIX K: stati onboarding su Redis con TTL 24h (era WhatsAppMessage su DB)
+// Stato ONBOARDING — dual-write Redis + PostgreSQL tramite conversation-state
 async function setOnboardingState(jid: string, step: OnboardingStep, data: any): Promise<void> {
     try {
-        const redis = getRedis();
-        await redis.set(
-            `state:onboarding:${jid}`,
-            JSON.stringify({ step, data }),
-            'EX', 24 * 60 * 60
-        );
+        const { setState } = await import('./conversation-state');
+        await setState(`state:onboarding:${jid}`, { step, data });
     } catch (err) {
-        logger.error({ err, jid }, 'Failed to save onboarding state to Redis');
+        logger.error({ err, jid }, 'Failed to save onboarding state');
     }
 }
 
 export async function getOnboardingState(jid: string): Promise<{ step: OnboardingStep; data: any } | null> {
     try {
-        const redis = getRedis();
-        const raw = await redis.get(`state:onboarding:${jid}`);
-        if (!raw) return null;
-        return JSON.parse(raw);
+        const { getState } = await import('./conversation-state');
+        return await getState(`state:onboarding:${jid}`);
     } catch (err) {
-        logger.error({ err, jid }, 'Failed to read onboarding state from Redis');
+        logger.error({ err, jid }, 'Failed to read onboarding state');
         return null;
     }
 }
 
 export async function clearOnboardingState(jid: string): Promise<void> {
     try {
-        const redis = getRedis();
-        await redis.del(`state:onboarding:${jid}`);
+        const { clearState } = await import('./conversation-state');
+        await clearState(`state:onboarding:${jid}`);
     } catch (err) {
-        logger.error({ err, jid }, 'Failed to clear onboarding state from Redis');
+        logger.error({ err, jid }, 'Failed to clear onboarding state');
     }
 }
 

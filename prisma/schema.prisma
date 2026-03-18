@@ -210,8 +210,19 @@ model CourtPrice {
   price     Float
   startDate DateTime?
   endDate   DateTime?
-  
+
   court     Court     @relation(fields: [courtId], references: [id])
 
   @@index([courtId])
+}
+
+// Stato conversazionale persistente (dual-write con Redis).
+// Redis è il primary (velocità); questa tabella è il fallback in caso di restart/crash Redis.
+model ConversationState {
+  key       String   @id       // e.g. "state:booking:39340...@s.whatsapp.net"
+  value     Json
+  expiresAt DateTime
+  updatedAt DateTime @updatedAt
+
+  @@index([expiresAt])
 }

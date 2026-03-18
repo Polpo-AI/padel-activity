@@ -71,16 +71,12 @@ export async function redirectGroup(group: RedirectGroup): Promise<void> {
     // Contatta il referente (Mario)
     await simulateTypingAndSend(group.referentJid, message);
 
-    // ✅ FIX L: stato conversazionale su Redis invece di WhatsAppMessage
+    // Stato redirect — dual-write Redis + PostgreSQL tramite conversation-state
     try {
-        const redis = getRedis();
-        await redis.set(
-            `state:role:${group.referentJid}:AWAITING_REDIRECT_CHOICE`,
-            JSON.stringify({ group, options }),
-            'EX', 24 * 60 * 60
-        );
+        const { setState } = await import('./conversation-state');
+        await setState(`state:role:${group.referentJid}:AWAITING_REDIRECT_CHOICE`, { group, options });
     } catch (err) {
-        logger.error({ err }, 'Failed to save redirect state to Redis');
+        logger.error({ err }, 'Failed to save redirect state');
     }
 
     // Se abbiamo i numeri degli altri, li notifichiamo in parallelo (solo info, non chiedono)
@@ -250,12 +246,11 @@ export async function confirmRedirectChoice(
         return;
     }
 
-    // ✅ FIX L: pulisci da Redis
     try {
-        const redis = getRedis();
-        await redis.del(`state:role:${jid}:AWAITING_REDIRECT_CHOICE`);
+        const { clearState } = await import('./conversation-state');
+        await clearState(`state:role:${jid}:AWAITING_REDIRECT_CHOICE`);
     } catch (err) {
-        logger.error({ err }, 'Failed to clear redirect state from Redis');
+        logger.error({ err }, 'Failed to clear redirect state');
     }
 
     if (chosenOption.matchId) {

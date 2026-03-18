@@ -884,37 +884,31 @@ async function resolveMatchChoice(text: string, matches: any[]): Promise<number 
 // STATO BOOKING
 // ─────────────────────────────────────────────
 
-// ✅ FIX L: stato BOOKING_FLOW su Redis invece di WhatsAppMessage
+// Stato BOOKING_FLOW — dual-write Redis + PostgreSQL tramite conversation-state
 export async function setBookingState(jid: string, data: any): Promise<void> {
     try {
-        const redis = getRedis();
-        await redis.set(
-            `state:booking:${jid}`,
-            JSON.stringify(data),
-            'EX', 24 * 60 * 60
-        );
+        const { setState } = await import('./conversation-state');
+        await setState(`state:booking:${jid}`, data);
     } catch (err) {
-        logger.error({ err, jid }, 'Failed to save booking state to Redis');
+        logger.error({ err, jid }, 'Failed to save booking state');
     }
 }
 
 export async function getBookingState(jid: string): Promise<any | null> {
     try {
-        const redis = getRedis();
-        const raw = await redis.get(`state:booking:${jid}`);
-        if (!raw) return null;
-        return JSON.parse(raw);
+        const { getState } = await import('./conversation-state');
+        return await getState(`state:booking:${jid}`);
     } catch (err) {
-        logger.error({ err, jid }, 'Failed to read booking state from Redis');
+        logger.error({ err, jid }, 'Failed to read booking state');
         return null;
     }
 }
 
 export async function clearBookingState(jid: string): Promise<void> {
     try {
-        const redis = getRedis();
-        await redis.del(`state:booking:${jid}`);
+        const { clearState } = await import('./conversation-state');
+        await clearState(`state:booking:${jid}`);
     } catch (err) {
-        logger.error({ err, jid }, 'Failed to clear booking state from Redis');
+        logger.error({ err, jid }, 'Failed to clear booking state');
     }
 }

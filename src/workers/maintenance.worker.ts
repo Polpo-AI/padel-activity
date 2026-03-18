@@ -93,6 +93,11 @@ const maintenanceWorker = new Worker(
             logger.info(`archive-old-matches: archived ${archived.count} matches`);
         }
 
+        if (job.name === 'prune-conversation-states') {
+            const { pruneExpiredStates } = await import('../services/conversation-state');
+            await pruneExpiredStates();
+        }
+
         if (job.name === 'process-match-outcomes') {
             // Finestra: partite terminate nelle ultime 3 ore (copre gap tra run).
             // processMatchOutcomes è idempotente: salta invitation già in stato finale.
