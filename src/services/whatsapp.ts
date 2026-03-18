@@ -181,6 +181,14 @@ export async function connectToWhatsApp() {
                 } catch (err) {
                     logger.error({ err }, 'Failed to send startup notification');
                 }
+                // Fallback: se non arrivano messaggi notify entro 30s, abbassa isResyncing comunque
+                setTimeout(() => {
+                    if (isResyncing) {
+                        logger.info('isResyncing fallback timeout — no notify messages received, clearing resync flag');
+                        isResyncing = false;
+                        syncCount = 0;
+                    }
+                }, 30000);
             }, 5000); // 5s di respiro dopo la connessione
         }
     });
