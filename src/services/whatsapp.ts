@@ -40,6 +40,10 @@ let syncTimer: NodeJS.Timeout | null = null;
 let syncCount = 0;
 let isResyncing = false;
 
+// Messaggi ricevuti offline (type='append') durante la fase di resync
+const offlineMessages = new Map<string, proto.IWebMessageInfo[]>();
+const OFFLINE_MSG_WINDOW_MS = 24 * 60 * 60 * 1000; // solo ultimi 24h
+
 // ✅ FIX I: backoff esponenziale per reconnect — evita loop infinito e accelerazione ban
 let reconnectAttempts = 0;
 const MAX_RECONNECT_DELAY_MS = 64000; // cap a 64s
@@ -194,12 +198,27 @@ export async function connectToWhatsApp() {
     });
 
     sock.ev.on('messages.upsert', async (m) => {
-        // Only process real-time notifications — 'append' is historical sync, skip to avoid re-processing old messages
+        // Durante il resync, raccogli i messaggi offline (append) senza processarli subito
+        if (m.type === 'append') {
+            if (isResyncing) {
+                const cutoff = Date.now() - OFFLINE_MSG_WINDOW_MS;
+                for (const msg of m.messages) {
+                    if (msg.key.fromMe || !msg.message || !msg.key.remoteJid) continue;
+                    if (msg.key.remoteJid.endsWith('@g.us')) continue;
+                    if (Number(msg.messageTimestamp) * 1000 < cutoff) continue;
+                    const jid = msg.key.remoteJid;
+                    if (!offlineMessages.has(jid)) offlineMessages.set(jid, []);
+                    offlineMessages.get(jid)!.push(msg);
+                }
+            }
+            return;
+        }
+
         if (m.type !== 'notify') return;
 
         if (isResyncing) {
              syncCount += m.messages.length;
-             
+
              if (syncTimer) clearTimeout(syncTimer);
              syncTimer = setTimeout(async () => {
                  try {
@@ -213,6 +232,13 @@ export async function connectToWhatsApp() {
                  } catch (err) {}
                  isResyncing = false;
                  syncCount = 0;
+                 // Processa messaggi offline raccolti durante il resync
+                 if (offlineMessages.size > 0) {
+                     await processOfflineMessages(offlineMessages).catch(err =>
+                         logger.error({ err }, 'processOfflineMessages failed')
+                     );
+                     offlineMessages.clear();
+                 }
              }, 15000); // 15 secondi di silenzio = sync finito
              return; // Don't process messages during active resync
         }
@@ -223,6 +249,43 @@ export async function connectToWhatsApp() {
             }
         }
     });
+}
+
+// ------------------------------------------------------------------
+// OFFLINE MESSAGE RECOVERY
+// Processa i messaggi ricevuti mentre il bot era offline/in resync.
+// Per ogni JID: trova l'ultimo messaggio senza risposta bot e lo ri-accoda.
+// ------------------------------------------------------------------
+
+async function processOfflineMessages(collected: Map<string, proto.IWebMessageInfo[]>): Promise<void> {
+    const { prisma } = await import('./db');
+    const { enqueue } = await import('./inbound-queue');
+
+    for (const [jid, messages] of collected) {
+        // Ordina per timestamp crescente
+        const sorted = [...messages].sort((a, b) => Number(a.messageTimestamp) - Number(b.messageTimestamp));
+
+        // Trova l'ultimo bot response per questo JID
+        let lastBotTs = 0;
+        try {
+            const lastBotMsg = await prisma.whatsAppMessage.findFirst({
+                where: { chatId: jid, role: 'BOT' },
+                orderBy: { timestamp: 'desc' },
+            });
+            if (lastBotMsg) lastBotTs = lastBotMsg.timestamp.getTime();
+        } catch {}
+
+        // Tieni solo i messaggi DOPO l'ultima risposta del bot
+        const unanswered = sorted.filter(m => Number(m.messageTimestamp) * 1000 > lastBotTs);
+        if (unanswered.length === 0) continue;
+
+        logger.info({ jid, count: unanswered.length, lastBotTs: new Date(lastBotTs).toISOString() },
+            'Re-enqueuing offline messages after resync');
+
+        for (const msg of unanswered) {
+            enqueue(msg);
+        }
+    }
 }
 
 // ------------------------------------------------------------------
