@@ -174,13 +174,25 @@ export async function processWave(matchId: string, waveNumber: number): Promise<
 
         const player = playersList[i];
 
+        const confirmedPlayerIds = match.MatchPlayer
+            .filter((mp: any) => !mp.leftAt && mp.player)
+            .map((mp: any) => mp.player.id);
+
+        const socialContext = await buildMatchSocialContext(
+            matchId,
+            currentSpots,
+            confirmedPlayerIds,
+            player.id,
+            match.startTime
+        );
+
         const text = await generateInvitation(
             player.name || 'Amico',
             match.startTime,
             match.courtId,
             match.club?.id ?? undefined,
             false,
-            confirmedPlayers
+            socialContext
         );
 
         if (i > 0) await sleep(randomInt(15, 45) * 1000);
@@ -287,6 +299,98 @@ export async function checkAndCancelIfUnfillable(matchId: string): Promise<boole
         return true;
     }
     return false;
+}
+
+// ─────────────────────────────────────────────
+// SEGNALI COMPORTAMENTALI PER INVITI WAVE
+// ─────────────────────────────────────────────
+
+export interface PlayerSignal {
+    name: string;
+    matchesLast30Days: number;
+    acceptanceRate: number; // 0.0 – 1.0
+}
+
+export interface MatchSocialContext {
+    spotsLeft: number;
+    timeOfDay: 'mattina' | 'pomeriggio' | 'sera';
+    players: PlayerSignal[];
+    hasPlayedWithBefore: boolean;
+}
+
+export async function buildMatchSocialContext(
+    matchId: string,
+    spotsLeft: number,
+    confirmedPlayerIds: string[],
+    inviteeId: string,
+    matchStartTime: Date
+): Promise<MatchSocialContext> {
+    const since30 = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+
+    // Frequenza e acceptance rate in parallel
+    const [recentMatchCounts, invitationStats, sharedMatches] = await Promise.all([
+        // Quante partite hanno giocato negli ultimi 30 giorni
+        prisma.matchPlayer.groupBy({
+            by: ['playerId'],
+            where: {
+                playerId: { in: confirmedPlayerIds },
+                leftAt: null,
+                match: { startTime: { gte: since30 }, status: { in: ['OPEN', 'LOCKED', 'COMPLETED'] } },
+            },
+            _count: { playerId: true },
+        }),
+        // Acceptance rate: inviti accettati vs totali
+        prisma.invitation.groupBy({
+            by: ['playerId', 'status'],
+            where: { playerId: { in: confirmedPlayerIds } },
+            _count: { status: true },
+        }),
+        // Ha già giocato con questi giocatori?
+        prisma.matchPlayer.findFirst({
+            where: {
+                playerId: inviteeId,
+                match: {
+                    MatchPlayer: { some: { playerId: { in: confirmedPlayerIds }, leftAt: null } },
+                },
+            },
+        }),
+    ]);
+
+    const matchCountMap = new Map(recentMatchCounts.map(r => [r.playerId, r._count.playerId]));
+
+    // Raggruppa accepted/total per player
+    const acceptMap = new Map<string, { accepted: number; total: number }>();
+    for (const row of invitationStats) {
+        const cur = acceptMap.get(row.playerId) ?? { accepted: 0, total: 0 };
+        cur.total += row._count.status;
+        if (row.status === 'ACCEPTED') cur.accepted += row._count.status;
+        acceptMap.set(row.playerId, cur);
+    }
+
+    // Recupera nomi
+    const confirmedPlayers = await prisma.player.findMany({
+        where: { id: { in: confirmedPlayerIds } },
+        select: { id: true, name: true },
+    });
+
+    const players: PlayerSignal[] = confirmedPlayers.map(p => {
+        const stats = acceptMap.get(p.id) ?? { accepted: 0, total: 0 };
+        return {
+            name: (p.name || 'Giocatore').split(' ')[0],
+            matchesLast30Days: matchCountMap.get(p.id) ?? 0,
+            acceptanceRate: stats.total > 0 ? stats.accepted / stats.total : 0,
+        };
+    });
+
+    const hour = matchStartTime.getHours();
+    const timeOfDay = hour < 13 ? 'mattina' : hour < 18 ? 'pomeriggio' : 'sera';
+
+    return {
+        spotsLeft,
+        timeOfDay,
+        players,
+        hasPlayedWithBefore: !!sharedMatches,
+    };
 }
 
 // Riesporta per recovery.ts

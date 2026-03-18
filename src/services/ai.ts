@@ -95,7 +95,7 @@ export async function generateInvitation(
     courtId: string | null | undefined,
     clubId?: string | null,
     isFriend = false,
-    matchPlayers?: { name: string; skillLevel: number }[]
+    socialContext?: import('./matchmaker').MatchSocialContext
 ): Promise<string> {
     const timeStr = matchTime.toLocaleTimeString('it-IT', { timeZone: 'Europe/Rome', hour: '2-digit', minute: '2-digit' });
     const dateStr = matchTime.toLocaleDateString('it-IT', { timeZone: 'Europe/Rome', day: 'numeric', month: 'long' });
@@ -124,15 +124,45 @@ export async function generateInvitation(
     const courtInfo = courtCovered ? 'coperto' : 'scoperto';
     const courtIcon = courtCovered ? '🏠' : '☀️';
 
-    // Costruisce insight sui giocatori: ordina per livello decrescente (i più forti prima)
+    // Costruisce segnali comportamentali reali per l'AI
     let playersInsight = '';
-    if (matchPlayers && matchPlayers.length > 0) {
-        const sorted = [...matchPlayers].sort((a, b) => b.skillLevel - a.skillLevel);
-        const names = sorted.map(p => p.name.split(' ')[0]).join(', ');
-        const maxSkill = sorted[0].skillLevel;
-        const avgSkill = sorted.reduce((s, p) => s + p.skillLevel, 0) / sorted.length;
-        const levelDesc = avgSkill >= 3 ? 'livello alto' : avgSkill >= 2 ? 'livello medio-alto' : 'livello medio';
-        playersInsight = `Ci sono già ${names} (${levelDesc}, il più forte è ${maxSkill}/5).`;
+    if (socialContext && socialContext.players.length > 0) {
+        const signals: string[] = [];
+
+        // Nomi (solo first name)
+        const names = socialContext.players.map(p => p.name).join(', ');
+        signals.push(`Ci sono già: ${names}.`);
+
+        // Frequenza di gioco
+        const frequent = socialContext.players.filter(p => p.matchesLast30Days >= 3);
+        if (frequent.length > 0) {
+            const freqNames = frequent.map(p => p.name).join(' e ');
+            signals.push(`${freqNames} ${frequent.length === 1 ? 'gioca' : 'giocano'} più volte a settimana.`);
+        }
+
+        // Tasso di risposta — indica affidabilità
+        const reliable = socialContext.players.filter(p => p.acceptanceRate >= 0.7);
+        if (reliable.length > 0) {
+            signals.push(`${reliable.length === socialContext.players.length ? 'Sono' : 'Alcuni sono'} giocatori che rispondono sempre presente.`);
+        }
+
+        // Urgenza posti
+        if (socialContext.spotsLeft === 1) {
+            signals.push('Manca solo 1 posto — è l\'ultimo disponibile.');
+        } else if (socialContext.spotsLeft <= 2) {
+            signals.push(`Mancano solo ${socialContext.spotsLeft} posti.`);
+        }
+
+        // Familiarità
+        if (socialContext.hasPlayedWithBefore) {
+            signals.push(`${playerName} ha già giocato con loro — sa già come giocano.`);
+        }
+
+        // Fascia oraria
+        const slotLabels = { mattina: 'mattinieri doc', pomeriggio: 'pomeriggio', sera: 'dopolavoro serale' };
+        signals.push(`Fascia: ${slotLabels[socialContext.timeOfDay]}.`);
+
+        playersInsight = signals.join(' ');
     }
 
     const fallback = isFriend
