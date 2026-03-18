@@ -105,6 +105,14 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[], cor
         logger.info({ LID: jid.split('@')[0], Phone: phoneNumber }, 'Resolved LID to Phone Number');
     }
 
+    // Guard: se il phoneNumber non sembra un numero di telefono valido (es. è un LID grezzo
+    // senza suffisso @lid che Baileys non ha risolto), scartiamo silenziosamente.
+    // Un numero italiano è 10-15 cifre. Un LID Baileys è tipicamente > 15 cifre.
+    if (!/^\d{8,14}$/.test(phoneNumber)) {
+        logger.warn({ jid, phoneNumber }, 'Unresolved LID or invalid phone — skipping batch');
+        return;
+    }
+
     const pushName = messages[0]?.raw?.pushName;
     logger.info(`Batch: ${messages.length} msg from ${phoneNumber}`);
 
