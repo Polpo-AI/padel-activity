@@ -574,7 +574,9 @@ export async function continueBookingFlow(
             return;
         }
 
-        await handleGuaranteedFull(jid, phoneNumber, { ...state, specificTime: from.toTimeString() }, messageKey);
+        // Usa specificTime dall'AI (orario italiano) — non from.toTimeString() che è UTC
+        const italianSpecificTime = timeContext.specificTime ?? from.toLocaleTimeString('it-IT', { timeZone: 'Europe/Rome', hour: '2-digit', minute: '2-digit' });
+        await handleGuaranteedFull(jid, phoneNumber, { ...state, specificTime: italianSpecificTime }, messageKey);
         await clearBookingState(jid);
     }
 }
@@ -798,8 +800,7 @@ function getTimeWindow(
 
     if (context.specificTime) {
         const [h, m] = context.specificTime.split(':').map(Number);
-        const specific = new Date(targetDate);
-        specific.setHours(h, m, 0, 0);
+        const specific = buildRomeTime(targetDate, h, m);
         return {
             from: new Date(specific.getTime() - 30 * 60 * 1000),
             to: new Date(specific.getTime() + 30 * 60 * 1000),
@@ -815,12 +816,29 @@ function getTimeWindow(
     const slot = slots[context.timeSlot];
     if (!slot) return { from: null, to: null };
 
-    const from = new Date(targetDate);
-    from.setHours(slot.from, 0, 0, 0);
-    const to = new Date(targetDate);
-    to.setHours(slot.to, 0, 0, 0);
+    return {
+        from: buildRomeTime(targetDate, slot.from, 0),
+        to: buildRomeTime(targetDate, slot.to, 0),
+    };
+}
 
-    return { from, to };
+/**
+ * Costruisce un Date UTC interpretando h:m come orario italiano (Europe/Rome).
+ * Gestisce automaticamente DST (UTC+1 inverno, UTC+2 estate).
+ */
+function buildRomeTime(baseDate: Date, h: number, m: number): Date {
+    // Usa mezzogiorno UTC come riferimento DST-safe per trovare l'offset Rome
+    const noon = new Date(Date.UTC(baseDate.getFullYear(), baseDate.getMonth(), baseDate.getDate(), 12, 0, 0));
+    const noonRomeHour = Number(noon.toLocaleString('en-US', { timeZone: 'Europe/Rome', hour: '2-digit', hour12: false }));
+    const offsetH = noonRomeHour - 12; // +1 in inverno, +2 in estate
+
+    // h:m è ora italiana → sottrai offset per ottenere UTC
+    let utcH = h - offsetH;
+    let dayOffset = 0;
+    if (utcH < 0) { utcH += 24; dayOffset = -1; }
+    if (utcH >= 24) { utcH -= 24; dayOffset = 1; }
+
+    return new Date(Date.UTC(baseDate.getFullYear(), baseDate.getMonth(), baseDate.getDate() + dayOffset, utcH, m, 0));
 }
 
 function getSlotDescription(timeSlot: string): string {

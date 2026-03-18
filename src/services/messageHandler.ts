@@ -466,6 +466,7 @@ async function routeIntent(
 Come ti chiami?`,
             askAvailability: false,
             askTimePreference: false,
+            skipLevel: true,
             notifyAdminOnNewPlayer: true,
         });
         return;
