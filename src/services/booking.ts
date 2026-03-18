@@ -47,8 +47,8 @@ Estrai le seguenti informazioni e rispondi SOLO con un JSON:
   "timeSlot": "morning" | "afternoon" | "evening" | "specific" | "unknown",
   "specificTime": "HH:MM" oppure null,
   "specificDay": "lunedì" | "martedì" | "mercoledì" | "giovedì" | "venerdì" | "sabato" | "domenica" | "oggi" | "domani" | null,
-  "guaranteesFull": true se dice che sono già in 4 o che chiudono il campo da soli, false altrimenti,
-  "isCountExplicit": true se l'utente ha specificato un numero di giocatori (es: "siamo in 2", "uno per stasera"), false se è un'intenzione generica senza quantità,
+  "guaranteesFull": true se dice che sono già in 4, "siamo al completo", "chiudiamo il campo", "siamo già completi", false altrimenti,
+  "isCountExplicit": true se l'utente ha specificato un numero di giocatori (es: "siamo in 2", "siamo in 4", "uno per stasera", "veniamo in 3"), false se è un'intenzione generica senza quantità,
   "isMixed": true se specifica "mista" o "misto", false se uomo/donna o se non specifica nulla (default false)
 }
 
@@ -58,6 +58,11 @@ Regole per timeSlot:
 - "evening": sera, stasera, dopo le 18
 - "specific": ha dato un orario preciso
 - "unknown": non specificato
+
+Regole per specificTime:
+- "h18", "alle 18", "18:00", "18", "ore 18" → "18:00"
+- "20:30", "alle 20:30", "h20:30" → "20:30"
+- Usa sempre formato HH:MM a 24 ore. Se solo ore senza minuti → ":00"
 
 Messaggio: "${messageText}"
 
@@ -115,11 +120,10 @@ export async function startBookingFlow(
         if (overrides.isCountExplicit) context.isCountExplicit = overrides.isCountExplicit;
     }
 
-    // ✅ NEW CHECK: Se non è specificato quanti sono, chiediamo "Quanti siete?"
+    // Se l'AI non ha rilevato un conteggio esplicito, default a solo matchmaking (1 giocatore)
     if (!context.isCountExplicit && !context.guaranteesFull) {
-        await simulateTypingAndSend(jid, ["Ottimo! Quanti siete in totale? 🎾", "Perfetto! Siete in quanti? 👥", "Bene! Dimmi quante persone siete 🎾", "Super! In quanti volete giocare? 🏟️"][Math.floor(Math.random() * 4)], messageKey);
-        await setBookingState(jid, { ...context, step: 'AWAITING_PLAYER_COUNT' });
-        return;
+        context.playerCount = 1;
+        context.isCountExplicit = true;
     }
 
     logger.info(`Booking context: ${JSON.stringify(context)}`);
@@ -138,7 +142,7 @@ export async function startBookingFlow(
         // Non sappiamo l'orario — chiediamo
         await simulateTypingAndSend(
             jid,
-            `${["Certo!", "Perfetto!", "Ottimo!", "Bene!"][Math.floor(Math.random() * 4)]} A che ora vorresti giocare? ${context.playerCount > 1 ? `Siete in ${context.playerCount}` : 'Solo tu?'} 🎾`,
+            `${["Certo!", "Perfetto!", "Ottimo!", "Bene!"][Math.floor(Math.random() * 4)]} A che ora vorresti giocare? 🎾`,
             messageKey
         );
         await setBookingState(jid, { ...context, step: 'AWAITING_TIME' });
@@ -161,13 +165,8 @@ async function searchAndProposeMatches(
     to: Date,
     messageKey?: any
 ): Promise<void> {
-    if (player.skillLevel === 0) {
-        const { simulateTypingAndSend } = await import('./whatsapp');
-        const { setAwaitingState } = await import('./onboarding');
-        
-        await simulateTypingAndSend(jid, "⚠️ Ciao! Risulti a sistema con livello **0**.\n\nPer partecipare o prenotare partite devi effettuare uno **Skill Test** di valutazione col maestro.\nVuoi che ti metta in contatto con la segreteria per fissare un test?\n\nRispondi **SÌ** o **NO**! 🎾", messageKey);
-        
-        await setAwaitingState(jid, 'AWAITING_SKILL_TEST_CONFIRM', { clubId: player.clubId });
+    if (player.skillLevel <= 0) {
+        await simulateTypingAndSend(jid, "Per giocare con noi devi prima fare lo Skill Test con il maestro 🎾 Ti contatteremo noi per organizzarlo!", messageKey);
         return;
     }
 
@@ -276,7 +275,7 @@ async function handleGuaranteedFull(
     if (!player) return;
 
     const now = new Date();
-    const { from, to } = getTimeWindow(context, now);
+    const { from, to, exact } = getTimeWindow(context, now);
 
     if (!from || !to) {
         // If we don't even have a day/slot, we must ask
@@ -304,8 +303,8 @@ async function handleGuaranteedFull(
 
     if (!targetMatch) {
         // Nessuna partita da liberare — se abbiamo l'orario esatto, creiamo subito
-        if (context.specificTime && from) {
-            await createNewMatch(jid, player, from, context, messageKey);
+        if (context.specificTime && (exact ?? from)) {
+            await createNewMatch(jid, player, exact ?? from!, context, messageKey);
         }
  else {
             await simulateTypingAndSend(
@@ -470,14 +469,12 @@ async function _continueBookingFlowInner(
     }
 
     if (state.step === 'AWAITING_PLAYER_COUNT') {
-        const match = messageText.match(/\d+/);
-        if (match) {
-            const count = parseInt(match[0]);
-            const updatedState = { ...state, playerCount: count, isCountExplicit: true };
-            // Continua il flusso originale con il count aggiornato
+        const ctx = await extractBookingContext(messageText);
+        if (ctx.isCountExplicit) {
+            const updatedState = { ...state, playerCount: ctx.playerCount, isCountExplicit: true };
             await startBookingFlow(jid, phoneNumber, messageText, messageKey, updatedState as any);
         } else {
-            await simulateTypingAndSend(jid, ["Scusa, in quanti siete? Prova a dirmelo a numero (es. 1, 2, 4...) 🎾", "Non ho capito quanti siete 😅 Dimmi un numero (es. 2, 3, 4)!", "In quanti volete giocare? Scrivimi il numero 🎾"][Math.floor(Math.random() * 3)], messageKey);
+            await simulateTypingAndSend(jid, ["Non ho capito quanti siete 😅 Dimmi un numero (es. 2, 3, 4)!", "In quanti volete giocare? Scrivimi il numero 🎾", "Quanti siete? Bastano poche parole tipo \"siamo in 3\" 😊"][Math.floor(Math.random() * 3)], messageKey);
         }
         return;
     }
@@ -486,7 +483,7 @@ async function _continueBookingFlowInner(
         // Estrai orario dal testo
         const timeContext = await extractBookingContext(messageText);
         const now = new Date();
-        const { from, to } = getTimeWindow(timeContext, now);
+        const { from, to, exact } = getTimeWindow(timeContext, now);
 
         if (!from) {
             await simulateTypingAndSend(jid, ["Non ho capito l'orario 😅 Prova con qualcosa tipo \"20:30\" o \"stasera alle 20\"", "Non sono riuscito a capire l'orario 🕐 Scrivimelo così: \"20:30\"", "L'orario non è chiaro 😅 Dimmi tipo \"21:00\" o \"alle 8 di sera\""][Math.floor(Math.random() * 3)], messageKey);
@@ -494,7 +491,8 @@ async function _continueBookingFlowInner(
         }
 
         if (state.step === 'AWAITING_TIME_FOR_NEW_MATCH') {
-            await createNewMatch(jid, player, from, state, messageKey);
+            // Usa orario esatto (non -30min) per creare la partita
+            await createNewMatch(jid, player, exact ?? from, state, messageKey);
         } else {
             await searchAndProposeMatches(jid, player, state, from, to!, messageKey);
         }
@@ -523,9 +521,7 @@ async function _continueBookingFlowInner(
     }
 
     if (state.step === 'AWAITING_GROUP_CARDS') {
-        // Estrai livello se presente nel testo (1-4)
-        const levelMatch = messageText.match(/\b([1-4])\b/);
-        const suggestedLevel = levelMatch ? parseInt(levelMatch[1]) : undefined;
+        const friendLevel = await extractSkillLevel(messageText);
         let phone: string | undefined = contactInfo?.phone;
         let name: string | undefined = contactInfo?.name;
 
@@ -539,7 +535,7 @@ async function _continueBookingFlowInner(
         }
 
         if (phone) {
-            await addFriendToMatch(jid, phone, name, state.matchId, suggestedLevel, messageKey);
+            await addFriendToMatch(jid, phone, name, state.matchId, friendLevel ?? undefined, messageKey);
             const newCount = state.collectedCount + 1;
 
             if (newCount >= state.playerCount) {
@@ -566,9 +562,8 @@ async function _continueBookingFlowInner(
     }
 
     if (state.step === 'AWAITING_FRIEND_LEVEL') {
-        const match = messageText.match(/[1-4]/);
-        if (match) {
-            const level = parseInt(match[0]);
+        const level = await extractSkillLevel(messageText);
+        if (level !== null) {
             await prisma.player.updateMany({
                 where: { phoneNumber: { startsWith: `FRIEND_${state.matchId}` } },
                 data: { skillLevel: level }
@@ -576,11 +571,7 @@ async function _continueBookingFlowInner(
             await simulateTypingAndSend(jid, `Ottimo, ho aggiornato il livello! Cerco sostituti adatti 🎾`, messageKey);
             await clearBookingState(jid);
         } else {
-            // Se parla di altro o non capisco, non blocchiamo la conversazione fluida.
-            // Il Conversational Manager riprenderà il controllo al prossimo messaggio
-            // se non chiamiamo return o se puliamo qui.
-            // Per ora lasciamo lo stato così l'utente può riprovare o ignorare.
-            return;
+            await simulateTypingAndSend(jid, `Non ho capito il livello 😅 Dimmi un numero (es. "livello 3" o "gioca a 4") 🎾`, messageKey);
         }
         return;
     }
@@ -798,7 +789,7 @@ async function addFriendToMatch(
 function getTimeWindow(
     context: BookingContext,
     now: Date
-): { from: Date | null; to: Date | null } {
+): { from: Date | null; to: Date | null; exact: Date | null } {
     let targetDate = new Date(now);
 
     if (context.specificDay) {
@@ -824,6 +815,7 @@ function getTimeWindow(
         return {
             from: new Date(specific.getTime() - 30 * 60 * 1000),
             to: new Date(specific.getTime() + 30 * 60 * 1000),
+            exact: specific,
         };
     }
 
@@ -834,11 +826,12 @@ function getTimeWindow(
     };
 
     const slot = slots[context.timeSlot];
-    if (!slot) return { from: null, to: null };
+    if (!slot) return { from: null, to: null, exact: null };
 
     return {
         from: buildRomeTime(targetDate, slot.from, 0),
         to: buildRomeTime(targetDate, slot.to, 0),
+        exact: null,
     };
 }
 
@@ -869,6 +862,23 @@ function getSlotDescription(timeSlot: string): string {
         unknown: 'in questo momento',
     };
     return desc[timeSlot] || '';
+}
+
+async function extractSkillLevel(text: string): Promise<number | null> {
+    try {
+        const response = await anthropic.messages.create({
+            model: 'claude-haiku-4-5-20251001',
+            max_tokens: 5,
+            temperature: 0,
+            messages: [{ role: 'user', content: `Qual è il livello di padel (numero intero da 1 a 7) menzionato in questo messaggio? Rispondi SOLO con il numero o "null".\nMessaggio: "${text}"` }],
+        });
+        const val = (response.content[0] as any).text?.trim();
+        const n = parseInt(val);
+        if (!isNaN(n) && n >= 1 && n <= 7) return n;
+    } catch (err) {
+        logger.error({ err }, 'extractSkillLevel failed');
+    }
+    return null;
 }
 
 async function resolveMatchChoice(text: string, matches: any[]): Promise<number | null> {

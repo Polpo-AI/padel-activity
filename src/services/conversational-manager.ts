@@ -103,12 +103,13 @@ Genera la risposta per l'utente. Mantieni il filo del discorso senza ricominciar
         const content = response.content[0];
         if (content.type === 'text') {
             await simulateTypingAndSend(jid, content.text.trim());
-            
+
             // 3. Proactively extract and save profile data
             await tryExtractAndSaveData(jid, userInput, recentHistory, context, context.phoneNumber);
 
-            // Re-detect action after response (fallback)
-            return await detectActionSignal(userInput, recentHistory, content.text);
+            // Non triggeriamo flussi strutturati dopo che il manager ha già risposto
+            // (evita doppio messaggio: risposta AI + "Quanti siete?" da startBookingFlow)
+            return null;
         }
     } catch (err) {
         logger.error({ err }, 'Error in fluid conversation');

@@ -906,38 +906,39 @@ async function handleInvitationChoiceReply(
         return;
     }
 
-    // Riprova a capire la scelta dal testo (numero o orario)
+    // Risolvi la scelta tramite AI
     const times = invitations.map(inv =>
         inv.match.startTime.toLocaleTimeString('it-IT', { timeZone: 'Europe/Rome', hour: '2-digit', minute: '2-digit' })
     );
+    const optionsList = invitations.map((inv, i) => {
+        const t = times[i];
+        const d = inv.match.startTime.toLocaleDateString('it-IT', { timeZone: 'Europe/Rome', weekday: 'short', day: 'numeric', month: 'short' });
+        return `${i + 1}. ${inv.match.court?.name || 'Campo'} – ${d} alle ${t}`;
+    }).join('\n');
 
-    let chosen: typeof invitations[0] | undefined;
-
-    // Match su numero ("1", "2", ...)
-    const numMatch = text.trim().match(/^[1-9]/);
-    if (numMatch) {
-        const idx = parseInt(numMatch[0], 10) - 1;
-        if (idx >= 0 && idx < invitations.length) chosen = invitations[idx];
-    }
-
-    // Match su orario ("18:00", "le 20", ...)
-    if (!chosen) {
-        for (let i = 0; i < invitations.length; i++) {
-            if (text.includes(times[i])) { chosen = invitations[i]; break; }
+    const { anthropic } = await import('./ai');
+    let chosenIndex: number | null = null;
+    try {
+        const aiResp = await anthropic.messages.create({
+            model: 'claude-haiku-4-5-20251001',
+            max_tokens: 5,
+            temperature: 0,
+            messages: [{ role: 'user', content: `Lista inviti:\n${optionsList}\n\nRisposta utente: "${text}"\n\nQuale numero ha scelto? Rispondi SOLO con il numero o UNCLEAR.` }],
+        });
+        const val = (aiResp.content[0] as any).text?.trim();
+        if (val !== 'UNCLEAR') {
+            const idx = parseInt(val) - 1;
+            if (idx >= 0 && idx < invitations.length) chosenIndex = idx;
         }
-    }
+    } catch { /* lascia null */ }
 
-    if (!chosen) {
-        // Ancora ambiguo — rechiedere
-        const options = invitations.map((inv, i) => {
-            const t = times[i];
-            const d = inv.match.startTime.toLocaleDateString('it-IT', { timeZone: 'Europe/Rome', weekday: 'short', day: 'numeric', month: 'short' });
-            return `${i + 1}. ${inv.match.court?.name || 'Campo'} – ${d} alle ${t}`;
-        }).join('\n');
-        await simulateTypingAndSend(jid, `Non ho capito bene 😅 Dimmi solo il numero:\n\n${options}`);
+    if (chosenIndex === null) {
+        await simulateTypingAndSend(jid, `Non ho capito bene 😅 Dimmi solo il numero:\n\n${optionsList}`);
         await setAwaitingState(jid, 'AWAITING_INVITATION_CHOICE', stateData);
         return;
     }
+
+    const chosen = invitations[chosenIndex];
 
     // Processa come YES sulla partita scelta
     const invitation = chosen;
@@ -1007,7 +1008,6 @@ async function resolveDoubleInvitation(
     invitations: any[],
     undefined: any
 ): Promise<any | null> {
-    // Prima prova a capirlo dal testo
     const times = invitations.map(inv =>
         inv.match.startTime.toLocaleTimeString('it-IT', { timeZone: 'Europe/Rome', hour: '2-digit', minute: '2-digit' })
     );
@@ -1015,15 +1015,27 @@ async function resolveDoubleInvitation(
         inv.match.startTime.toLocaleDateString('it-IT', { timeZone: 'Europe/Rome', weekday: 'short', day: 'numeric', month: 'short' })
     );
 
-    // Controlla se il testo menziona già uno degli orari
-    for (let i = 0; i < invitations.length; i++) {
-        if (combinedText.includes(times[i])) return invitations[i];
-    }
-
-    // Non è chiaro — chiedi con domanda AI-generated
+    // Prova a capire dal testo tramite AI
     const options = invitations.map((inv, i) =>
         `${i + 1}. ${inv.match.court?.name || 'Campo'} ${inv.match.court?.isCovered ? '🏠' : '☀️'} – ${dates[i]} alle ${times[i]}`
     ).join('\n');
+
+    if (combinedText) {
+        try {
+            const { anthropic } = await import('./ai');
+            const aiResp = await anthropic.messages.create({
+                model: 'claude-haiku-4-5-20251001',
+                max_tokens: 5,
+                temperature: 0,
+                messages: [{ role: 'user', content: `Lista inviti:\n${options}\n\nMessaggio utente: "${combinedText}"\n\nQuale numero ha scelto? Rispondi SOLO con il numero o UNCLEAR.` }],
+            });
+            const val = (aiResp.content[0] as any).text?.trim();
+            if (val !== 'UNCLEAR') {
+                const idx = parseInt(val) - 1;
+                if (idx >= 0 && idx < invitations.length) return invitations[idx];
+            }
+        } catch { /* chiedi conferma */ }
+    }
 
     await simulateTypingAndSend(
         jid,
@@ -1150,12 +1162,6 @@ function buildContext(intent: string, text: string): string {
 }
 
 async function extractGroupCount(text: string): Promise<number> {
-    // Deterministico prima: cerca numeri nel testo
-    const numMatch = text.match(/\b([2-9]|10)\b/);
-    if (numMatch) {
-        const n = parseInt(numMatch[1]);
-        if (n >= 2 && n <= 10) return n - 1; // escludi chi scrive
-    }
     const { withRetry, isTransientNetworkError } = await import('../utils/retry');
     const { anthropic } = await import('./ai');
     try {
