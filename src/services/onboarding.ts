@@ -19,7 +19,7 @@ import pino from 'pino';
 const logger = pino({ level: 'info' });
 
 const STATE_TTL_SEC = 24 * 60 * 60; // 24h
-const AWAITING_ROLES = ['AWAITING_FRIEND_PHONE', 'AWAITING_GROUP_PHONES', 'AWAITING_FRIEND_LEVEL', 'AWAITING_SKILL_TEST_CONFIRM', 'AWAITING_PREFERRED_PLAYERS'] as const;
+const AWAITING_ROLES = ['AWAITING_FRIEND_PHONE', 'AWAITING_GROUP_PHONES', 'AWAITING_FRIEND_LEVEL', 'AWAITING_SKILL_TEST_CONFIRM', 'AWAITING_PREFERRED_PLAYERS', 'AWAITING_INVITATION_CHOICE'] as const;
 type AwaitingRole = typeof AWAITING_ROLES[number];
 
 // ─────────────────────────────────────────────

@@ -147,7 +147,14 @@ async function scheduleMaintenance() {
         removeOnComplete: true,
     });
 
-    logger.info('Maintenance jobs scheduled (daily-reset, check-timeouts, check-silent, cleanup-messages, process-outcomes)');
+    // Pulizia invitation PENDING scadute — ogni ora
+    await maintenanceQueue.add('cleanup-pending-invitations', {}, {
+        repeat: { every: 60 * 60 * 1000 },
+        jobId: 'cleanup-pending-invitations',
+        removeOnComplete: true,
+    });
+
+    logger.info('Maintenance jobs scheduled (daily-reset, check-timeouts, check-silent, cleanup-messages, process-outcomes, cleanup-pending-invitations)');
 }
 
 // ─────────────────────────────────────────────

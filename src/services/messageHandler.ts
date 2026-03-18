@@ -29,6 +29,8 @@ import {
     processFriendPhone,
     processFriendLevel,
     getAwaitingState,
+    setAwaitingState,
+    clearAwaitingState,
 } from './onboarding';
 import { handleCancellation } from './recovery';
 import { registerBatchHandler, NormalizedMessage } from './inbound-queue';
@@ -205,6 +207,13 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[], cor
     const redirectState = await getStateByRole(jid, 'AWAITING_REDIRECT_CHOICE');
     if (redirectState && combinedText) {
         await confirmRedirectChoice(jid, combinedText, redirectState);
+        return;
+    }
+
+    // 1b2. Scelta tra più invitation pending
+    const invChoiceState = await getAwaitingState(jid);
+    if (invChoiceState?.role === 'AWAITING_INVITATION_CHOICE' && combinedText) {
+        await handleInvitationChoiceReply(jid, phoneNumber, combinedText, invChoiceState.data);
         return;
     }
 
@@ -839,6 +848,123 @@ async function handleOpenMatchCancellation(
 }
 
 // ─────────────────────────────────────────────
+// RISPOSTA ALLA SCELTA TRA PIÙ INVITATION
+// ─────────────────────────────────────────────
+
+async function handleInvitationChoiceReply(
+    jid: string,
+    phoneNumber: string,
+    text: string,
+    stateData: { invitationIds: string[] }
+): Promise<void> {
+    const player = await prisma.player.findFirst({ where: { phoneNumber } });
+    if (!player) return;
+
+    await clearAwaitingState(jid);
+
+    const invitations = await prisma.invitation.findMany({
+        where: { id: { in: stateData.invitationIds }, status: 'PENDING', match: { status: 'OPEN' } },
+        include: { match: { include: { MatchPlayer: true, court: true } } },
+        orderBy: { sentAt: 'asc' },
+    });
+
+    if (invitations.length === 0) {
+        await simulateTypingAndSend(jid, "Gli inviti non sono più disponibili 😔 Ti avviso per le prossime partite!");
+        return;
+    }
+
+    // Riprova a capire la scelta dal testo (numero o orario)
+    const times = invitations.map(inv =>
+        inv.match.startTime.toLocaleTimeString('it-IT', { timeZone: 'Europe/Rome', hour: '2-digit', minute: '2-digit' })
+    );
+
+    let chosen: typeof invitations[0] | undefined;
+
+    // Match su numero ("1", "2", ...)
+    const numMatch = text.trim().match(/^[1-9]/);
+    if (numMatch) {
+        const idx = parseInt(numMatch[0], 10) - 1;
+        if (idx >= 0 && idx < invitations.length) chosen = invitations[idx];
+    }
+
+    // Match su orario ("18:00", "le 20", ...)
+    if (!chosen) {
+        for (let i = 0; i < invitations.length; i++) {
+            if (text.includes(times[i])) { chosen = invitations[i]; break; }
+        }
+    }
+
+    if (!chosen) {
+        // Ancora ambiguo — rechiedere
+        const options = invitations.map((inv, i) => {
+            const t = times[i];
+            const d = inv.match.startTime.toLocaleDateString('it-IT', { timeZone: 'Europe/Rome', weekday: 'short', day: 'numeric', month: 'short' });
+            return `${i + 1}. ${inv.match.court?.name || 'Campo'} – ${d} alle ${t}`;
+        }).join('\n');
+        await simulateTypingAndSend(jid, `Non ho capito bene 😅 Dimmi solo il numero:\n\n${options}`);
+        await setAwaitingState(jid, 'AWAITING_INVITATION_CHOICE', stateData);
+        return;
+    }
+
+    // Processa come YES sulla partita scelta
+    const invitation = chosen;
+    try {
+        const result = await prisma.$transaction(async (tx: any) => {
+            await tx.$executeRaw`SELECT 1 FROM "Match" WHERE id = ${invitation.matchId} FOR UPDATE`;
+            const match = await tx.match.findUnique({
+                where: { id: invitation.matchId },
+                include: { MatchPlayer: true },
+            });
+            if (!match || match.status !== 'OPEN') throw new Error('MATCH_CLOSED');
+            const activeCount = match.MatchPlayer.filter((mp: any) => !mp.leftAt).length;
+            if (activeCount >= match.playersNeeded) throw new Error('MATCH_FULL');
+            await tx.matchPlayer.create({ data: { matchId: match.id, playerId: player.id } });
+            await tx.invitation.update({ where: { id: invitation.id }, data: { status: 'ACCEPTED' } });
+            if (activeCount + 1 >= match.playersNeeded) {
+                const filled = await tx.match.update({ where: { id: match.id }, data: { status: 'LOCKED' } });
+                return { status: 'JUST_FILLED', match: filled };
+            }
+            return { status: 'ADDED', match };
+        });
+
+        // Declina automaticamente le altre invitation aperte
+        const otherIds = invitations.filter(i => i.id !== invitation.id).map(i => i.id);
+        if (otherIds.length > 0) {
+            await prisma.invitation.updateMany({ where: { id: { in: otherIds } }, data: { status: 'REJECTED' } });
+        }
+
+        await simulateTypingAndSend(
+            jid,
+            result.status === 'JUST_FILLED'
+                ? "Ottimo! Siamo al completo 🎾 Ti mando i dettagli nel gruppo!"
+                : "Perfetto! Ti ho segnato 🎾 Ti avviso appena siamo al completo!"
+        );
+
+        if (result.status === 'JUST_FILLED') {
+            await handleMatchFilled(result.match.id, result.match.startTime);
+            await increaseReliability(player.id);
+        }
+    } catch (error: any) {
+        if (error.message === 'MATCH_FULL' || error.message === 'MATCH_CLOSED') {
+            await prisma.invitation.update({ where: { id: invitation.id }, data: { status: 'REJECTED' } });
+            const { redirectGroup } = await import('./redirect');
+            await redirectGroup({
+                referentPhone: phoneNumber,
+                referentJid: jid,
+                playerPhones: [phoneNumber],
+                playerCount: 1,
+                originalMatchId: invitation.matchId,
+                originalStartTime: invitation.match.startTime,
+                reason: 'SLOT_TAKEN',
+                clubId: invitation.match.clubId || '',
+            });
+        } else {
+            logger.error({ error }, 'Error processing invitation choice reply');
+        }
+    }
+}
+
+// ─────────────────────────────────────────────
 // DOPPIA INVITATION — chiedi su quale
 // ─────────────────────────────────────────────
 
@@ -872,14 +998,9 @@ async function resolveDoubleInvitation(
         undefined
     );
 
-    // Salva stato per gestire la risposta nel prossimo batch
-    await prisma.whatsAppMessage.create({
-        data: {
-            chatId: jid,
-            sender: 'BOT',
-            role: 'AWAITING_INVITATION_CHOICE',
-            content: JSON.stringify({ invitationIds: invitations.map(inv => inv.id) }),
-        },
+    // Salva stato su Redis (TTL 1h — oltre non ha senso aspettare)
+    await setAwaitingState(jid, 'AWAITING_INVITATION_CHOICE', {
+        invitationIds: invitations.map(inv => inv.id),
     });
 
     return null; // aspetta risposta

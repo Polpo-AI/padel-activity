@@ -98,6 +98,33 @@ const maintenanceWorker = new Worker(
             await pruneExpiredStates();
         }
 
+        if (job.name === 'cleanup-pending-invitations') {
+            const now = new Date();
+            const fortyEightHoursAgo = new Date(Date.now() - 48 * 60 * 60 * 1000);
+
+            // 1. Invitation per partite già passate (match terminato o scaduto)
+            const expiredByMatch = await prisma.invitation.updateMany({
+                where: {
+                    status: 'PENDING',
+                    match: { startTime: { lt: now } },
+                },
+                data: { status: 'IGNORED' },
+            });
+
+            // 2. Invitation inviate da più di 48h su partite future ancora aperte
+            //    (il giocatore non ha risposto in due giorni — non ha senso tenerle vive)
+            const expiredByAge = await prisma.invitation.updateMany({
+                where: {
+                    status: 'PENDING',
+                    sentAt: { lt: fortyEightHoursAgo },
+                    match: { startTime: { gt: now }, status: 'OPEN' },
+                },
+                data: { status: 'IGNORED' },
+            });
+
+            logger.info(`cleanup-pending-invitations: ${expiredByMatch.count} expired by past match, ${expiredByAge.count} expired by age (>48h)`);
+        }
+
         if (job.name === 'process-match-outcomes') {
             // Finestra: partite terminate nelle ultime 3 ore (copre gap tra run).
             // processMatchOutcomes è idempotente: salta invitation già in stato finale.
