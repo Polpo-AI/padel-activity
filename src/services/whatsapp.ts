@@ -279,10 +279,25 @@ async function processOfflineMessages(collected: Map<string, proto.IWebMessageIn
         const unanswered = sorted.filter(m => Number(m.messageTimestamp) * 1000 > lastBotTs);
         if (unanswered.length === 0) continue;
 
-        logger.info({ jid, count: unanswered.length, lastBotTs: new Date(lastBotTs).toISOString() },
+        // Filtra con AI: salta messaggi che non richiedono risposta (grazie, ok, emoji...)
+        const { requiresResponse } = await import('./ai');
+        const actionable: proto.IWebMessageInfo[] = [];
+        for (const msg of unanswered) {
+            const text = (msg.message?.conversation || msg.message?.extendedTextMessage?.text || '').trim();
+            const needed = await requiresResponse(text).catch(() => true);
+            if (needed) {
+                actionable.push(msg);
+            } else {
+                logger.info({ jid, text: text.slice(0, 60) }, 'Offline message skipped — no response needed');
+            }
+        }
+
+        if (actionable.length === 0) continue;
+
+        logger.info({ jid, count: actionable.length, lastBotTs: new Date(lastBotTs).toISOString() },
             'Re-enqueuing offline messages after resync');
 
-        for (const msg of unanswered) {
+        for (const msg of actionable) {
             enqueue(msg);
         }
     }

@@ -86,6 +86,41 @@ export async function classifyIntent(
 }
 
 // ─────────────────────────────────────────────
+// REQUIRES RESPONSE — filtro messaggi offline
+// Usato per evitare di rispondere a ringraziamenti,
+// conferme, emoji o altri messaggi che non richiedono azione.
+// ─────────────────────────────────────────────
+
+export async function requiresResponse(text: string): Promise<boolean> {
+    if (!text || text.trim().length === 0) return false;
+
+    // Fast-path: messaggi chiaramente non-actionable (evita chiamata AI)
+    const lower = text.trim().toLowerCase();
+    const skipPatterns = [/^(ok|okay|ок)[\s!.]*$/, /^(grazie|grazie mille|grazie!)[\s!.]*$/, /^(👍|👌|🙏|✅|❤️|😊|🎾)+$/, /^(perfetto|ottimo|benissimo|capito|ricevuto|prego)[\s!.]*$/];
+    if (skipPatterns.some(p => p.test(lower))) return false;
+
+    try {
+        const result = await withRetry(
+            () => anthropic.messages.create({
+                model: 'claude-haiku-4-5-20251001',
+                max_tokens: 5,
+                temperature: 0,
+                messages: [{
+                    role: 'user',
+                    content: `Sei il filtro di un bot padel. Il messaggio seguente richiede una risposta da parte del bot?\nRispondi SOLO con RESPOND o SKIP.\n- SKIP: ringraziamenti, conferme ("ok", "perfetto", "👍"), saluti senza richiesta, emoji, "ci vediamo", "a domani"\n- RESPOND: prenotazioni, domande, disdette, richieste, qualsiasi cosa che attende una risposta\n\nMessaggio: "${text.slice(0, 300)}"`
+                }],
+            }),
+            { maxAttempts: 2, baseDelayMs: 500, shouldRetry: isTransientNetworkError, context: 'requiresResponse' }
+        );
+        const raw = result.content[0].type === 'text' ? result.content[0].text.trim().toUpperCase() : '';
+        return raw.startsWith('RESPOND');
+    } catch {
+        // In caso di errore AI, processa il messaggio per sicurezza
+        return true;
+    }
+}
+
+// ─────────────────────────────────────────────
 // GENERA INVITO
 // ─────────────────────────────────────────────
 
