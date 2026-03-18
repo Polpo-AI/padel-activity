@@ -33,6 +33,7 @@ const randomInt = (min: number, max: number) => Math.floor(Math.random() * (max 
 export interface ClubOnboardingConfig {
     clubId: string;
     botName: string;                    // es. "Circolo Padel Roma Bot"
+    skipLevel?: boolean;                // se true, registra con skill 0 senza chiedere il livello
     welcomeMessage?: string;            // messaggio custom di benvenuto
     askAvailability: boolean;           // chiedi giorni preferiti?
     askTimePreference: boolean;         // chiedi orario preferito?
@@ -262,6 +263,12 @@ export async function continueOnboarding(
         } catch { /* usa il testo originale come fallback */ }
         // Capitalizza prima lettera
         name = name.charAt(0).toUpperCase() + name.slice(1).toLowerCase();
+        if (config.skipLevel) {
+            // Registrazione rapida: skill 0, riprendiamo subito il booking flow
+            await finalizeOnboarding(senderJid, { ...stateData, name, skillLevel: 0 }, messageKey);
+            return;
+        }
+
         await setOnboardingState(senderJid, 'AWAITING_LEVEL', { ...stateData, name });
 
         await simulateTypingAndSend(
@@ -338,11 +345,46 @@ async function finalizeOnboarding(senderJid: string, stateData: any, messageKey?
 
     await clearOnboardingState(senderJid);
 
-    await simulateTypingAndSend(
-        senderJid,
-        `Perfetto ${name}! 🎾 Sei nel sistema. Ti contatterò quando c'è una partita disponibile per il tuo livello. A presto!`,
-        messageKey
-    );
+    // Controlla se c'era un intent pendente (es. prenotazione interrotta per onboarding)
+    let hasPendingIntent = false;
+    try {
+        const { getState, clearState } = await import('./conversation-state');
+        const pending = await getState(`state:pending-intent:${senderJid}`);
+        if (pending?.intent && pending.intent !== 'UNKNOWN') {
+            hasPendingIntent = true;
+            await clearState(`state:pending-intent:${senderJid}`);
+
+            await simulateTypingAndSend(
+                senderJid,
+                `Perfetto ${name}! 🎾 Sei registrato. Ora continuo con la tua richiesta...`,
+                messageKey
+            );
+
+            // Riprende il booking flow con i parametri originali
+            const { handleBatch } = await import('./messageHandler');
+            const syntheticJid = senderJid;
+            await handleBatch(syntheticJid, [{
+                type: 'text',
+                text: pending.combinedText,
+                raw: {
+                    key: { id: `RESUME_${Date.now()}`, remoteJid: syntheticJid, fromMe: false },
+                    pushName: name,
+                    messageTimestamp: Math.floor(Date.now() / 1000),
+                    message: { conversation: pending.combinedText },
+                } as any,
+            }]);
+        }
+    } catch (err) {
+        logger.error({ err }, 'Failed to resume pending intent after onboarding');
+    }
+
+    if (!hasPendingIntent) {
+        await simulateTypingAndSend(
+            senderJid,
+            `Perfetto ${name}! 🎾 Sei nel sistema. Ti contatterò quando c'è una partita disponibile. A presto!`,
+            messageKey
+        );
+    }
 
     // Notifica admin
     if (config.notifyAdminOnNewPlayer) {

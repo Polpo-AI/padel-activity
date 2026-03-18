@@ -441,7 +441,35 @@ async function routeIntent(
             clubId: resolvedClubId || { not: '' } 
         } 
     });
-    if (!player) return;
+    if (!player) {
+        // Utente non registrato — avvia onboarding light (solo nome, skill 0)
+        // Salva l'intent pendente in modo da riprenderlo dopo la registrazione
+        const club = await prisma.club.findFirst({ where: resolvedClubId ? { id: resolvedClubId } : {} });
+        if (!club) return;
+
+        const { startSingleOnboarding } = await import('./onboarding-flow');
+        const { setState } = await import('./conversation-state');
+
+        // Salva intent pendente così continueOnboarding lo riprende dopo il nome
+        await setState(`state:pending-intent:${jid}`, {
+            intent,
+            combinedText,
+            params,
+            clubId: club.id,
+        }, 600); // 10 min TTL
+
+        await startSingleOnboarding(jid, {
+            clubId: club.id,
+            botName: club.name || 'Padel Bot',
+            welcomeMessage: `Ciao! 👋 Non sei ancora registrato nel nostro sistema.
+
+Come ti chiami?`,
+            askAvailability: false,
+            askTimePreference: false,
+            notifyAdminOnNewPlayer: true,
+        });
+        return;
+    }
 
     const firstCard = contactCards[0];
 
