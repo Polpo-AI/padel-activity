@@ -8,7 +8,7 @@
  * - Health check reale: controlla DB, Redis, WhatsApp
  * - Notifiche admin su errori critici e fallimenti ripetuti
  * - Graceful shutdown su SIGTERM/SIGINT
- * - PM2 gestisce il restart automatico (vedi ecosystem.config.js)
+ * - systemd gestisce il restart automatico (padel-staging.service / padel-prod.service)
  * - Feedback garantito: ogni messaggio riceve sempre una risposta (vedi messageHandler)
  */
 
