@@ -113,6 +113,11 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[], cor
         return;
     }
 
+    // Canonicalizza il JID: usa sempre il numero reale (@s.whatsapp.net) come chiave Redis.
+    // Senza questo, la stessa persona con JID @lid e @s.whatsapp.net avrebbe due stati Redis
+    // separati → doppio onboarding, stati conversazionali duplicati, loop di messaggi.
+    jid = `${phoneNumber}@s.whatsapp.net`;
+
     const pushName = messages[0]?.raw?.pushName;
     logger.info(`Batch: ${messages.length} msg from ${phoneNumber}`);
 
