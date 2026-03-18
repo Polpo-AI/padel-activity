@@ -117,7 +117,7 @@ export async function startBookingFlow(
 
     // ✅ NEW CHECK: Se non è specificato quanti sono, chiediamo "Quanti siete?"
     if (!context.isCountExplicit && !context.guaranteesFull) {
-        await simulateTypingAndSend(jid, "Ottimo! Quanti siete in totale? 🎾", messageKey);
+        await simulateTypingAndSend(jid, ["Ottimo! Quanti siete in totale? 🎾", "Perfetto! Siete in quanti? 👥", "Bene! Dimmi quante persone siete 🎾", "Super! In quanti volete giocare? 🏟️"][Math.floor(Math.random() * 4)], messageKey);
         await setBookingState(jid, { ...context, step: 'AWAITING_PLAYER_COUNT' });
         return;
     }
@@ -138,7 +138,7 @@ export async function startBookingFlow(
         // Non sappiamo l'orario — chiediamo
         await simulateTypingAndSend(
             jid,
-            `Certo! A che ora vorresti giocare? ${context.playerCount > 1 ? `Siete in ${context.playerCount}` : 'Solo tu?'} 🎾`,
+            `${["Certo!", "Perfetto!", "Ottimo!", "Bene!"][Math.floor(Math.random() * 4)]} A che ora vorresti giocare? ${context.playerCount > 1 ? `Siete in ${context.playerCount}` : 'Solo tu?'} 🎾`,
             messageKey
         );
         await setBookingState(jid, { ...context, step: 'AWAITING_TIME' });
@@ -218,7 +218,7 @@ async function searchAndProposeMatches(
         const slotDescription = getSlotDescription(context.timeSlot);
         await simulateTypingAndSend(
             jid,
-            `Non ho partite aperte ${slotDescription} per il tuo livello 😕 A che ora esatta vorresti giocare? Ti apro io un campo 🎾`,
+            `${["Non ho partite aperte", "Non trovo partite disponibili", "Non ci sono slot liberi"][Math.floor(Math.random() * 3)]} ${slotDescription} per il tuo livello 😕 A che ora esatta vorresti giocare? Ti apro io un campo 🎾`,
             messageKey
         );
         await setBookingState(jid, { ...context, step: 'AWAITING_TIME_FOR_NEW_MATCH' });
@@ -229,7 +229,7 @@ async function searchAndProposeMatches(
 
     const options = ordered.slice(0, 5).map((m: any, i) => {
         const spotsLeft = m.playersNeeded - m.MatchPlayer.filter((mp: any) => !mp.leftAt).length;
-        const timeStr = m.startTime.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
+        const timeStr = m.startTime.toLocaleTimeString('it-IT', { timeZone: 'Europe/Rome', hour: '2-digit', minute: '2-digit' });
         const willLock = spotsLeft === context.playerCount;
 
         const cost = calculateCostFromPrices(m.startTime, m.court.prices);
@@ -282,7 +282,7 @@ async function handleGuaranteedFull(
         // If we don't even have a day/slot, we must ask
         await simulateTypingAndSend(
             jid,
-            "Ottimo! Siete già in 4? 🎾 A che ora vorreste giocare?",
+            ["Ottimo! Siete già in 4? 🎾 A che ora vorreste giocare?", "Perfetti! Siete al completo 🎾 Che orario vi va?", "Bene! A che ora pensate di giocare? 🏟️"][Math.floor(Math.random() * 3)],
             messageKey
         );
         await setBookingState(jid, { ...context, step: 'AWAITING_TIME_FOR_GUARANTEED' });
@@ -310,7 +310,7 @@ async function handleGuaranteedFull(
  else {
             await simulateTypingAndSend(
                 jid,
-                "Non ho partite aperte in quella fascia. Vi creo io un campo 🎾 A che ora esatta?",
+                ["Non ho partite aperte in quella fascia. Vi creo io un campo 🎾 A che ora esatta?", "Nessuna partita disponibile in quella fascia, ma vi apro io uno slot! 🎾 Che orario preferite?", "Niente di aperto in quell'orario, ma posso crearvi un campo! ⏰ A che ora esatta?"][Math.floor(Math.random() * 3)],
                 messageKey
             );
             await setBookingState(jid, { ...context, step: 'AWAITING_TIME_FOR_GUARANTEED' });
@@ -363,10 +363,10 @@ async function handleGuaranteedFull(
         });
     }
 
-    const timeStr = targetMatch.startTime.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
+    const timeStr = targetMatch.startTime.toLocaleTimeString('it-IT', { timeZone: 'Europe/Rome', hour: '2-digit', minute: '2-digit' });
     await simulateTypingAndSend(
         jid,
-        `Perfetto! Ho riservato il ${targetMatch.court?.name || "Campo"} alle ${timeStr} per voi 4 🎾 Confermate e chiudiamo!`,
+        `Perfetto! Ho riservato il ${targetMatch.court?.name || "Campo"} ${targetMatch.court?.isCovered ? '🏠' : '☀️'} alle ${timeStr} per voi 4 🎾 Confermate e chiudiamo!`,
         messageKey
     );
 }
@@ -395,7 +395,7 @@ async function assignMatchToGroup(
 
     await simulateTypingAndSend(
         referentJid,
-        `Ti ho segnato! Mandami i contatti degli altri ${context.playerCount - 1} e chiudo il campo 🎾`
+        `${["Ti ho segnato!", "Perfetto, sei dentro!", "Registrato! 🎾"][Math.floor(Math.random() * 3)]} Mandami i contatti degli altri ${context.playerCount - 1} e chiudo il campo 🎾`
     );
 }
 
@@ -427,10 +427,10 @@ export async function continueBookingFlow(
                     content: messageText,
                 }
             });
-            await simulateTypingAndSend(jid, "Grazie per il tuo feedback! Lo terremo in considerazione 🎾", messageKey);
+            await simulateTypingAndSend(jid, ["Grazie per il tuo feedback! Lo terremo in considerazione 🎾", "Grazie! Il tuo feedback è prezioso 🙏", "Perfetto, annotato! Grazie per la segnalazione 🎾", "Grazie mille per il feedback! Ci aiuta a migliorare 💪"][Math.floor(Math.random() * 4)], messageKey);
         } catch (err) {
             logger.error({ err }, 'Error saving match feedback');
-            await simulateTypingAndSend(jid, "Grazie per il messaggio! 🎾", messageKey);
+            await simulateTypingAndSend(jid, ["Grazie per il messaggio! 🎾", "Ricevuto, grazie! 👍", "Messaggio ricevuto 🎾"][Math.floor(Math.random() * 3)], messageKey);
         }
         await clearBookingState(jid);
         return;
@@ -439,10 +439,10 @@ export async function continueBookingFlow(
     if (state.step === 'AWAITING_SKILL_TEST_CONFIRMATION') {
         const text = messageText.toLowerCase();
         if (text.includes('si') || text.includes('sno') || text.includes('ok') || text.includes('certo') || text.includes('confermo')) {
-            await simulateTypingAndSend(jid, "Ottimo! Ti ho messo in lista. Riceverai un messaggio dal nostro maestro per fissare l'orario della valutazione! 🎾", messageKey);
+            await simulateTypingAndSend(jid, ["Ottimo! Ti ho messo in lista. Riceverai un messaggio dal nostro maestro per fissare l'orario della valutazione! 🎾", "Perfetto! Sei in lista per lo Skill Test 🎾 Il maestro ti contatterà presto!", "Aggiunto alla lista! Ti avvisiamo non appena il maestro è disponibile per la valutazione 💪"][Math.floor(Math.random() * 3)], messageKey);
             // Opzionale: notifiche al gestore o salvataggio da qualche parte
         } else {
-            await simulateTypingAndSend(jid, "Nessun problema. Se cambi idea, scrivimi pure per prenotare il tuo Skill Test! 🎾", messageKey);
+            await simulateTypingAndSend(jid, ["Nessun problema. Se cambi idea, scrivimi pure per prenotare il tuo Skill Test! 🎾", "Ok, capito! Quando vuoi farlo, basta che mi scrivi 🎾", "Perfetto, nessun problema! Sono qui quando sei pronto per la valutazione 😊"][Math.floor(Math.random() * 3)], messageKey);
         }
         const { clearBookingState } = await import('./booking');
         await clearBookingState(jid);
@@ -457,7 +457,7 @@ export async function continueBookingFlow(
             // Continua il flusso originale con il count aggiornato
             await startBookingFlow(jid, phoneNumber, messageText, messageKey, updatedState as any);
         } else {
-            await simulateTypingAndSend(jid, "Scusa, in quanti siete? Prova a dirmelo a numero (es. 1, 2, 4...) 🎾", messageKey);
+            await simulateTypingAndSend(jid, ["Scusa, in quanti siete? Prova a dirmelo a numero (es. 1, 2, 4...) 🎾", "Non ho capito quanti siete 😅 Dimmi un numero (es. 2, 3, 4)!", "In quanti volete giocare? Scrivimi il numero 🎾"][Math.floor(Math.random() * 3)], messageKey);
         }
         return;
     }
@@ -469,7 +469,7 @@ export async function continueBookingFlow(
         const { from, to } = getTimeWindow(timeContext, now);
 
         if (!from) {
-            await simulateTypingAndSend(jid, "Non ho capito l'orario 😅 Prova con qualcosa tipo \"20:30\" o \"stasera alle 20\"", messageKey);
+            await simulateTypingAndSend(jid, ["Non ho capito l'orario 😅 Prova con qualcosa tipo \"20:30\" o \"stasera alle 20\"", "Non sono riuscito a capire l'orario 🕐 Scrivimelo così: \"20:30\"", "L'orario non è chiaro 😅 Dimmi tipo \"21:00\" o \"alle 8 di sera\""][Math.floor(Math.random() * 3)], messageKey);
             return;
         }
 
@@ -492,7 +492,7 @@ export async function continueBookingFlow(
 
         const choiceIndex = await resolveMatchChoice(messageText, matches);
         if (choiceIndex === null) {
-            await simulateTypingAndSend(jid, "Non ho capito quale partita vuoi 😅 Dimmi il numero (es. \"la prima\", \"2\")", messageKey);
+            await simulateTypingAndSend(jid, ["Non ho capito quale partita vuoi 😅 Dimmi il numero (es. \"la prima\", \"2\")", "Non sono sicuro di quale preferisci 🤔 Dimmi il numero!", "Quale scegli? Scrivimi il numero della partita 🎾"][Math.floor(Math.random() * 3)], messageKey);
             return;
         }
 
@@ -570,7 +570,7 @@ export async function continueBookingFlow(
         const { from } = getTimeWindow(timeContext, now);
 
         if (!from) {
-            await simulateTypingAndSend(jid, "Non ho capito l'orario 😅 Prova con qualcosa tipo \"20:30\"", messageKey);
+            await simulateTypingAndSend(jid, ["Non ho capito l'orario 😅 Prova con qualcosa tipo \"20:30\"", "Non ho capito l'ora 🕐 Scrivimela tipo \"20:30\"", "Che orario? Scrivilo così: \"21:00\" 😊"][Math.floor(Math.random() * 3)], messageKey);
             return;
         }
 
@@ -622,9 +622,8 @@ async function createNewMatch(
     await prisma.matchPlayer.create({ data: { matchId: match.id, playerId: player.id } });
     await prisma.invitation.create({ data: { matchId: match.id, playerId: player.id, status: 'ACCEPTED' } });
 
-    // ✅ ADD FRIENDS: Placeholder creation for non-registered friends (+1) removed for compliance
-
-    const spotsNeeded = 4 - playerCount;
+    // Ogni spot rimanente cercato tramite wave — nessun placeholder
+    const spotsNeeded = match.playersNeeded - 1;
     if (spotsNeeded > 0) {
         await waveQueue.add('process-wave', {
             matchId: match.id,
@@ -638,24 +637,13 @@ async function createNewMatch(
     const { calculateMatchCost } = await import('./pricing');
     const cost = await calculateMatchCost(match.id);
 
-    const timeStr = startTime.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
+    const courtName = freeCourt?.name || 'Campo';
+    const timeStr = startTime.toLocaleTimeString('it-IT', { timeZone: 'Europe/Rome', hour: '2-digit', minute: '2-digit' });
     await simulateTypingAndSend(
         jid,
-        `Fatto! Ho aperto una partita alle ${timeStr} 🏟️ ${cost > 0 ? `Costo: €${cost.toFixed(2)} (€${(cost / 4).toFixed(2)} a testa). ` : ''}${spotsNeeded > 0 ? `Cerco altri ${spotsNeeded} giocatori!` : 'Siete al completo!'}`,
+        `Partita aperta! 🏟️ ${courtName} ${freeCourt?.isCovered ? '🏠' : '☀️'} · ${timeStr}${cost > 0 ? ` · €${(cost / 4).toFixed(2)} a testa` : ''} · Cerco altri ${spotsNeeded} giocatori!`,
         messageKey
     );
-
-    if (match.status === 'OPEN') {
-        const { setAwaitingState } = await import('./onboarding');
-        setTimeout(async () => {
-            await simulateTypingAndSend(
-                jid, 
-                `Vuoi invitare prioritariamente 1 o 2 amici iscritti al circolo? 👥\n\nMandami **Nome e Cognome** (es. "Mario Rossi") e li cerco nel sistema!\nAltrimenti rispondi **NO** o **SALTA** 🎾`,
-                messageKey
-            );
-            await setAwaitingState(jid, 'AWAITING_PREFERRED_PLAYERS', { matchId: match.id });
-        }, 3000);
-    }
 }
 
 // ─────────────────────────────────────────────
@@ -676,7 +664,7 @@ async function addPlayerToMatch(
     });
 
     if (!match || match.status !== 'OPEN') {
-        await simulateTypingAndSend(jid, "Mi dispiace, quella partita si è nel frattempo chiusa! Vuoi cercarne un'altra?", messageKey);
+        await simulateTypingAndSend(jid, ["Mi dispiace, quella partita si è nel frattempo chiusa! Vuoi cercarne un'altra?", "Purtroppo quella partita è già piena 😕 Cerco un'altra opzione?", "Ops, qualcuno mi ha battuto sul tempo! 🎾 Quella partita è chiusa. Ne cerco un'altra?"][Math.floor(Math.random() * 3)], messageKey);
         return;
     }
 
@@ -702,43 +690,17 @@ async function addPlayerToMatch(
         });
     }
 
-    // ✅ ADD FRIENDS: Register placeholders for friends
-    for (let i = 1; i < playerCount; i++) {
-        const friend = await prisma.player.create({
-            data: {
-                phoneNumber: `FRIEND_${match.id}_${player.id}_${i}`,
-                name: `Amico di ${player.name || 'Giocatore'}`,
-                skillLevel: player.skillLevel,
-                active: false,
-                clubId: player.clubId,
-            }
-        });
-        await prisma.matchPlayer.create({ data: { matchId: match.id, playerId: friend.id } });
-    }
-
     const { calculateMatchCost } = await import('./pricing');
     const cost = await calculateMatchCost(match.id);
 
-    const timeStr = match.startTime.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
-    const spotsLeft = match.playersNeeded - match.MatchPlayer.filter((mp: any) => !mp.leftAt).length - playerCount;
+    const timeStr = match.startTime.toLocaleTimeString('it-IT', { timeZone: 'Europe/Rome', hour: '2-digit', minute: '2-digit' });
+    const updatedMatch = await prisma.match.findUnique({ where: { id: matchId }, include: { MatchPlayer: true } });
+    const spotsLeft = (updatedMatch?.playersNeeded ?? 4) - (updatedMatch?.MatchPlayer.filter((mp: any) => !mp.leftAt).length ?? 1);
     await simulateTypingAndSend(
         jid,
-        `Perfetto! Vi ho segnato per le ${timeStr} 🏟️ ${cost > 0 ? `Costo: €${cost.toFixed(2)} (€${(cost / 4).toFixed(2)} a testa). ` : ''}${spotsLeft > 0 ? `Mancano ancora ${spotsLeft} giocatori, ti aggiorno!` : 'Siete al completo!'}`,
+        `Fatto! ${match.court?.name ? match.court.name + (match.court.isCovered ? ' 🏠' : ' ☀️') + ' · ' : ''}sei in per le ${timeStr} 🏟️ ${cost > 0 ? `€${(cost / 4).toFixed(2)} a testa. ` : ''}${spotsLeft > 0 ? `Cerco altri ${spotsLeft} giocatori, ti avviso!` : 'Siete al completo! 🎾'}`,
         messageKey
     );
-
-    if (playerCount > 1 && playerCount < 4) {
-        setTimeout(async () => {
-            const playerRec = await prisma.player.findFirst({ where: { id: player.id }, include: { club: true } });
-            const maxL = playerRec?.club?.skillLevelCount ?? 3;
-            await simulateTypingAndSend(jid, `Che livello ${playerCount === 2 ? 'è il tuo amico' : 'sono i tuoi amici'}? (1-${maxL}) 🎾`);
-            await setBookingState(jid, { 
-                step: 'AWAITING_FRIEND_LEVEL', 
-                matchId: match.id,
-                friendCount: playerCount - 1 
-            });
-        }, 3000);
-    }
 }
 
 async function addFriendToMatch(
@@ -852,7 +814,7 @@ function getSlotDescription(timeSlot: string): string {
 async function resolveMatchChoice(text: string, matches: any[]): Promise<number | null> {
     const { anthropic } = await import('./ai');
     const list = matches.map((m, i) =>
-        `${i + 1}. ${m.court} alle ${m.startTime.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })}`
+        `${i + 1}. ${m.court} alle ${m.startTime.toLocaleTimeString('it-IT', { timeZone: 'Europe/Rome', hour: '2-digit', minute: '2-digit' })}`
     ).join('\n');
 
     try {

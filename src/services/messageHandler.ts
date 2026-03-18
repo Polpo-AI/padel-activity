@@ -55,6 +55,9 @@ import { handleFluidConversation } from './conversational-manager';
 import { runWithContext, getCorrelationId } from '../utils/request-context';
 
 const logger = pino({ level: 'info' });
+
+// Point 6: tracks per-correlationId whether routing has started (to gate error messages)
+const conversationalPhase = new Map<string, boolean>();
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 const randomInt = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1)) + min;
 type PrismaTransactionClient = Parameters<Parameters<typeof prisma.$transaction>[0]>[0];
@@ -73,18 +76,22 @@ export async function handleBatch(jid: string, messages: NormalizedMessage[]): P
     const correlationId = `${jid.split('@')[0]}-${Date.now()}`;
     await runWithContext({ correlationId, jid }, async () => {
         try {
-            await _handleBatchInner(jid, messages);
+            await _handleBatchInner(jid, messages, correlationId);
+            conversationalPhase.delete(correlationId);
         } catch (err) {
-            // REGOLA FEEDBACK: qualunque errore, l'utente riceve sempre una risposta.
             logger.error({ err, correlationId }, `Unhandled error in handleBatch for ${jid}`);
-            try {
-                await simulateTypingAndSend(jid, "Scusa, ho avuto un piccolo problema tecnico 😅 Puoi ripetere?");
-            } catch {}
+            // Point 6: only notify user if routing already started (user expects a reply)
+            if (conversationalPhase.get(correlationId)) {
+                try {
+                    await simulateTypingAndSend(jid, ["Scusa, ho avuto un piccolo problema tecnico 😅 Puoi ripetere?", "Ops, qualcosa è andato storto 🙈 Riprova!", "Mi sono inceppato un attimo 😅 Puoi riscrivere?"][Math.floor(Math.random() * 3)]);
+                } catch {}
+            }
+            conversationalPhase.delete(correlationId);
         }
     });
 }
 
-async function _handleBatchInner(jid: string, messages: NormalizedMessage[]): Promise<void> {
+async function _handleBatchInner(jid: string, messages: NormalizedMessage[], correlationId: string): Promise<void> {
     // ── Risoluzione Numero di Telefono ──────────────────────────
     // Se il JID è un @lid, cerchiamo il numero reale (@s.whatsapp.net) nei metadata Baileys
     let phoneNumber = jid.split('@')[0];
@@ -97,7 +104,6 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[]): Pr
     }
 
     const pushName = messages[0]?.raw?.pushName;
-    logger.info({ rawKey, pushName, jid, resolvedPhone: phoneNumber }, 'DEBUG message batch processing');
     logger.info(`Batch: ${messages.length} msg from ${phoneNumber}`);
 
     // ── Persisti ─────────────────────────────────────────────────
@@ -159,7 +165,11 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[]): Pr
                 if (err?.name === 'TranscriptionError') {
                     await simulateTypingAndSend(
                         jid,
-                        "Non riesco ad ascoltare il messaggio vocale al momento 😅 Puoi scrivermi?",
+                        [
+                    "Non riesco ad ascoltare il messaggio vocale al momento 😅 Puoi scrivermi?",
+                    "Non riesco ad elaborare l'audio in questo momento 🙉 Prova a scrivere!",
+                    "Ho problemi con l'audio adesso 😅 Scrivimi quello che volevi dire!",
+                ][Math.floor(Math.random() * 3)],
                         undefined
                     );
                     return;
@@ -290,7 +300,8 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[]): Pr
         if (result.confident && result.intent !== 'UNKNOWN') {
             await clearUnclearState(jid);
             // Riprocessa con intent chiaro
-            await routeIntent(jid, phoneNumber, result.intent, combinedText, contactCards);
+            conversationalPhase.set(getCorrelationId() || correlationId, true);
+    await routeIntent(jid, phoneNumber, result.intent, combinedText, contactCards);
         } else {
             await handleUnclearIntent(
                 jid,
@@ -309,9 +320,11 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[]): Pr
     // ─────────────────────────────────────────
 
     const currentClubId = process.env.CLUB_ID;
+    // ✅ FIX: normalizza numero di telefono per lookup — gestisce sia '393...' che '+393...'
+    const phoneVariants = [phoneNumber, '+' + phoneNumber, phoneNumber.replace(/^\+/, '')];
     const player = await prisma.player.findFirst({ 
         where: { 
-            phoneNumber, 
+            phoneNumber: { in: phoneVariants },
             clubId: currentClubId ? currentClubId : { not: '' } 
         } 
     });
@@ -353,9 +366,29 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[]): Pr
         intent = 'BRING_FRIEND';
         confident = true;
     } else if (combinedText) {
-        const result = await classifyWithConfidence(combinedText, undefined, historyText);
+        // ✅ FIX: fornisci contesto inviti pendenti per aumentare confidenza classificazione
+        let classifyContext: string | undefined;
+        if (player) {
+            const pendingInvCount = await prisma.invitation.count({
+                where: { playerId: player.id, status: 'PENDING', match: { status: 'OPEN' } }
+            });
+            if (pendingInvCount > 0) {
+                classifyContext = `Il giocatore ha ${pendingInvCount} invito/i pendente/i per partite di padel (in attesa di accettare o rifiutare).`;
+            }
+            const confirmedMatchCount = await prisma.matchPlayer.count({
+                where: { playerId: player.id, leftAt: null, match: { status: { in: ['OPEN', 'LOCKED'] } } }
+            });
+            if (confirmedMatchCount > 0) {
+                classifyContext = (classifyContext || '') + ` Il giocatore è già confermato in ${confirmedMatchCount} partita/e (possibile cancellazione).`;
+            }
+        }
+        const result = await classifyWithConfidence(combinedText, classifyContext, historyText);
         intent = result.intent;
         confident = result.confident;
+
+        // ✅ FIX: se ci sono inviti pendenti e l'intent è YES/NO/CANCEL, forza routing
+        // anche con confidence bassa (l'invito è il contesto sufficiente)
+
     } else {
         return;
     }
@@ -374,7 +407,8 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[]): Pr
         // Se l'AI fluida ha rilevato un impegno concreto (BOOK o BRING_FRIEND), bridge verso business logic
         if (fluidAction) {
             logger.info({ jid, action: fluidAction.intent, params: fluidAction.params }, 'Bridging fluid action to structured flow');
-            await routeIntent(jid, phoneNumber, fluidAction.intent, combinedText, contactCards, club?.id, fluidAction.params);
+            conversationalPhase.set(getCorrelationId() || correlationId, true);
+    await routeIntent(jid, phoneNumber, fluidAction.intent, combinedText, contactCards, club?.id, fluidAction.params);
         }
         return;
     }
@@ -382,6 +416,7 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[]): Pr
     // Delay umano per intent confermati
     await sleep(randomInt(8, 35) * 1000);
 
+    conversationalPhase.set(getCorrelationId() || correlationId, true);
     await routeIntent(jid, phoneNumber, intent as any, combinedText, contactCards, club?.id);
 }
 
@@ -398,9 +433,11 @@ async function routeIntent(
     resolvedClubId?: string,
     params?: any
 ): Promise<void> {
+    // ✅ FIX: normalizza numero per lookup (gestisce sia '393...' che '+393...')
+    const phoneVariants = [phoneNumber, '+' + phoneNumber, phoneNumber.replace(/^\+/, '')];
     const player = await prisma.player.findFirst({ 
         where: { 
-            phoneNumber, 
+            phoneNumber: { in: phoneVariants },
             clubId: resolvedClubId || { not: '' } 
         } 
     });
@@ -476,6 +513,8 @@ async function routeIntent(
         const { generateInvitation } = await import('./ai');
         const textToInvite = await generateInvitation(target.name || 'Amico', match.startTime, match.courtId, match.clubId || undefined, true);
         await simulateTypingAndSend(target.phoneNumber, textToInvite);
+        // Aggiorna stats del destinatario (senza toccare dailyMessagesCount — inviti preferiti esenti da quota)
+        await prisma.player.update({ where: { id: target.id }, data: { lastContactedAt: new Date() } });
 
         await simulateTypingAndSend(jid, `✅ Invito prioritario inviato a **${target.name}** per la tua partita! 🎾`);
         return;
@@ -487,7 +526,7 @@ async function routeIntent(
     }
 
     if (intent === 'QUESTION') {
-        await simulateTypingAndSend(jid, "Aspetta, controllo e ti dico subito! 🎾");
+        await simulateTypingAndSend(jid, ["Aspetta, controllo e ti dico subito! 🎾", "Un secondo, vedo cosa c'è in programma! 🎾", "Dammi un attimo, verifico! 🔍"][Math.floor(Math.random() * 3)]);
         return;
     }
 
@@ -519,7 +558,7 @@ async function routeIntent(
                 await handleOpenMatchCancellation(jid, phoneNumber, confirmedMatchPlayer, undefined);
             }
         } else {
-            await simulateTypingAndSend(jid, "Non risulti in nessuna partita confermata al momento 🤔");
+            await simulateTypingAndSend(jid, ["Non risulti in nessuna partita confermata al momento 🤔", "Non ho partite confermate per te ora 🎾", "Al momento non sei in nessuna partita attiva 🤔"][Math.floor(Math.random() * 3)]);
         }
         return;
     }
@@ -527,12 +566,12 @@ async function routeIntent(
     if (intent === 'BRING_FRIEND' || intent === 'BRING_GROUP' || intent === 'WHOLE_COURT') {
         const confirmedMatchPlayer = await prisma.matchPlayer.findFirst({
             where: { playerId: player.id, leftAt: null, match: { status: { in: ['OPEN', 'LOCKED'] } } },
-            include: { match: { include: { MatchPlayer: true, club: true } } },
+            include: { match: { include: { MatchPlayer: true, club: true, court: true } } },
         });
 
-        const activeInvitations = await prisma.invitation.findMany({
+    const activeInvitations = await prisma.invitation.findMany({
             where: { playerId: player.id, status: 'PENDING', match: { status: 'OPEN' } },
-            include: { match: { include: { MatchPlayer: true, club: true } } },
+            include: { match: { include: { MatchPlayer: true, club: true, court: true } } },
             orderBy: { sentAt: 'desc' },
         });
 
@@ -569,13 +608,18 @@ async function routeIntent(
 
     const activeInvitations = await prisma.invitation.findMany({
         where: { playerId: player.id, status: 'PENDING', match: { status: 'OPEN' } },
-        include: { match: { include: { MatchPlayer: true, club: true } } },
+        include: { match: { include: { MatchPlayer: true, club: true, court: true } } },
         orderBy: { sentAt: 'desc' },
     });
 
     if (activeInvitations.length === 0) {
         if (intent === 'YES' || intent === 'NO') {
-            await simulateTypingAndSend(jid, "Non ho inviti attivi per te al momento 🎾");
+            const noInvReplies = [
+            "Non ho inviti attivi per te al momento 🎾",
+            "Al momento non c'è nulla per te, ti avviso appena esce qualcosa! 🎾",
+            "Nessun invito aperto per ora 🎾 Resto in ascolto!",
+        ];
+        await simulateTypingAndSend(jid, noInvReplies[Math.floor(Math.random() * noInvReplies.length)]);
         }
         return;
     }
@@ -590,7 +634,13 @@ async function routeIntent(
 
     if (intent === 'NO') {
         await prisma.invitation.update({ where: { id: invitation.id }, data: { status: 'REJECTED' } });
-        await simulateTypingAndSend(jid, "Tranquillo! Sarà per la prossima volta 💪");
+        const noReplies = [
+            "Tranquillo! Sarà per la prossima volta 💪",
+            "Ok, nessun problema! Ci sarà un'altra occasione 🎾",
+            "Capito! Ti tengo in mente per le prossime 😊",
+            "Va bene, ci vediamo alla prossima partita! 🏟️",
+        ];
+        await simulateTypingAndSend(jid, noReplies[Math.floor(Math.random() * noReplies.length)]);
         
         // Verifica matematica se la partita è diventata impossibile da riempire a seguito di questo NO
         const { checkAndCancelIfUnfillable } = await import('./matchmaker');
@@ -629,8 +679,8 @@ async function routeIntent(
             await simulateTypingAndSend(
                 jid,
                 result.status === 'JUST_FILLED'
-                    ? "Ottimo! Siamo al completo 🎾 Ti mando i dettagli nel gruppo!"
-                    : "Perfetto! Ti ho segnato. Ti scrivo appena siamo al completo 🎾",
+                    ? Math.random() < 0.5 ? "Ottimo! Siamo al completo 🎾 Ti mando i dettagli nel gruppo!" : "Perfetti! Squadra al completo 🏟️ Segui il gruppo per i dettagli!"
+                    : Math.random() < 0.5 ? "Perfetto! Ti ho segnato. Ti scrivo appena siamo al completo 🎾" : Math.random() < 0.5 ? "Ottimo! Sei dentro 🎾 Ti avviso quando il gruppo è completo!" : "Fatto! Ti confermo appena troviamo gli altri 💪",
                 undefined
             );
 
@@ -707,7 +757,7 @@ async function handleOpenMatchCancellation(
     const pendingCount = pending.length;
     const total = confirmedCount + pendingCount;
 
-    await simulateTypingAndSend(jid, "Ok, capito! Ho aggiornato la partita 👍");
+    await simulateTypingAndSend(jid, ["Ok, capito! Ho aggiornato la partita 👍", "Fatto! Ho modificato la tua partita 🎾", "Aggiornato! Ho preso nota delle modifiche 👌"][Math.floor(Math.random() * 3)]);
 
     if (total >= updatedMatch.playersNeeded) {
         // Ci sono abbastanza pending da aspettare — no wave
@@ -770,7 +820,10 @@ async function resolveDoubleInvitation(
 ): Promise<any | null> {
     // Prima prova a capirlo dal testo
     const times = invitations.map(inv =>
-        inv.match.startTime.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })
+        inv.match.startTime.toLocaleTimeString('it-IT', { timeZone: 'Europe/Rome', hour: '2-digit', minute: '2-digit' })
+    );
+    const dates = invitations.map(inv =>
+        inv.match.startTime.toLocaleDateString('it-IT', { timeZone: 'Europe/Rome', weekday: 'short', day: 'numeric', month: 'short' })
     );
 
     // Controlla se il testo menziona già uno degli orari
@@ -780,7 +833,7 @@ async function resolveDoubleInvitation(
 
     // Non è chiaro — chiedi con domanda AI-generated
     const options = invitations.map((inv, i) =>
-        `${i + 1}. ${inv.match.court} alle ${times[i]}`
+        `${i + 1}. ${inv.match.court?.name || 'Campo'} ${inv.match.court?.isCovered ? '🏠' : '☀️'} – ${dates[i]} alle ${times[i]}`
     ).join('\n');
 
     await simulateTypingAndSend(
@@ -825,8 +878,8 @@ export async function handleMatchFilled(matchId: string, startTime: Date): Promi
         return;
     }
 
-    const timeStr = startTime.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
-    const dateStr = startTime.toLocaleDateString('it-IT', { weekday: 'long', day: 'numeric', month: 'long' });
+    const timeStr = startTime.toLocaleTimeString('it-IT', { timeZone: 'Europe/Rome', hour: '2-digit', minute: '2-digit' });
+    const dateStr = startTime.toLocaleDateString('it-IT', { timeZone: 'Europe/Rome', weekday: 'long', day: 'numeric', month: 'long' });
     const groupName = `Padel ${timeStr} - ${match.court?.name || 'Campo'}`;
 
     // Build rich confirmation message
@@ -835,7 +888,7 @@ export async function handleMatchFilled(matchId: string, startTime: Date): Promi
 ✨ **PARTITA CONFERMATA!** 🎾
 
 🏟️ **Circolo**: ${match.club?.name || 'Padel Club'}
-📍 **Campo**: ${match.court?.name || 'Da definire'}
+📍 **Campo**: ${match.court?.name || 'Da definire'} ${match.court?.isCovered ? '🏠 coperto' : '☀️ scoperto'}
 📅 **Data**: ${dateStr}
 🕐 **Orario**: ${timeStr}
 

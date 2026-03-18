@@ -73,15 +73,23 @@ const formatJid = (jid: string) => {
  * Returns [part1, part2] or [full, null] if not worth splitting.
  */
 function maybeSplitMessage(text: string): [string, string | null] {
-    // Only split if longer than 80 chars and there's a punctuation mid-point
-    if (text.length < 80) return [text, null];
+    // Never split structured messages (numbered lists, multi-line, etc.)
+    if (text.includes('\n')) return [text, null];
+    // Raise threshold — only split genuinely long conversational messages
+    if (text.length < 120) return [text, null];
 
-    const splitChars = ['. ', '! ', '? ', ', '];
+    // Only split at strong sentence boundaries (not commas — too aggressive)
+    const splitChars = ['. ', '! ', '? '];
     const mid = Math.floor(text.length * 0.55);
 
     for (const ch of splitChars) {
         const idx = text.indexOf(ch, mid - 20);
         if (idx > 0 && idx < text.length - 10) {
+            // Don't split inside parentheses
+            const before = text.slice(0, idx);
+            const openParens = (before.match(/\(/g) || []).length;
+            const closeParens = (before.match(/\)/g) || []).length;
+            if (openParens > closeParens) continue;
             return [text.slice(0, idx + ch.length - 1).trim(), text.slice(idx + ch.length - 1).trim()];
         }
     }
@@ -178,7 +186,8 @@ export async function connectToWhatsApp() {
     });
 
     sock.ev.on('messages.upsert', async (m) => {
-        if (m.type !== 'notify' && m.type !== 'append') return;
+        // Only process real-time notifications — 'append' is historical sync, skip to avoid re-processing old messages
+        if (m.type !== 'notify') return;
 
         if (isResyncing) {
              syncCount += m.messages.length;
@@ -197,6 +206,7 @@ export async function connectToWhatsApp() {
                  isResyncing = false;
                  syncCount = 0;
              }, 15000); // 15 secondi di silenzio = sync finito
+             return; // Don't process messages during active resync
         }
 
         for (const msg of m.messages) {

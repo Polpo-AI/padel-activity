@@ -36,6 +36,10 @@ interface PendingBatch {
 const pending = new Map<string, PendingBatch>();
 let batchHandler: BatchHandler | null = null;
 
+// Message ID deduplication: prevents double-processing if Baileys emits same message twice
+const recentMsgIds = new Set<string>();
+const DEDUP_WINDOW_MS = 60000; // 1 minute window
+
 // ─────────────────────────────────────────────
 // REGISTRA HANDLER
 // ─────────────────────────────────────────────
@@ -52,6 +56,17 @@ export function registerBatchHandler(handler: BatchHandler) {
 export function enqueue(raw: proto.IWebMessageInfo): void {
     const jid = raw.key?.remoteJid;
     if (!jid || jid.endsWith('@g.us')) return;
+
+    // Deduplication: skip already-seen message IDs
+    const msgId = raw.key?.id;
+    if (msgId) {
+        if (recentMsgIds.has(msgId)) {
+            logger.warn({ msgId, jid }, 'Duplicate message ID detected — skipping');
+            return;
+        }
+        recentMsgIds.add(msgId);
+        setTimeout(() => recentMsgIds.delete(msgId), DEDUP_WINDOW_MS);
+    }
 
     const msg = normalize(raw);
     if (!msg) return;
@@ -184,7 +199,25 @@ async function recoverPendingBatches(): Promise<void> {
                 }));
                 await redis.del(key);
                 if (batchHandler && messages.length > 0) {
-                    await batchHandler(jid, messages);
+                    // Point 7: check if bot already responded since the last inbound message
+                    // to avoid double-sending on restart when the crash happened after responding
+                    let alreadyResponded = false;
+                    try {
+                        const { prisma } = await import('./db');
+                        const lastInboundTs = messages[messages.length - 1].raw?.messageTimestamp;
+                        const sinceMs = lastInboundTs ? Number(lastInboundTs) * 1000 : Date.now() - 300000;
+                        const botMsg = await prisma.whatsAppMessage.findFirst({
+                            where: { chatId: jid, role: 'BOT', timestamp: { gte: new Date(sinceMs) } },
+                            orderBy: { timestamp: 'desc' },
+                        });
+                        if (botMsg) {
+                            logger.info({ jid }, 'Recovery skipped — bot already responded since last inbound message');
+                            alreadyResponded = true;
+                        }
+                    } catch {}
+                    if (!alreadyResponded) {
+                        await batchHandler(jid, messages);
+                    }
                 }
             } catch (err) {
                 logger.error({ err, jid }, 'Failed to recover batch');

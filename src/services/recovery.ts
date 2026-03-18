@@ -45,8 +45,8 @@ export async function handleCancellation(
     const now = new Date();
     const minutesUntilMatch = (match.startTime.getTime() - now.getTime()) / 60000;
     const isLastMinute = minutesUntilMatch < 60;
-    const courtName = match.court?.name ?? 'il campo';
-    const timeStr = match.startTime.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
+    const courtName = (match.court?.name ?? 'il campo') + (match.court ? (match.court.isCovered ? ' 🏠' : ' ☀️') : '');
+    const timeStr = match.startTime.toLocaleTimeString('it-IT', { timeZone: 'Europe/Rome', hour: '2-digit', minute: '2-digit' });
 
     // ✅ FIX N: transazione atomica — segna uscita + ricalcola posti in un'unica operazione
     // Previene race condition se due giocatori disdettano simultaneamente.
@@ -76,8 +76,8 @@ export async function handleCancellation(
     await simulateTypingAndSend(
         senderJid,
         isLastMinute
-            ? "Ok, mi dispiace per la disdetta last-minute 😕 Gli altri giocatori verranno avvisati. Cerca di avvisare prima la prossima volta!"
-            : "Ok, capito! Cerco subito un sostituto e avviso gli altri 👍",
+            ? ["Ok, mi dispiace per la disdetta last-minute 😕 Gli altri giocatori verranno avvisati. Cerca di avvisare prima la prossima volta!", "Capito, mi dispiace per il preavviso così breve 😕 Avviso subito gli altri. La prossima volta cerca di dirlo prima!", "Preso nota, anche se un po' tardi 😕 Avviso il gruppo. Per il futuro cerca di avvisare con più anticipo!"][Math.floor(Math.random() * 3)]
+            : ["Ok, capito! Cerco subito un sostituto e avviso gli altri 👍", "Tranquillo! Mi metto subito a cercare qualcuno 🔍", "Preso! Avviso il gruppo e cerco un sostituto 💪", "Ok, mi metto in moto! Cerco qualcuno per il tuo posto 🎾"][Math.floor(Math.random() * 4)],
         messageKey
     );
 
@@ -134,7 +134,7 @@ export async function launchRecoveryWave(
     }
 
     const targets = await getPlayersForRecovery(matchId);
-    const courtName = match.court?.name ?? 'il campo';
+    const courtName = (match.court?.name ?? 'il campo') + (match.court ? (match.court.isCovered ? ' 🏠' : ' ☀️') : '');
 
     if (targets.length === 0) {
         logger.warn(`Recovery: no players available for ${matchId}`);
@@ -211,8 +211,8 @@ export async function handleMatchUnfillable(matchId: string, forceCancel: boolea
     const now = new Date();
     const minutesUntilMatch = (match.startTime.getTime() - now.getTime()) / 60000;
     const deadlineMinutes = match.club?.deadlineMinutesBeforeMatch ?? 60;
-    const courtName = match.court?.name ?? 'il campo';
-    const timeStr = match.startTime.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
+    const courtName = (match.court?.name ?? 'il campo') + (match.court ? (match.court.isCovered ? ' 🏠' : ' ☀️') : '');
+    const timeStr = match.startTime.toLocaleTimeString('it-IT', { timeZone: 'Europe/Rome', hour: '2-digit', minute: '2-digit' });
     const confirmedPlayers = match.MatchPlayer.filter(mp => !mp.leftAt);
 
     if (minutesUntilMatch < deadlineMinutes || forceCancel) {
@@ -230,7 +230,7 @@ export async function handleMatchUnfillable(matchId: string, forceCancel: boolea
             try {
                 await simulateTypingAndSend(
                     mp.player.phoneNumber,
-                    `Mi dispiace, non siamo riusciti a trovare abbastanza giocatori per la partita delle ${timeStr} a ${courtName}. Partita annullata 😔 Ci riproveremo!`
+                    `${["Mi dispiace, non siamo riusciti a trovare abbastanza giocatori", "Purtroppo non abbiamo trovato abbastanza persone", "Siamo rimasti in pochi, mi dispiace"][Math.floor(Math.random() * 3)]} per la partita delle ${timeStr} a ${courtName}. Partita annullata 😔 Ci riproveremo!`
                 );
             } catch (err) {
                 logger.error({ err }, `Failed to notify ${mp.player.phoneNumber} of cancellation`);
@@ -290,7 +290,7 @@ export async function checkMatchTimeouts(): Promise<void> {
             const alreadySent = await redis.get(warningKey);
 
             if (!alreadySent) {
-                const timeStr = match.startTime.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
+                const timeStr = match.startTime.toLocaleTimeString('it-IT', { timeZone: 'Europe/Rome', hour: '2-digit', minute: '2-digit' });
                 const msg = `⚠️ *ULTIMA CHIAMATA*: mancano 30 minuti alla scadenza per la partita delle ${timeStr}. Siamo ancora in ${confirmed}/${match.playersNeeded}. Se non troviamo gli altri a breve, dovrò annullare 😔`;
                 
                 // Notifica referenti
