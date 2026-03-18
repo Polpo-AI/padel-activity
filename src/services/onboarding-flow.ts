@@ -263,38 +263,21 @@ export async function continueOnboarding(
         } catch { /* usa il testo originale come fallback */ }
         // Capitalizza prima lettera
         name = name.charAt(0).toUpperCase() + name.slice(1).toLowerCase();
-        if (config.skipLevel) {
-            // Registrazione rapida: skill 0, riprendiamo subito il booking flow
-            await finalizeOnboarding(senderJid, { ...stateData, name, skillLevel: 0 }, messageKey);
-            return;
-        }
-
-        await setOnboardingState(senderJid, 'AWAITING_LEVEL', { ...stateData, name });
-
-        await simulateTypingAndSend(
-            senderJid,
-            `Piacere ${name}! 🤝 Che livello hai a padel? (principiante / intermedio / avanzato)`,
-            messageKey
-        );
-        return;
-    }
-
-    if (step === 'AWAITING_LEVEL') {
-        const skillLevel = await extractSkillLevel(messageText);
-        const updatedState = { ...stateData, skillLevel };
+        // Livello sempre 0 — assegnato solo dal circolo tramite skill test o dashboard
+        const updatedState = { ...stateData, name, skillLevel: 0 };
 
         if (config.askAvailability) {
             await setOnboardingState(senderJid, 'AWAITING_AVAILABILITY', updatedState);
             await simulateTypingAndSend(
                 senderJid,
-                `Perfetto! Che giorni sei disponibile di solito? (es. "lunedì e mercoledì sera", "weekend", "qualsiasi")`,
+                `Piacere ${name}! 🤝 Che giorni sei disponibile di solito? (es. "lunedì e mercoledì sera", "weekend", "qualsiasi")`,
                 messageKey
             );
         } else if (config.askTimePreference) {
             await setOnboardingState(senderJid, 'AWAITING_TIME_PREFERENCE', updatedState);
             await simulateTypingAndSend(
                 senderJid,
-                `Hai preferenze sull'orario? (es. "mattina", "sera dopo le 18", "no preference")`,
+                `Piacere ${name}! 🤝 Hai preferenze sull'orario? (es. "mattina", "sera dopo le 18", "no preference")`,
                 messageKey
             );
         } else {

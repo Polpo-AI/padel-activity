@@ -411,8 +411,28 @@ export async function continueBookingFlow(
     messageKey?: any
 ): Promise<void> {
     const phoneNumber = jid.split('@')[0];
-    const player = await prisma.player.findFirst({ where: { phoneNumber } });
+    const phoneVariants = [phoneNumber, '+' + phoneNumber, phoneNumber.replace(/^\+/, '')];
+    const player = await prisma.player.findFirst({ where: { phoneNumber: { in: phoneVariants } } });
     if (!player) return;
+
+    try {
+        await _continueBookingFlowInner(jid, phoneNumber, messageText, contactInfo, state, messageKey, player);
+    } catch (err) {
+        // Cleanup stato in caso di errore — evita che il player rimanga bloccato
+        await clearBookingState(jid).catch(() => {});
+        throw err;
+    }
+}
+
+async function _continueBookingFlowInner(
+    jid: string,
+    phoneNumber: string,
+    messageText: string,
+    contactInfo: { phone?: string; name?: string } | null,
+    state: any,
+    messageKey: any,
+    player: any
+): Promise<void> {
 
     if (state.step === 'AWAITING_POST_MATCH_FEEDBACK') {
         const { simulateTypingAndSend } = await import('./whatsapp');

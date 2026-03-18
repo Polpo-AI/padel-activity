@@ -760,7 +760,7 @@ async function handleOpenMatchCancellation(
         data: { leftAt: new Date() },
     });
 
-    const { decreaseReliability } = await import('./reliability');
+    const { decreaseReliability } = await import('./scoring');
     const player = await prisma.player.findFirst({ 
         where: { 
             phoneNumber, 

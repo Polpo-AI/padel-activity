@@ -74,7 +74,7 @@ export async function redirectGroup(group: RedirectGroup): Promise<void> {
     // Stato redirect — dual-write Redis + PostgreSQL tramite conversation-state
     try {
         const { setState } = await import('./conversation-state');
-        await setState(`state:role:${group.referentJid}:AWAITING_REDIRECT_CHOICE`, { group, options });
+        await setState(`state:role:${group.referentJid}:AWAITING_REDIRECT_CHOICE`, { group, options }, 3600); // 1h TTL
     } catch (err) {
         logger.error({ err }, 'Failed to save redirect state');
     }
