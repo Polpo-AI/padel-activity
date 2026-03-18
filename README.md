@@ -1,69 +1,84 @@
-# 🎾 Padel Matchmaking Bot (Polpo AI)
+# Padel Matchmaking Bot — Polpo AI
 
-Bot WhatsApp intelligente per la gestione delle prenotazioni e del matchmaking dinamico per i Circoli di Padel. 
-Sviluppato con **TypeScript**, **Prisma (PostgreSQL)**, **Redis** e potenziato da **Anthropic Claude** per conversazioni fluide.
-
----
-
-## 🛡️ 1. Strategia Anti-Ban (Simulazione Umana)
-
-Il bot utilizza la libreria [Baileys](https://github.com/WhiskeySockets/Baileys) per simulare una sessione WhatsApp Web, applicando tecniche avanzate per proteggere l'account dalla sospensione:
-
-*   **Spunte Blu (Read Receipts)**: Invia la conferma di lettura prima di elaborare la risposta.
-*   **Delay di Reazione (Jitter)**: Attende un tempo casuale (jittered) simulando la lettura del messaggio.
-*   **Composing Presence ("Sta scrivendo...")**: 
-    - Attiva lo stato di scrittura proporzionale alla lunghezza del testo (~3.3 char/sec).
-    - Simula pause di riflessione casuali (durata 1-2s) nel 30% dei messaggi lunghi.
-*   **Message Chunking**: Messaggi lunghi vengono spezzati in più nuvolette inviate a breve distanza.
-*   **Fingerprinting**: Si presenta ai server come un browser Chrome su macOS standard.
-
-> ⚠️ **Dry Run**: Imposta `DRY_RUN=true` nel `.env` per testare la logica in sicurezza senza inviare reali messaggi WhatsApp.
+Bot WhatsApp per la gestione automatica delle prenotazioni e del matchmaking in circoli di padel.
+Riceve messaggi dai giocatori, gestisce inviti a ondate (wave), onboarding, booking e feedback post-partita,
+il tutto con simulazione di comportamento umano per ridurre il rischio di ban WhatsApp.
 
 ---
 
-## 🧠 2. Logica di Matchmaking & Regole (Implementate)
+## Stack
 
-### 📊 Sistema Livelli (1.0 - 7.0)
-*   I giocatori vengono valutati su scala decimale (es. 2.5 principiante, 4.0 intermedio).
-*   **Nuovi Giocatori (Livello 0)**: Non possono giocare subito. Vengono invitati a fare uno **Skill Test** (lezione di valutazione) con il maestro del circolo.
-
-### ⚖️ Range di Livello Asimmetrico
-*   Ogni Club configura margini superiori ed inferiori (es. −0.3 / +0.5).
-*   Il sistema invita solo giocatori compatibili con il range per garantire partite equilibrate.
-
-### 🤝 Giocatori Preferiti & On-Demand
-*   **Preferiti**: All'apertura del match, il creatore può indicare nomi prioritari da invitare istantaneamente nella prima Wave.
-*   **On-Demand**: In qualsiasi momento è possibile scrivere *"Invita Mario Rossi"* per forzare una ricerca, controllo livello ed invio invito diretto.
-
-### 🚫 No Guest Anonimi e Limiti Configurato
-*   Disattivata la creazione di guest "+1" anonimi per tracciare correttamente le anagrafiche.
-*   **Configurazione da Dashboard**: Il numero massimo di messaggi giornalieri inviabili a un giocatore è regolabile da Slider (campo `maxDailyMessages`).
+| Layer | Tecnologia |
+|-------|-----------|
+| Runtime | Node.js 20 + TypeScript (tsx, nessun build step) |
+| Framework HTTP | Express |
+| ORM / DB | Prisma + PostgreSQL (Supabase) |
+| Cache / Code | Redis (ioredis) + BullMQ |
+| WhatsApp | Baileys (`@whiskeysockets/baileys`) |
+| AI | Anthropic Claude (Haiku per classificazioni, Sonnet per testo) |
+| Process manager | systemd (produzione/staging su VPS) |
+| Test | Vitest |
 
 ---
 
-## 🛠️ 3. Setup Tech & Comandi
+## Avvio in locale
 
-### Prerequisiti
-*   Node.js (v18+) & Docker (per Redis/Postgres se locale).
-
-### Installazione
 ```bash
+# 1. Installa dipendenze
 npm install
-npx prisma generate
+cd dashboard && npm install && cd ..
+
+# 2. Configura variabili d'ambiente
+cp .env.example .env   # poi modifica DATABASE_URL, REDIS_URL, ANTHROPIC_API_KEY, ecc.
+
+# 3. Applica lo schema al database
 npx prisma db push
-```
 
-### Avvio (PM2 Consigliato)
-```bash
-# Avvio Bot Principale
-npx pm2 start ecosystem.config.cjs
+# 4. Avvia il bot (processo principale)
+npm run dev
 
-# Avvio Dashboard (Front-End)
+# 5. In un altro terminale, avvia il worker BullMQ
+npm run worker
+
+# 6. Opzionale: avvia la dashboard React in dev
 cd dashboard && npm run dev
 ```
 
-### Manutenzione Automatica
-La pulizia e i trigger timeout partono in Background via Workers (`maintenance.worker.ts`) gestiti da code Redis (BullMQ).
+> Imposta `DRY_RUN=true` nel `.env` per testare senza inviare messaggi WhatsApp reali.
 
 ---
-*Sviluppato con cura dal Team Polpo AI* 🐙
+
+## Deploy su VPS
+
+Il progetto gira su due ambienti separati, entrambi gestiti via systemd:
+
+| Ambiente | Cartella VPS | Branch GH | Servizi systemd |
+|----------|-------------|-----------|----------------|
+| Staging | `/root/padel-staging` | `preview` | `padel-staging` + `padel-worker-staging` |
+| Produzione | `/root/padel-prod` | `main` | `padel-prod` + `padel-worker-prod` |
+
+**Workflow deploy staging:**
+```bash
+# Locale: commit + push su main
+git push origin main
+
+# Sul VPS (root@46.225.212.159):
+cd /root/padel-staging && git pull origin main
+systemctl restart padel-staging padel-worker-staging
+
+# Per pubblicare su branch preview:
+git push origin HEAD:preview
+```
+
+**Log in tempo reale:**
+```bash
+journalctl -u padel-staging -f
+journalctl -u padel-staging --since "10 min ago" --no-pager
+```
+
+---
+
+## Documentazione
+
+- [CLAUDE.md](CLAUDE.md) — Manuale operativo completo per sviluppatori e AI: architettura, modello dati, workflow, convenzioni di codice
+- [REPOSITORY_MAP.md](REPOSITORY_MAP.md) — Mappa sintetica di tutti i file del progetto organizzata per cartella

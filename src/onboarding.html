@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Registrazione Giocatore</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:          #07070d;
+      --surface:     #0f0f18;
+      --border:      #1c1c2e;
+      --border-l:    #252538;
+      --accent:      #00e5a0;
+      --accent-dim:  #00e5a012;
+      --accent-soft: #00e5a030;
+      --text:        #e2e2f0;
+      --muted:       #5a5a7a;
+      --dim:         #2a2a42;
+      --error:       #ff4a6e;
+      --font:        'DM Mono', 'Fira Code', 'Courier New', monospace;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px 16px;
+    }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 40px 36px;
+      width: 100%;
+      max-width: 440px;
+      animation: slideUp 0.25s ease;
+    }
+
+    @keyframes slideUp {
+      from { transform: translateY(14px); opacity: 0; }
+      to   { transform: translateY(0);    opacity: 1; }
+    }
+
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 32px;
+    }
+
+    .logo-icon {
+      width: 42px; height: 42px;
+      background: var(--accent-dim);
+      border: 1px solid var(--accent-soft);
+      border-radius: 12px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 20px;
+    }
+
+    .logo-text { font-size: 15px; font-weight: 700; color: var(--text); }
+    .logo-sub  { font-size: 10px; color: var(--muted); margin-top: 2px; text-transform: uppercase; letter-spacing: 0.1em; }
+
+    h1 {
+      font-size: 20px;
+      font-weight: 700;
+      color: var(--text);
+      margin-bottom: 6px;
+    }
+
+    .subtitle {
+      font-size: 12px;
+      color: var(--muted);
+      margin-bottom: 28px;
+      line-height: 1.6;
+    }
+
+    label {
+      display: block;
+      font-size: 11px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-bottom: 6px;
+    }
+
+    .field { margin-bottom: 18px; }
+
+    input, textarea, select {
+      width: 100%;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 13px;
+      color: var(--text);
+      font-size: 13px;
+      font-family: var(--font);
+      transition: border-color 0.15s, box-shadow 0.15s;
+      outline: none;
+      resize: vertical;
+    }
+
+    input:focus, textarea:focus, select:focus {
+      border-color: var(--accent-soft);
+      box-shadow: 0 0 0 3px var(--accent-dim);
+    }
+
+    input::placeholder, textarea::placeholder { color: var(--muted); }
+
+    .phone-row { display: flex; gap: 8px; }
+    .phone-prefix {
+      width: 72px; flex-shrink: 0;
+      text-align: center;
+      color: var(--muted);
+    }
+
+    .divider {
+      border: none;
+      border-top: 1px solid var(--border);
+      margin: 24px 0;
+    }
+
+    .optional-label {
+      font-size: 10px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-bottom: 14px;
+    }
+
+    button[type="submit"] {
+      width: 100%;
+      background: var(--accent);
+      color: var(--bg);
+      border: none;
+      border-radius: 8px;
+      padding: 12px;
+      font-size: 13px;
+      font-weight: 700;
+      font-family: var(--font);
+      cursor: pointer;
+      margin-top: 8px;
+      transition: opacity 0.15s, transform 0.1s;
+    }
+
+    button[type="submit"]:hover  { opacity: 0.88; }
+    button[type="submit"]:active { transform: scale(0.98); }
+    button[type="submit"]:disabled { opacity: 0.35; cursor: not-allowed; }
+
+    .feedback {
+      margin-top: 16px;
+      padding: 12px 14px;
+      border-radius: 8px;
+      font-size: 12px;
+      display: none;
+      line-height: 1.6;
+    }
+    .feedback.ok    { background: var(--accent-dim); border: 1px solid var(--accent-soft); color: var(--accent); }
+    .feedback.err   { background: #ff4a6e10; border: 1px solid #ff4a6e30; color: var(--error); }
+    .feedback.show  { display: block; }
+
+    .json-box {
+      margin-top: 12px;
+      padding: 12px;
+      background: var(--bg);
+      border: 1px solid var(--border-l);
+      border-radius: 8px;
+      font-size: 11px;
+      color: var(--muted);
+      white-space: pre;
+      overflow-x: auto;
+      display: none;
+    }
+    .json-box.show { display: block; }
+
+    .copy-btn {
+      background: transparent;
+      border: 1px solid var(--border-l);
+      color: var(--muted);
+      border-radius: 6px;
+      padding: 4px 10px;
+      font-size: 11px;
+      font-family: var(--font);
+      cursor: pointer;
+      margin-top: 8px;
+      width: auto;
+    }
+    .copy-btn:hover { border-color: var(--accent-soft); color: var(--accent); }
+
+    ::-webkit-scrollbar { width: 4px; }
+    ::-webkit-scrollbar-track { background: var(--bg); }
+    ::-webkit-scrollbar-thumb { background: var(--dim); border-radius: 3px; }
+  </style>
+</head>
+<body>
+
+<div class="card">
+  <div class="logo">
+    <div class="logo-icon">🎾</div>
+    <div>
+      <div class="logo-text" id="club-name">Padel Club</div>
+      <div class="logo-sub">Registrazione giocatore</div>
+    </div>
+  </div>
+
+  <h1>Benvenuto!</h1>
+  <p class="subtitle">Compila il form per registrarti al circolo. Riceverai un messaggio su WhatsApp per completare l'iscrizione.</p>
+
+  <form id="onboarding-form">
+    <div class="field">
+      <label>Nome e Cognome *</label>
+      <input type="text" id="name" placeholder="Es. Marco Rossi" required autocomplete="name" />
+    </div>
+
+    <div class="field">
+      <label>Numero WhatsApp *</label>
+      <div class="phone-row">
+        <input class="phone-prefix" type="text" value="+39" id="prefix" />
+        <input type="tel" id="phone" placeholder="3XX XXX XXXX" required autocomplete="tel" />
+      </div>
+    </div>
+
+    <hr class="divider" />
+    <div class="optional-label">Facoltativo</div>
+
+    <div class="field">
+      <label>Note per il circolo</label>
+      <textarea id="notes" rows="3" placeholder="Es. gioco il martedì e il giovedì, livello intermedio..."></textarea>
+    </div>
+
+    <button type="submit" id="submit-btn">Invia registrazione →</button>
+  </form>
+
+  <div class="feedback" id="feedback"></div>
+  <pre class="json-box" id="json-box"></pre>
+  <button class="copy-btn" id="copy-btn" style="display:none" onclick="copyJson()">Copia JSON</button>
+</div>
+
+<script>
+  // Leggi il nome del club dall'API se disponibile
+  const API_BASE = window.location.origin + '/api/dashboard';
+  const CLUB_ID = new URLSearchParams(window.location.search).get('club');
+
+  fetch(`${API_BASE}/club-public${CLUB_ID ? '?clubId=' + CLUB_ID : ''}`)
+    .then(r => r.json())
+    .then(d => { if (d.name) document.getElementById('club-name').textContent = d.name; })
+    .catch(() => {});
+
+  const form = document.getElementById('onboarding-form');
+  const feedback = document.getElementById('feedback');
+  const jsonBox = document.getElementById('json-box');
+  const copyBtn = document.getElementById('copy-btn');
+  const submitBtn = document.getElementById('submit-btn');
+
+  let lastJson = null;
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    feedback.className = 'feedback';
+    jsonBox.className = 'json-box';
+    copyBtn.style.display = 'none';
+
+    const name  = document.getElementById('name').value.trim();
+    const prefix = document.getElementById('prefix').value.trim().replace(/\+/g, '');
+    const phone = document.getElementById('phone').value.trim().replace(/\s/g, '');
+    const notes = document.getElementById('notes').value.trim();
+
+    if (!name || !phone) {
+      show('err', 'Nome e numero WhatsApp sono obbligatori.');
+      return;
+    }
+
+    const fullPhone = '+' + prefix + phone;
+    const payload = {
+      name,
+      phoneNumber: fullPhone,
+      ...(notes && { notes }),
+      registeredAt: new Date().toISOString(),
+    };
+
+    lastJson = JSON.stringify(payload, null, 2);
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Invio in corso...';
+
+    try {
+      const res = await fetch(`${API_BASE}/players/onboard`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      const data = await res.json();
+
+      if (res.ok) {
+        show('ok', `✓ Registrazione inviata! Controlla WhatsApp al numero ${fullPhone} — riceverai un messaggio a breve.`);
+        form.reset();
+      } else {
+        // API raggiunta ma errore logico — mostra il JSON per uso manuale
+        show('err', `Errore: ${data.error || 'Qualcosa è andato storto.'}\n\nPuoi consegnare il JSON qui sotto al circolo.`);
+        showJson();
+      }
+    } catch {
+      // API non raggiungibile — mostra JSON per uso offline
+      show('err', 'Impossibile contattare il server.\nPuoi consegnare il JSON qui sotto al circolo.');
+      showJson();
+    } finally {
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Invia registrazione →';
+    }
+  });
+
+  function show(type, msg) {
+    feedback.textContent = msg;
+    feedback.className = `feedback ${type} show`;
+  }
+
+  function showJson() {
+    jsonBox.textContent = lastJson;
+    jsonBox.className = 'json-box show';
+    copyBtn.style.display = 'inline-block';
+  }
+
+  async function copyJson() {
+    await navigator.clipboard.writeText(lastJson).catch(() => {});
+    copyBtn.textContent = 'Copiato ✓';
+    setTimeout(() => copyBtn.textContent = 'Copia JSON', 1500);
+  }
+</script>
+
+</body>
+</html>

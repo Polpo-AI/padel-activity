@@ -89,6 +89,11 @@ if (process.env.NODE_ENV === 'production') {
 app.use('/api/webhooks', webhooksRouter);
 app.use('/api/dashboard', dashboardRouter);
 
+// Pagina onboarding pubblica
+app.get('/onboarding', (req, res) => {
+    res.sendFile(path.join(__dirname, 'onboarding.html'));
+});
+
 // ─────────────────────────────────────────────
 // HEALTH CHECK REALE
 // Controlla DB, Redis, WhatsApp — ritorna 503 se qualcosa è down

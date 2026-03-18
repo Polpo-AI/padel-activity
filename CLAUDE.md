@@ -219,6 +219,9 @@ wave.worker.ts → matchmaker.processWave()
     └── Schedula wave successiva (computeNextWaveDelayMs)
 ```
 
+**Algoritmo di selezione per ondata (EMA individuale):**
+La dimensione di ogni wave non usa un moltiplicatore fisso, ma accumula giocatori uno per uno finché la somma cumulativa delle loro EMA individuali raggiunge il numero di posti da coprire nella wave corrente (`while Somma(EMA_i) < posti_residui: aggiungi prossimo`). Questo produce wave più piccole con giocatori affidabili e più grandi con giocatori poco affidabili. Se la lista degli eligibili si esaurisce prima di raggiungere la soglia, il sistema attende le risposte degli invitati già inviati prima di dichiarare la partita non riempibile.
+
 ---
 
 ## Skill Level

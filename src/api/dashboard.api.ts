@@ -644,4 +644,63 @@ router.post('/debug/simulate-message', authMiddleware, async (req: Request, res:
     }
 });
 
+// ─────────────────────────────────────────────
+// ONBOARDING PUBBLICO — nessuna auth richiesta
+// POST /api/dashboard/players/onboard
+// ─────────────────────────────────────────────
+router.post('/players/onboard', async (req: Request, res: Response) => {
+    const { name, phoneNumber, notes } = req.body || {};
+
+    if (!name || !phoneNumber) {
+        return res.status(400).json({ error: 'name e phoneNumber sono obbligatori' });
+    }
+
+    const cleanPhone = String(phoneNumber).replace(/\s/g, '');
+    const cleanName  = String(name).replace(/\0/g, '').trim().slice(0, 100);
+
+    // Usa il primo club disponibile (single-tenant per ora)
+    const club = await prisma.club.findFirst();
+    if (!club) return res.status(503).json({ error: 'Club non configurato' });
+
+    // Controlla se esiste già
+    const existing = await prisma.player.findFirst({ where: { phoneNumber: cleanPhone, clubId: club.id } });
+    if (existing) {
+        return res.status(409).json({ error: 'Numero già registrato nel circolo', playerId: existing.id });
+    }
+
+    const player = await prisma.player.create({
+        data: {
+            name: cleanName,
+            phoneNumber: cleanPhone,
+            clubId: club.id,
+            skillLevel: 0,
+            active: true,
+        },
+    });
+
+    // Manda messaggio di benvenuto via WhatsApp
+    try {
+        const { simulateTypingAndSend } = await import('../services/whatsapp');
+        const jid = `${cleanPhone.replace(/\+/g, '')}@s.whatsapp.net`;
+        await simulateTypingAndSend(
+            jid,
+            `Ciao ${cleanName.split(' ')[0]}! 👋🎾 Benvenuto al ${club.name}!\n\nSei stato registrato. Il nostro assistente ti contatterà quando ci sarà una partita adatta a te.\n\nSe vuoi prenotare un campo o hai domande, scrivimi qui! 😊`
+        );
+    } catch (err) {
+        logger.warn({ err }, 'Onboarding: WhatsApp message failed (player still created)');
+    }
+
+    logger.info({ playerId: player.id, name: cleanName, phone: cleanPhone }, 'Player onboarded via public form');
+    res.status(201).json({ ok: true, playerId: player.id, name: cleanName });
+});
+
+// ─────────────────────────────────────────────
+// CLUB INFO PUBBLICO — per la pagina di onboarding
+// GET /api/dashboard/club-public
+// ─────────────────────────────────────────────
+router.get('/club-public', async (req: Request, res: Response) => {
+    const club = await prisma.club.findFirst({ select: { name: true } });
+    res.json({ name: club?.name || 'Padel Club' });
+});
+
 export default router;
