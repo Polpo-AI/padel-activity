@@ -327,8 +327,9 @@ export async function continueOnboarding(
 }
 
 async function finalizeOnboarding(senderJid: string, stateData: any, messageKey?: any): Promise<void> {
-    const { name, skillLevel, availability, timePreference, config } = stateData;
-    const phone = senderJid.split('@')[0];
+    const { name, skillLevel, availability, timePreference, config, resolvedPhone } = stateData;
+    // Usa il numero già risolto (LID → italiano) se disponibile, altrimenti fallback al JID
+    const phone = resolvedPhone || senderJid.split('@')[0];
 
     // ✅ FIX: chiave composta phoneNumber_clubId + relazione club per connect
     await prisma.player.upsert({

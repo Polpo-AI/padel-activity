@@ -196,7 +196,8 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[], cor
     const onboardingState = await getOnboardingState(jid);
     if (onboardingState) {
         const input = combinedText || contactCards.map(c => `${c.contactName || ''} ${c.contactPhone || ''}`).join(' ').trim();
-        if (input) await continueOnboarding(jid, input, onboardingState.step, onboardingState.data);
+        // Passa phoneNumber già risolto (gestisce LID → numero italiano)
+        if (input) await continueOnboarding(jid, input, onboardingState.step, { ...onboardingState.data, resolvedPhone: phoneNumber });
         return;
     }
 
