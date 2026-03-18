@@ -366,7 +366,7 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[], cor
     }
     if (!club) club = await prisma.club.findFirst(); // fallback al primo se proprio non lo sappiamo
 
-    if (player && player.skillLevel === 0) {
+    if (player && player.skillLevel <= 0) {
         logger.info({ jid, phoneNumber }, 'Player has skillLevel 0 - redirecting to Skill Test');
         try {
             const { simulateTypingAndSend } = await import('./whatsapp');
@@ -488,9 +488,7 @@ async function routeIntent(
         await startSingleOnboarding(jid, {
             clubId: club.id,
             botName: club.name || 'Padel Bot',
-            welcomeMessage: `Ciao! 👋 Non sei ancora registrato nel nostro sistema.
-
-Come ti chiami?`,
+            welcomeMessage: `Ciao! 👋 Come ti chiami?`,
             askAvailability: false,
             askTimePreference: false,
             skipLevel: true,
@@ -616,6 +614,36 @@ Come ti chiami?`,
         } else {
             await simulateTypingAndSend(jid, ["Non risulti in nessuna partita confermata al momento 🤔", "Non ho partite confermate per te ora 🎾", "Al momento non sei in nessuna partita attiva 🤔"][Math.floor(Math.random() * 3)]);
         }
+        return;
+    }
+
+    if (intent === 'CHANGE_TIME') {
+        const { simulateTypingAndSend } = await import('./whatsapp');
+        const confirmedMatchPlayer = await prisma.matchPlayer.findFirst({
+            where: {
+                playerId: player.id,
+                leftAt: null,
+                match: { status: { in: ['LOCKED', 'OPEN'] } },
+            },
+            include: { match: { include: { club: true, MatchPlayer: { include: { player: true } } } } },
+        });
+
+        if (!confirmedMatchPlayer) {
+            await simulateTypingAndSend(jid, "Non risulti in nessuna partita confermata al momento 🤔");
+            return;
+        }
+
+        // Annulla la partita corrente e avvia booking per una nuova
+        await simulateTypingAndSend(jid, `Ok ${player.name}, annullo la tua partecipazione e ti aiuto a trovarne un'altra 🎾`);
+
+        if (confirmedMatchPlayer.match.status === 'LOCKED') {
+            await handleCancellation(jid, phoneNumber, confirmedMatchPlayer.matchId, confirmedMatchPlayer.id);
+        } else {
+            await handleOpenMatchCancellation(jid, phoneNumber, confirmedMatchPlayer, undefined);
+        }
+
+        // Avvia subito il booking per il nuovo slot
+        await startBookingFlow(jid, phoneNumber, combinedText);
         return;
     }
 

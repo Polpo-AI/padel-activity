@@ -177,7 +177,7 @@ export async function selectPlayersForWave(
     const pool = await prisma.player.findMany({
         where: {
             clubId: match.clubId,
-            skillLevel: { gte: skillMin, lte: skillMax },
+            skillLevel: { gt: 0, gte: skillMin, lte: skillMax },
             gender: targetGender ? targetGender : undefined,
             active: true,
             dailyMessagesCount: { lt: match.club?.maxDailyMessages ?? 2 },
@@ -262,7 +262,7 @@ export async function getPlayersForRecovery(matchId: string): Promise<any[]> {
     const pool = await prisma.player.findMany({
         where: {
             clubId: match.clubId,
-            skillLevel: { gte: skillMin, lte: skillMax },
+            skillLevel: { gt: 0, gte: skillMin, lte: skillMax },
             gender: targetGender ? targetGender : undefined,
             active: true,
             id: { notIn: excludedIds },

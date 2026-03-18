@@ -263,8 +263,8 @@ export async function continueOnboarding(
         } catch { /* usa il testo originale come fallback */ }
         // Capitalizza prima lettera
         name = name.charAt(0).toUpperCase() + name.slice(1).toLowerCase();
-        // Livello sempre 0 — assegnato solo dal circolo tramite skill test o dashboard
-        const updatedState = { ...stateData, name, skillLevel: 0 };
+        // Livello -1 = pending skill test — assegnato solo dal circolo tramite skill test o dashboard
+        const updatedState = { ...stateData, name, skillLevel: -1 };
 
         if (config.askAvailability) {
             await setOnboardingState(senderJid, 'AWAITING_AVAILABILITY', updatedState);
@@ -340,7 +340,7 @@ async function finalizeOnboarding(senderJid: string, stateData: any, messageKey?
 
             await simulateTypingAndSend(
                 senderJid,
-                `Perfetto ${name}! 🎾 Sei registrato. Ora continuo con la tua richiesta...`,
+                `Perfetto ${name}! 🎾 Sei registrato.\n\nPer poter prenotare o essere invitato alle partite dovrai prima fare lo **Skill Test** con il nostro maestro — ti contatteremo noi per organizzarlo.`,
                 messageKey
             );
 
@@ -365,7 +365,7 @@ async function finalizeOnboarding(senderJid: string, stateData: any, messageKey?
     if (!hasPendingIntent) {
         await simulateTypingAndSend(
             senderJid,
-            `Perfetto ${name}! 🎾 Sei nel sistema. Ti contatterò quando c'è una partita disponibile. A presto!`,
+            `Perfetto ${name}! 🎾 Sei registrato.\n\nPer poter prenotare o essere invitato alle partite dovrai prima fare lo **Skill Test** con il nostro maestro — ti contatteremo noi per organizzarlo. A presto!`,
             messageKey
         );
     }
