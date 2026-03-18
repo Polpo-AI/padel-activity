@@ -22,6 +22,7 @@ import fs from 'fs';
 
 import webhooksRouter from './api/webhooks';
 import dashboardRouter from './api/dashboard.api';
+import setupRouter from './api/setup.api';
 import { connectToWhatsApp, getConnectionStatus } from './services/whatsapp';
 import { maintenanceQueue, checkSilentMatches, checkRedisHealth } from './services/queue';
 import { checkDbHealth } from './services/db';
@@ -88,11 +89,13 @@ if (process.env.NODE_ENV === 'production') {
 
 app.use('/api/webhooks', webhooksRouter);
 app.use('/api/dashboard', dashboardRouter);
+app.use('/api/setup', setupRouter);
 
-// Pagina onboarding pubblica
-app.get('/onboarding', (req, res) => {
-    res.sendFile(path.join(__dirname, 'onboarding.html'));
+// Club setup wizard — accessibile solo con SETUP_SECRET nell'URL (?secret=...)
+app.get('/setup', (req, res) => {
+    res.sendFile(path.join(__dirname, 'setup.html'));
 });
+
 
 // ─────────────────────────────────────────────
 // HEALTH CHECK REALE

@@ -51,7 +51,7 @@ Due processi separati per ambiente:
 
 - **`src/index.ts`** — API HTTP (Express) + WhatsApp bot (Baileys)
   - Gestisce messaggi in entrata, booking, onboarding, inviti
-  - Espone `/api/webhooks`, `/api/dashboard`, `/health`, `/dashboard`
+  - Espone `/api/webhooks`, `/api/dashboard`, `/api/setup`, `/health`, `/dashboard`, `/setup`
 
 - **`src/worker.ts`** — Worker BullMQ
   - Consuma code: `wave`, `maintenance`, `recovery`, `reminder`
@@ -72,6 +72,8 @@ Due processi separati per ambiente:
 |------|---------|
 | `src/api/dashboard.api.ts` | REST API dashboard club (auth JWT, CRUD match/player/court, health check reale) |
 | `src/api/webhooks.ts` | Webhook esterno per creare match da sistemi terzi (autenticato via HMAC) |
+| `src/api/setup.api.ts` | Endpoint `POST /api/setup/club` — wizard onboarding circolo (auth via `SETUP_SECRET`) |
+| `src/setup.html` | Wizard HTML 6-step per onboarding circolo, accessibile a `/setup` |
 
 ### Core Services
 | File | Cosa fa |

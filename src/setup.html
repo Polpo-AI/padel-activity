@@ -1,0 +1,922 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Configura Circolo — Padel Bot</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:          #07070d;
+      --surface:     #0f0f18;
+      --surface2:    #13131f;
+      --border:      #1c1c2e;
+      --border-l:    #252538;
+      --accent:      #00e5a0;
+      --accent-dim:  #00e5a012;
+      --accent-soft: #00e5a030;
+      --text:        #e2e2f0;
+      --muted:       #5a5a7a;
+      --dim:         #2a2a42;
+      --error:       #ff4a6e;
+      --warn:        #ffcc00;
+      --font:        'DM Mono', 'Fira Code', 'Courier New', monospace;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 32px 16px 64px;
+    }
+
+    /* ─── Header ─────────────────────────────── */
+    .header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 36px;
+      align-self: flex-start;
+      max-width: 640px;
+      width: 100%;
+    }
+    .logo-icon {
+      width: 40px; height: 40px;
+      background: var(--accent-dim);
+      border: 1px solid var(--accent-soft);
+      border-radius: 10px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 18px; flex-shrink: 0;
+    }
+    .logo-title { font-size: 14px; font-weight: 700; color: var(--text); }
+    .logo-sub   { font-size: 10px; color: var(--muted); margin-top: 2px; text-transform: uppercase; letter-spacing: 0.1em; }
+
+    /* ─── Stepper ────────────────────────────── */
+    .stepper {
+      display: flex;
+      align-items: center;
+      gap: 0;
+      margin-bottom: 28px;
+      max-width: 640px;
+      width: 100%;
+    }
+    .step-item {
+      display: flex;
+      align-items: center;
+      flex: 1;
+    }
+    .step-circle {
+      width: 28px; height: 28px;
+      border-radius: 50%;
+      border: 1px solid var(--border-l);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 11px; font-weight: 700;
+      color: var(--muted);
+      background: var(--surface);
+      flex-shrink: 0;
+      transition: all 0.2s;
+    }
+    .step-circle.active { border-color: var(--accent); color: var(--accent); background: var(--accent-dim); }
+    .step-circle.done   { border-color: var(--accent); color: var(--bg); background: var(--accent); }
+    .step-label {
+      font-size: 10px; color: var(--muted);
+      margin-left: 6px; white-space: nowrap;
+      transition: color 0.2s;
+    }
+    .step-label.active { color: var(--accent); }
+    .step-connector {
+      flex: 1; height: 1px;
+      background: var(--border);
+      margin: 0 8px;
+      min-width: 12px;
+    }
+
+    /* ─── Card ───────────────────────────────── */
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 36px 32px;
+      width: 100%;
+      max-width: 640px;
+      animation: slideUp 0.2s ease;
+    }
+    @keyframes slideUp {
+      from { transform: translateY(10px); opacity: 0; }
+      to   { transform: translateY(0);    opacity: 1; }
+    }
+    .step-panel { display: none; }
+    .step-panel.active { display: block; }
+
+    .step-title {
+      font-size: 17px; font-weight: 700;
+      color: var(--text); margin-bottom: 4px;
+    }
+    .step-desc {
+      font-size: 12px; color: var(--muted);
+      margin-bottom: 28px; line-height: 1.6;
+    }
+
+    /* ─── Form elements ──────────────────────── */
+    .field { margin-bottom: 18px; }
+    .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 18px; }
+    .field-row3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; margin-bottom: 18px; }
+
+    label {
+      display: block;
+      font-size: 11px; color: var(--muted);
+      text-transform: uppercase; letter-spacing: 0.08em;
+      margin-bottom: 6px;
+    }
+    .label-hint { font-size: 10px; color: var(--muted); opacity: 0.7; font-weight: normal; text-transform: none; letter-spacing: 0; margin-left: 6px; }
+
+    input[type="text"],
+    input[type="number"],
+    input[type="password"],
+    input[type="time"],
+    input[type="tel"],
+    textarea, select {
+      width: 100%;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 13px;
+      color: var(--text);
+      font-size: 13px;
+      font-family: var(--font);
+      outline: none;
+      transition: border-color 0.15s, box-shadow 0.15s;
+      resize: none;
+      appearance: none;
+    }
+    input:focus, textarea:focus, select:focus {
+      border-color: var(--accent-soft);
+      box-shadow: 0 0 0 3px var(--accent-dim);
+    }
+    input::placeholder, textarea::placeholder { color: var(--muted); }
+    select option { background: var(--surface); }
+
+    /* Toggle */
+    .toggle-row {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 12px 14px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      margin-bottom: 10px;
+      cursor: pointer;
+    }
+    .toggle-row:hover { border-color: var(--border-l); }
+    .toggle-info { flex: 1; }
+    .toggle-name { font-size: 12px; color: var(--text); }
+    .toggle-hint { font-size: 10px; color: var(--muted); margin-top: 2px; }
+    .toggle-switch {
+      width: 36px; height: 20px;
+      background: var(--dim);
+      border-radius: 10px;
+      position: relative;
+      transition: background 0.2s;
+      flex-shrink: 0;
+    }
+    .toggle-switch::after {
+      content: '';
+      position: absolute;
+      width: 14px; height: 14px;
+      background: var(--muted);
+      border-radius: 50%;
+      top: 3px; left: 3px;
+      transition: all 0.2s;
+    }
+    .toggle-switch.on { background: var(--accent-soft); }
+    .toggle-switch.on::after { left: 19px; background: var(--accent); }
+
+    /* Courts */
+    .court-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px; }
+    .court-item {
+      display: flex; align-items: center; gap: 10px;
+      background: var(--bg); border: 1px solid var(--border);
+      border-radius: 8px; padding: 8px 12px;
+    }
+    .court-item input { flex: 1; background: transparent; border: none; padding: 2px 0; font-size: 13px; }
+    .court-item input:focus { box-shadow: none; border: none; }
+    .court-covered {
+      display: flex; align-items: center; gap: 6px;
+      font-size: 11px; color: var(--muted); cursor: pointer; flex-shrink: 0;
+      white-space: nowrap;
+    }
+    .court-covered input[type="checkbox"] { accent-color: var(--accent); width: 13px; height: 13px; }
+    .court-remove {
+      background: none; border: none; color: var(--muted);
+      cursor: pointer; font-size: 14px; padding: 2px 4px;
+      border-radius: 4px; line-height: 1;
+    }
+    .court-remove:hover { color: var(--error); }
+
+    .btn-add-court {
+      background: transparent;
+      border: 1px dashed var(--border-l);
+      color: var(--muted);
+      border-radius: 8px;
+      padding: 9px;
+      font-size: 12px;
+      font-family: var(--font);
+      cursor: pointer;
+      width: 100%;
+      transition: all 0.15s;
+    }
+    .btn-add-court:hover { border-color: var(--accent-soft); color: var(--accent); }
+
+    /* AI tone */
+    textarea.ai-tone { height: 80px; }
+
+    /* Divider */
+    .divider { border: none; border-top: 1px solid var(--border); margin: 22px 0; }
+
+    /* Section label */
+    .section-label {
+      font-size: 10px; color: var(--muted);
+      text-transform: uppercase; letter-spacing: 0.1em;
+      margin-bottom: 14px;
+    }
+
+    /* Password strength */
+    .pwd-strength { height: 3px; border-radius: 2px; margin-top: 6px; background: var(--dim); overflow: hidden; }
+    .pwd-strength-bar { height: 100%; width: 0; border-radius: 2px; transition: all 0.3s; }
+
+    /* ─── Riepilogo ──────────────────────────── */
+    .summary-grid {
+      display: grid; grid-template-columns: 1fr 1fr;
+      gap: 10px; margin-bottom: 20px;
+    }
+    .summary-item {
+      background: var(--bg); border: 1px solid var(--border);
+      border-radius: 8px; padding: 10px 13px;
+    }
+    .summary-key  { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 4px; }
+    .summary-val  { font-size: 12px; color: var(--text); }
+    .summary-full { grid-column: 1 / -1; }
+
+    .json-preview {
+      background: var(--bg); border: 1px solid var(--border-l);
+      border-radius: 8px; padding: 14px;
+      font-size: 11px; color: var(--muted);
+      white-space: pre; overflow-x: auto;
+      max-height: 220px; overflow-y: auto;
+      margin-bottom: 8px;
+    }
+
+    /* ─── Navigation ─────────────────────────── */
+    .nav-row {
+      display: flex; justify-content: space-between;
+      align-items: center; margin-top: 28px; gap: 10px;
+    }
+
+    .btn-back {
+      background: transparent; border: 1px solid var(--border);
+      color: var(--muted); border-radius: 8px;
+      padding: 10px 18px; font-size: 13px;
+      font-family: var(--font); cursor: pointer;
+      transition: all 0.15s;
+    }
+    .btn-back:hover { border-color: var(--border-l); color: var(--text); }
+
+    .btn-next {
+      background: var(--accent); color: var(--bg);
+      border: none; border-radius: 8px;
+      padding: 10px 22px; font-size: 13px; font-weight: 700;
+      font-family: var(--font); cursor: pointer;
+      transition: opacity 0.15s, transform 0.1s;
+      margin-left: auto;
+    }
+    .btn-next:hover  { opacity: 0.88; }
+    .btn-next:active { transform: scale(0.98); }
+    .btn-next:disabled { opacity: 0.35; cursor: not-allowed; }
+
+    .btn-create {
+      background: var(--accent); color: var(--bg);
+      border: none; border-radius: 8px;
+      padding: 12px 28px; font-size: 14px; font-weight: 700;
+      font-family: var(--font); cursor: pointer;
+      transition: opacity 0.15s;
+    }
+    .btn-create:hover { opacity: 0.88; }
+    .btn-create:disabled { opacity: 0.35; cursor: not-allowed; }
+
+    .btn-copy {
+      background: transparent; border: 1px solid var(--border-l);
+      color: var(--muted); border-radius: 6px;
+      padding: 5px 12px; font-size: 11px;
+      font-family: var(--font); cursor: pointer;
+    }
+    .btn-copy:hover { color: var(--accent); border-color: var(--accent-soft); }
+
+    /* ─── Feedback ───────────────────────────── */
+    .feedback {
+      margin-top: 16px; padding: 12px 14px;
+      border-radius: 8px; font-size: 12px;
+      line-height: 1.6; display: none;
+    }
+    .feedback.ok  { background: var(--accent-dim); border: 1px solid var(--accent-soft); color: var(--accent); display: block; }
+    .feedback.err { background: #ff4a6e10; border: 1px solid #ff4a6e30; color: var(--error); display: block; }
+
+    /* ─── Success screen ─────────────────────── */
+    #success-screen { display: none; text-align: center; padding: 40px 20px; }
+    #success-screen .big-icon { font-size: 48px; margin-bottom: 16px; }
+    #success-screen h2 { font-size: 20px; margin-bottom: 8px; }
+    #success-screen p  { font-size: 13px; color: var(--muted); line-height: 1.7; }
+    .cred-box {
+      display: inline-block;
+      background: var(--bg); border: 1px solid var(--border-l);
+      border-radius: 8px; padding: 14px 20px;
+      margin: 16px 0; text-align: left;
+      font-size: 13px;
+    }
+    .cred-box span { color: var(--accent); }
+
+    ::-webkit-scrollbar { width: 4px; height: 4px; }
+    ::-webkit-scrollbar-track { background: var(--bg); }
+    ::-webkit-scrollbar-thumb { background: var(--dim); border-radius: 3px; }
+
+    input[type="time"]::-webkit-calendar-picker-indicator { filter: invert(0.4); }
+
+    @media (max-width: 500px) {
+      .card { padding: 24px 20px; }
+      .field-row, .field-row3 { grid-template-columns: 1fr; }
+      .summary-grid { grid-template-columns: 1fr; }
+      .step-label { display: none; }
+    }
+  </style>
+</head>
+<body>
+
+<div class="header">
+  <div class="logo-icon">🎾</div>
+  <div>
+    <div class="logo-title">Padel Bot</div>
+    <div class="logo-sub">Configurazione nuovo circolo</div>
+  </div>
+</div>
+
+<!-- Stepper -->
+<div class="stepper" id="stepper">
+  <div class="step-item">
+    <div class="step-circle active" id="sc-1">1</div>
+    <div class="step-label active" id="sl-1">Info base</div>
+  </div>
+  <div class="step-connector"></div>
+  <div class="step-item">
+    <div class="step-circle" id="sc-2">2</div>
+    <div class="step-label" id="sl-2">Campi</div>
+  </div>
+  <div class="step-connector"></div>
+  <div class="step-item">
+    <div class="step-circle" id="sc-3">3</div>
+    <div class="step-label" id="sl-3">Matchmaking</div>
+  </div>
+  <div class="step-connector"></div>
+  <div class="step-item">
+    <div class="step-circle" id="sc-4">4</div>
+    <div class="step-label" id="sl-4">Bot & Wave</div>
+  </div>
+  <div class="step-connector"></div>
+  <div class="step-item">
+    <div class="step-circle" id="sc-5">5</div>
+    <div class="step-label" id="sl-5">Credenziali</div>
+  </div>
+  <div class="step-connector"></div>
+  <div class="step-item">
+    <div class="step-circle" id="sc-6">6</div>
+    <div class="step-label" id="sl-6">Riepilogo</div>
+  </div>
+</div>
+
+<!-- Card -->
+<div class="card" id="main-card">
+
+  <!-- STEP 1: Info base -->
+  <div class="step-panel active" id="step-1">
+    <div class="step-title">Informazioni base</div>
+    <div class="step-desc">Dati principali del circolo. Il numero admin riceve notifiche critiche via WhatsApp.</div>
+
+    <div class="field">
+      <label>Nome del circolo *</label>
+      <input type="text" id="name" placeholder="Es. Padel Club Roma" />
+    </div>
+
+    <div class="field-row">
+      <div>
+        <label>Telefono admin WhatsApp *<span class="label-hint">+39...</span></label>
+        <input type="tel" id="adminPhone" placeholder="+393471234567" />
+      </div>
+      <div>
+        <label>Telefono alternativo<span class="label-hint">skill test, contatti</span></label>
+        <input type="tel" id="adminAltPhone" placeholder="+393471234567" />
+      </div>
+    </div>
+
+    <div class="field-row">
+      <div>
+        <label>Apertura campi</label>
+        <input type="time" id="openTime" value="08:00" />
+      </div>
+      <div>
+        <label>Chiusura campi</label>
+        <input type="time" id="closeTime" value="23:30" />
+      </div>
+    </div>
+
+    <div class="field-row">
+      <div>
+        <label>Durata partita<span class="label-hint">minuti</span></label>
+        <input type="number" id="matchDuration" value="90" min="30" max="180" step="15" />
+      </div>
+      <div>
+        <label>Fuso orario</label>
+        <select id="timezone">
+          <option value="Europe/Rome" selected>Europe/Rome (CET/CEST)</option>
+          <option value="Europe/London">Europe/London (GMT/BST)</option>
+          <option value="Europe/Paris">Europe/Paris</option>
+          <option value="Europe/Berlin">Europe/Berlin</option>
+          <option value="UTC">UTC</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="nav-row">
+      <span></span>
+      <button class="btn-next" onclick="goTo(2)">Avanti →</button>
+    </div>
+  </div>
+
+  <!-- STEP 2: Campi -->
+  <div class="step-panel" id="step-2">
+    <div class="step-title">Campi da padel</div>
+    <div class="step-desc">Aggiungi tutti i campi del circolo. Puoi indicare se sono coperti o all'aperto.</div>
+
+    <div class="court-list" id="court-list"></div>
+    <button class="btn-add-court" onclick="addCourt()">+ Aggiungi campo</button>
+
+    <div class="nav-row">
+      <button class="btn-back" onclick="goTo(1)">← Indietro</button>
+      <button class="btn-next" onclick="goTo(3)">Avanti →</button>
+    </div>
+  </div>
+
+  <!-- STEP 3: Matchmaking -->
+  <div class="step-panel" id="step-3">
+    <div class="step-title">Configurazione matchmaking</div>
+    <div class="step-desc">Definisci come il bot abbina i giocatori. Il livello va da 1.0 (principiante) a 7.0 (agonista).</div>
+
+    <div class="section-label">Livelli di gioco</div>
+
+    <div class="field-row">
+      <div>
+        <label>Numero di livelli<span class="label-hint">3 = P/I/A, 7 = scala completa</span></label>
+        <input type="number" id="skillLevelCount" value="3" min="2" max="7" />
+      </div>
+      <div>
+        <label>Range tollerato<span class="label-hint">±livelli tra giocatori</span></label>
+        <input type="number" id="skillRange" value="1.0" min="0.5" max="3" step="0.5" />
+      </div>
+    </div>
+
+    <div class="toggle-row" onclick="toggleSwitch('allowMixedLevels')">
+      <div class="toggle-info">
+        <div class="toggle-name">Partite miste tra livelli</div>
+        <div class="toggle-hint">Permette a giocatori di livelli adiacenti di giocare insieme</div>
+      </div>
+      <div class="toggle-switch" id="toggle-allowMixedLevels"></div>
+    </div>
+
+    <div class="toggle-row" onclick="toggleSwitch('allowMixedGender')">
+      <div class="toggle-info">
+        <div class="toggle-name">Partite miste maschi/femmine</div>
+        <div class="toggle-hint">Se disabilitato, il bot separa automaticamente per genere</div>
+      </div>
+      <div class="toggle-switch" id="toggle-allowMixedGender"></div>
+    </div>
+
+    <hr class="divider" />
+    <div class="section-label">Soglie temporali</div>
+
+    <div class="field-row">
+      <div>
+        <label>Deadline cancellazione<span class="label-hint">minuti prima</span></label>
+        <input type="number" id="deadlineMinutes" value="60" min="15" max="240" step="15" />
+      </div>
+      <div>
+        <label>Durata skill test<span class="label-hint">minuti</span></label>
+        <input type="number" id="skillTestDuration" value="60" min="30" max="120" step="15" />
+      </div>
+    </div>
+
+    <div class="field">
+      <label>Costo skill test<span class="label-hint">€ — 0 se gratuito</span></label>
+      <input type="number" id="skillTestCost" value="0" min="0" max="200" step="5" style="max-width:160px" />
+    </div>
+
+    <div class="nav-row">
+      <button class="btn-back" onclick="goTo(2)">← Indietro</button>
+      <button class="btn-next" onclick="goTo(4)">Avanti →</button>
+    </div>
+  </div>
+
+  <!-- STEP 4: Bot & Wave -->
+  <div class="step-panel" id="step-4">
+    <div class="step-title">Comportamento bot e wave</div>
+    <div class="step-desc">Configura come il bot contatta i giocatori per riempire le partite.</div>
+
+    <div class="section-label">Wave di inviti</div>
+
+    <div class="field-row">
+      <div>
+        <label>Moltiplicatore wave<span class="label-hint">posti × X = persone da contattare</span></label>
+        <input type="number" id="waveMultiplier" value="3" min="1" max="10" />
+      </div>
+      <div>
+        <label>Max messaggi/giorno<span class="label-hint">per giocatore</span></label>
+        <input type="number" id="maxDailyMessages" value="2" min="1" max="5" />
+      </div>
+    </div>
+
+    <hr class="divider" />
+    <div class="section-label">Personalità del bot</div>
+
+    <div class="field">
+      <label>Tono e stile dei messaggi</label>
+      <textarea class="ai-tone" id="aiTone" placeholder="Es. Sei il bot del Circolo Roma Padel. Usa un tono amichevole e informale, tipico della cultura padel italiana. Non essere troppo formale."></textarea>
+    </div>
+
+    <div class="nav-row">
+      <button class="btn-back" onclick="goTo(3)">← Indietro</button>
+      <button class="btn-next" onclick="goTo(5)">Avanti →</button>
+    </div>
+  </div>
+
+  <!-- STEP 5: Credenziali -->
+  <div class="step-panel" id="step-5">
+    <div class="step-title">Credenziali dashboard</div>
+    <div class="step-desc">Il circolo userà queste credenziali per accedere alla dashboard di gestione.</div>
+
+    <div class="field">
+      <label>Username *</label>
+      <input type="text" id="dashUsername" placeholder="es. circolo_roma" autocomplete="off" />
+    </div>
+
+    <div class="field">
+      <label>Password *</label>
+      <input type="password" id="dashPassword" placeholder="min 8 caratteri" autocomplete="new-password" oninput="checkPwd()" />
+      <div class="pwd-strength"><div class="pwd-strength-bar" id="pwd-bar"></div></div>
+    </div>
+
+    <div class="field">
+      <label>Ripeti password *</label>
+      <input type="password" id="dashPasswordConfirm" placeholder="ripeti la password" autocomplete="new-password" />
+    </div>
+
+    <div class="nav-row">
+      <button class="btn-back" onclick="goTo(4)">← Indietro</button>
+      <button class="btn-next" onclick="goTo(6)">Avanti →</button>
+    </div>
+  </div>
+
+  <!-- STEP 6: Riepilogo -->
+  <div class="step-panel" id="step-6">
+    <div class="step-title">Riepilogo configurazione</div>
+    <div class="step-desc">Controlla che tutto sia corretto prima di creare il circolo.</div>
+
+    <div class="summary-grid" id="summary-grid"></div>
+
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+      <div class="section-label" style="margin:0">JSON configurazione</div>
+      <button class="btn-copy" onclick="copyJson()">Copia JSON</button>
+    </div>
+    <pre class="json-preview" id="json-preview"></pre>
+
+    <div class="feedback" id="feedback"></div>
+
+    <div class="nav-row">
+      <button class="btn-back" onclick="goTo(5)">← Indietro</button>
+      <button class="btn-create" id="btn-create" onclick="createClub()">Crea circolo →</button>
+    </div>
+  </div>
+
+</div>
+
+<!-- Success screen -->
+<div class="card" id="success-screen">
+  <div class="big-icon">🎾</div>
+  <h2>Circolo creato!</h2>
+  <p>Il circolo è stato configurato con successo.<br>Accedi alla dashboard con le credenziali qui sotto.</p>
+  <div class="cred-box" id="success-creds"></div>
+  <p style="margin-top:8px">Puoi ora importare i giocatori tramite gli script di setup.</p>
+</div>
+
+<script>
+const STATE = {
+  name: '', adminPhone: '', adminAltPhone: '',
+  openTime: '08:00', closeTime: '23:30',
+  matchDuration: 90, timezone: 'Europe/Rome',
+  courts: [{ name: 'Campo 1', covered: false }],
+  skillLevelCount: 3, skillRange: 1.0,
+  allowMixedLevels: false, allowMixedGender: false,
+  deadlineMinutes: 60, skillTestDuration: 60, skillTestCost: 0,
+  waveMultiplier: 3, maxDailyMessages: 2, aiTone: '',
+  dashUsername: '', dashPassword: '',
+};
+
+let currentStep = 1;
+const TOTAL_STEPS = 6;
+
+// ─── Stepper ──────────────────────────────────
+function updateStepper(step) {
+  for (let i = 1; i <= TOTAL_STEPS; i++) {
+    const circle = document.getElementById(`sc-${i}`);
+    const label  = document.getElementById(`sl-${i}`);
+    circle.className = 'step-circle' + (i < step ? ' done' : i === step ? ' active' : '');
+    circle.textContent = i < step ? '✓' : String(i);
+    label.className = 'step-label' + (i === step ? ' active' : '');
+  }
+}
+
+function goTo(step) {
+  if (!validateStep(currentStep)) return;
+  collectStep(currentStep);
+  document.getElementById(`step-${currentStep}`).classList.remove('active');
+  currentStep = step;
+  document.getElementById(`step-${currentStep}`).classList.add('active');
+  updateStepper(currentStep);
+  if (step === 6) buildSummary();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+// ─── Validation ───────────────────────────────
+function validateStep(step) {
+  if (step === 1) {
+    const name = v('name'), phone = v('adminPhone');
+    if (!name) return err('name', 'Il nome del circolo è obbligatorio');
+    if (!phone) return err('adminPhone', 'Il numero admin è obbligatorio');
+    return true;
+  }
+  if (step === 2) {
+    const courts = getCourts();
+    if (courts.length === 0) { alert('Aggiungi almeno un campo'); return false; }
+    for (const c of courts) if (!c.name.trim()) { alert('Dai un nome a tutti i campi'); return false; }
+    return true;
+  }
+  if (step === 5) {
+    const u = v('dashUsername'), p = v('dashPassword'), p2 = v('dashPasswordConfirm');
+    if (!u) return err('dashUsername', 'Username obbligatorio');
+    if (p.length < 8) return err('dashPassword', 'La password deve avere almeno 8 caratteri');
+    if (p !== p2) return err('dashPasswordConfirm', 'Le password non coincidono');
+    return true;
+  }
+  return true;
+}
+
+function err(fieldId, msg) {
+  const el = document.getElementById(fieldId);
+  if (el) { el.style.borderColor = 'var(--error)'; el.focus(); }
+  alert(msg);
+  setTimeout(() => { if (el) el.style.borderColor = ''; }, 2000);
+  return false;
+}
+
+function v(id) { return (document.getElementById(id)?.value || '').trim(); }
+
+// ─── Collect ──────────────────────────────────
+function collectStep(step) {
+  if (step === 1) {
+    STATE.name = v('name');
+    STATE.adminPhone = v('adminPhone');
+    STATE.adminAltPhone = v('adminAltPhone');
+    STATE.openTime = v('openTime') || '08:00';
+    STATE.closeTime = v('closeTime') || '23:30';
+    STATE.matchDuration = parseInt(v('matchDuration')) || 90;
+    STATE.timezone = v('timezone') || 'Europe/Rome';
+  }
+  if (step === 2) {
+    STATE.courts = getCourts();
+  }
+  if (step === 3) {
+    STATE.skillLevelCount = parseInt(v('skillLevelCount')) || 3;
+    STATE.skillRange = parseFloat(v('skillRange')) || 1.0;
+    STATE.deadlineMinutes = parseInt(v('deadlineMinutes')) || 60;
+    STATE.skillTestDuration = parseInt(v('skillTestDuration')) || 60;
+    STATE.skillTestCost = parseFloat(v('skillTestCost')) || 0;
+  }
+  if (step === 4) {
+    STATE.waveMultiplier = parseInt(v('waveMultiplier')) || 3;
+    STATE.maxDailyMessages = parseInt(v('maxDailyMessages')) || 2;
+    STATE.aiTone = v('aiTone');
+  }
+  if (step === 5) {
+    STATE.dashUsername = v('dashUsername');
+    STATE.dashPassword = v('dashPassword');
+  }
+}
+
+// ─── Courts ───────────────────────────────────
+function renderCourts() {
+  const list = document.getElementById('court-list');
+  list.innerHTML = '';
+  STATE.courts.forEach((c, i) => {
+    const div = document.createElement('div');
+    div.className = 'court-item';
+    div.innerHTML = `
+      <span style="font-size:11px;color:var(--muted);min-width:24px">${i+1}.</span>
+      <input type="text" value="${escHtml(c.name)}" placeholder="Nome campo" oninput="STATE.courts[${i}].name=this.value" />
+      <label class="court-covered">
+        <input type="checkbox" ${c.covered ? 'checked' : ''} onchange="STATE.courts[${i}].covered=this.checked" />
+        Coperto
+      </label>
+      <button class="court-remove" onclick="removeCourt(${i})" title="Rimuovi">✕</button>
+    `;
+    list.appendChild(div);
+  });
+}
+
+function addCourt() {
+  STATE.courts.push({ name: `Campo ${STATE.courts.length + 1}`, covered: false });
+  renderCourts();
+}
+
+function removeCourt(i) {
+  if (STATE.courts.length <= 1) { alert('Serve almeno un campo'); return; }
+  STATE.courts.splice(i, 1);
+  renderCourts();
+}
+
+function getCourts() {
+  // Legge direttamente dal DOM (più sicuro)
+  const items = document.querySelectorAll('.court-item');
+  return Array.from(items).map(item => ({
+    name: item.querySelector('input[type="text"]').value.trim(),
+    covered: item.querySelector('input[type="checkbox"]').checked,
+  }));
+}
+
+// ─── Toggles ──────────────────────────────────
+const toggleState = { allowMixedLevels: false, allowMixedGender: false };
+
+function toggleSwitch(key) {
+  toggleState[key] = !toggleState[key];
+  const el = document.getElementById(`toggle-${key}`);
+  el.className = 'toggle-switch' + (toggleState[key] ? ' on' : '');
+  STATE[key === 'allowMixedGender' ? 'allowMixedGender' : key] = toggleState[key];
+}
+
+// ─── Password strength ────────────────────────
+function checkPwd() {
+  const p = v('dashPassword');
+  const bar = document.getElementById('pwd-bar');
+  let score = 0;
+  if (p.length >= 8)  score++;
+  if (p.length >= 12) score++;
+  if (/[A-Z]/.test(p)) score++;
+  if (/[0-9]/.test(p)) score++;
+  if (/[^A-Za-z0-9]/.test(p)) score++;
+  const colors = ['', '#ff4a6e', '#ffcc00', '#ffcc00', '#00e5a0', '#00e5a0'];
+  const widths  = ['0%', '20%', '40%', '60%', '85%', '100%'];
+  bar.style.width = widths[score] || '0%';
+  bar.style.background = colors[score] || 'transparent';
+}
+
+// ─── Summary ──────────────────────────────────
+function buildSummary() {
+  collectStep(5);
+  const courts = getCourts();
+  STATE.courts = courts;
+
+  const grid = document.getElementById('summary-grid');
+  const items = [
+    { k: 'Circolo',          v: STATE.name },
+    { k: 'Admin WA',         v: STATE.adminPhone },
+    { k: 'Orari',            v: `${STATE.openTime} – ${STATE.closeTime}` },
+    { k: 'Durata partita',   v: `${STATE.matchDuration} min` },
+    { k: 'Campi',            v: courts.map(c => `${c.name}${c.covered ? ' 🏠' : ' ☀️'}`).join(', '), full: true },
+    { k: 'Livelli',          v: STATE.skillLevelCount },
+    { k: 'Range skill',      v: `±${STATE.skillRange}` },
+    { k: 'Livelli misti',    v: STATE.allowMixedLevels ? 'Sì' : 'No' },
+    { k: 'Wave ×',           v: STATE.waveMultiplier },
+    { k: 'Max msg/giorno',   v: STATE.maxDailyMessages },
+    { k: 'Deadline',         v: `${STATE.deadlineMinutes} min prima` },
+    { k: 'Dashboard user',   v: STATE.dashUsername },
+  ];
+
+  grid.innerHTML = items.map(it => `
+    <div class="summary-item${it.full ? ' summary-full' : ''}">
+      <div class="summary-key">${it.k}</div>
+      <div class="summary-val">${escHtml(String(it.v))}</div>
+    </div>
+  `).join('');
+
+  const json = buildJson();
+  document.getElementById('json-preview').textContent = JSON.stringify(json, null, 2);
+}
+
+function buildJson() {
+  return {
+    name: STATE.name,
+    adminPhone: STATE.adminPhone,
+    ...(STATE.adminAltPhone && { adminAlternativePhone: STATE.adminAltPhone }),
+    timezone: STATE.timezone,
+    openTime: STATE.openTime,
+    closeTime: STATE.closeTime,
+    matchDuration: STATE.matchDuration,
+    courts: STATE.courts,
+    skillLevelCount: STATE.skillLevelCount,
+    matchLowerRange: STATE.skillRange,
+    matchUpperRange: STATE.skillRange,
+    allowMixedLevels: STATE.allowMixedLevels,
+    allowMixedGenderMatchmaking: STATE.allowMixedGender,
+    waveMultiplier: STATE.waveMultiplier,
+    maxDailyMessages: STATE.maxDailyMessages,
+    deadlineMinutesBeforeMatch: STATE.deadlineMinutes,
+    skillTestDuration: STATE.skillTestDuration,
+    skillTestCost: STATE.skillTestCost,
+    ...(STATE.aiTone && { aiTone: STATE.aiTone }),
+    dashboardUsername: STATE.dashUsername,
+    dashboardPassword: STATE.dashPassword,
+  };
+}
+
+async function copyJson() {
+  const json = buildJson();
+  await navigator.clipboard.writeText(JSON.stringify(json, null, 2)).catch(() => {});
+  const btn = document.querySelector('.btn-copy');
+  btn.textContent = 'Copiato ✓';
+  setTimeout(() => btn.textContent = 'Copia JSON', 1500);
+}
+
+// ─── Create ───────────────────────────────────
+async function createClub() {
+  const btn = document.getElementById('btn-create');
+  const fb  = document.getElementById('feedback');
+  fb.className = 'feedback';
+  btn.disabled = true;
+  btn.textContent = 'Creazione in corso...';
+
+  const payload = buildJson();
+
+  // Legge il secret dall'URL (?secret=XXX) o lo chiede
+  let secret = new URLSearchParams(window.location.search).get('secret');
+  if (!secret) {
+    secret = prompt('Inserisci il SETUP_SECRET configurato nel server:');
+    if (!secret) { btn.disabled = false; btn.textContent = 'Crea circolo →'; return; }
+  }
+
+  try {
+    const res = await fetch('/api/setup/club', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${secret}` },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json();
+
+    if (res.ok) {
+      document.getElementById('main-card').style.display = 'none';
+      document.getElementById('stepper').style.display = 'none';
+      const screen = document.getElementById('success-screen');
+      screen.style.display = 'block';
+      document.getElementById('success-creds').innerHTML =
+        `Dashboard: <span>${window.location.origin}/dashboard</span><br>` +
+        `Username: <span>${escHtml(STATE.dashUsername)}</span><br>` +
+        `Password: <span>${escHtml(STATE.dashPassword)}</span>`;
+    } else {
+      fb.textContent = `Errore: ${data.error || 'Qualcosa è andato storto'}`;
+      fb.className = 'feedback err';
+    }
+  } catch {
+    fb.textContent = 'Server non raggiungibile. Usa il JSON copiato per configurare manualmente.';
+    fb.className = 'feedback err';
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Crea circolo →';
+  }
+}
+
+// ─── Utils ────────────────────────────────────
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ─── Init ─────────────────────────────────────
+renderCourts();
+
+// Pre-compila aiTone quando esce dal campo nome
+document.getElementById('name').addEventListener('blur', () => {
+  const n = v('name');
+  if (n && !v('aiTone')) {
+    document.getElementById('aiTone').placeholder =
+      `Sei il bot di ${n}, usa un tono amichevole e informale tipico della cultura padel italiana.`;
+  }
+});
+</script>
+</body>
+</html>

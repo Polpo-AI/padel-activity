@@ -37,6 +37,8 @@ Esclusi: `node_modules/`, `dist/`, `.git/`, `.claude/worktrees/`.
 |------|-------------|
 | `src/api/dashboard.api.ts` | REST API per la dashboard (auth JWT, CRUD match/player/court, health check) |
 | `src/api/webhooks.ts` | Webhook esterno per creare match da sistemi terzi (autenticato via HMAC) |
+| `src/api/setup.api.ts` | `POST /api/setup/club` — onboarding circolo via wizard, protetto da `SETUP_SECRET` |
+| `src/setup.html` | Wizard HTML 6-step per onboarding circolo (`/setup`) |
 
 ### src/services/
 
