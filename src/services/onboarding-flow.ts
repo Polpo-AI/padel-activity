@@ -329,6 +329,20 @@ async function finalizeOnboarding(senderJid: string, stateData: any, messageKey?
 
     await clearOnboardingState(senderJid);
 
+    // Messaggio 1 — benvenuto nella community
+    await simulateTypingAndSend(
+        senderJid,
+        `Benvenuto ${name}! 🎾 Sei entrato in un circuito di giocatori organizzati per livello — persone che, come te, vogliono fare belle partite e conoscere nuova gente.`,
+        messageKey
+    );
+
+    // Messaggio 2 — spiegazione skill test
+    await simulateTypingAndSend(
+        senderJid,
+        `Per ricevere inviti alle partite ti chiediamo di fare uno **Skill Test** 📊 — una lezione con un nostro istruttore che ti dà una prima valutazione imparziale. Da lì il tuo punteggio viene calibrato e comincerai a ricevere inviti per giocare con persone misurate sul tuo livello.\n\nSaremo noi a contattarti per organizzarlo!`,
+        messageKey
+    );
+
     // Controlla se c'era un intent pendente (es. prenotazione interrotta per onboarding)
     let hasPendingIntent = false;
     try {
@@ -338,20 +352,13 @@ async function finalizeOnboarding(senderJid: string, stateData: any, messageKey?
             hasPendingIntent = true;
             await clearState(`state:pending-intent:${senderJid}`);
 
-            await simulateTypingAndSend(
-                senderJid,
-                `Perfetto ${name}! 🎾 Sei registrato.\n\nPer poter prenotare o essere invitato alle partite dovrai prima fare lo **Skill Test** con il nostro maestro — ti contatteremo noi per organizzarlo.`,
-                messageKey
-            );
-
             // Riprende il booking flow con i parametri originali
             const { handleBatch } = await import('./messageHandler');
-            const syntheticJid = senderJid;
-            await handleBatch(syntheticJid, [{
+            await handleBatch(senderJid, [{
                 type: 'text',
                 text: pending.combinedText,
                 raw: {
-                    key: { id: `RESUME_${Date.now()}`, remoteJid: syntheticJid, fromMe: false },
+                    key: { id: `RESUME_${Date.now()}`, remoteJid: senderJid, fromMe: false },
                     pushName: name,
                     messageTimestamp: Math.floor(Date.now() / 1000),
                     message: { conversation: pending.combinedText },
@@ -365,7 +372,7 @@ async function finalizeOnboarding(senderJid: string, stateData: any, messageKey?
     if (!hasPendingIntent) {
         await simulateTypingAndSend(
             senderJid,
-            `Perfetto ${name}! 🎾 Sei registrato.\n\nPer poter prenotare o essere invitato alle partite dovrai prima fare lo **Skill Test** con il nostro maestro — ti contatteremo noi per organizzarlo. A presto!`,
+            `Nel frattempo, posso aiutarti a prenotare un campo? 🎾`,
             messageKey
         );
     }
