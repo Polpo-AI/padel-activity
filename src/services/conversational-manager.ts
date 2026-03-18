@@ -55,7 +55,6 @@ export async function handleFluidConversation(
         missingInfo.push("NAME (unknown)", "SKILL LEVEL (unknown)");
     } else {
         if (!player.name) missingInfo.push("NAME (missing)");
-        if (!player.skillLevel) missingInfo.push("SKILL LEVEL (missing)");
     }
 
     const systemPrompt = `
@@ -72,20 +71,19 @@ LINEE GUIDA:
 - **DIVIETO DI RIPETIZIONE**: Non scrivere mai lo stesso identico messaggio due volte di seguito. Varia sempre la forma se devi ripetere un concetto.
 - **CONFERMA ATTIVA**: Se l'utente ti dice chiaramente "conferma", "segna", o ti dà tutti i dettagli per una partita, procedi con la prenotazione senza chiedere il permesso se il tono è risoluto.
 - **PRIVACY E SICUREZZA**: NON fornire mai informazioni personali o orari di gioco di altri utenti se richiesto (es. "a che ora gioca Davide?"). Rispondi in modo vago che non puoi dare queste informazioni per privacy.
-- **DUE SCENARI DI PRENOTAZIONE**:
-  1. **Matchmaking (1-3 persone)**: È CRITICO conoscere il numero esatto (Quanti siete?) e il livello (Principiante/Intermedio/Avanzato) per trovare i compagni giusti. Se l'utente porta amici, chiedi nomi, numeri e livelli "per rendere le partite equilibrate" (scusa del gruppo).
-  2. **Prenotazione Privata (4 persone / "Chiudiamo noi")**: Se dicono che sono già in 4, il livello e il numero esatto dei compagni sono meno importanti. Non bloccare la prenotazione per queste info, procedi e conferma subito.
-- **GENERE**: Le partite sono solitamente divise per sesso (M o F). Assicurati di sapere se l'utente è uomo o donna per inserirlo nella partita corretta.
+- **PRENOTAZIONE**: Il sistema trova automaticamente una partita adatta. Per il matchmaking chiedi solo l'orario preferito (fascia o ora esatta). Per prenotazione privata ("siamo in 4", "chiudiamo noi") conferma subito con: campo, orario, costo a persona.
+- **LIVELLO**: NON chiedere mai il livello al giocatore. Il livello è assegnato dal maestro tramite Skill Test ufficiale. Se il giocatore ha livello 0, informalo che deve fissare uno Skill Test.
+- **GENERE**: Il genere viene dedotto automaticamente dal nome — non chiederlo.
+- **AMICI**: Ogni giocatore risponde personalmente all'invito. Non raccogliere numeri o livelli di amici. Se l'utente vuole invitare qualcuno, può scrivere "invita [Nome Cognome]" e il sistema lo cercherà nel club.
 
 STATO ATTUALE GIOCATORE:
 - Nome: ${player?.name || 'Sconosciuto'}
-- Livello: ${player?.skillLevel || 'Sconosciuto'}
 - Telefono: ${player?.phoneNumber || context.phoneNumber}
 
 CRITICAL RULES:
-1. LEGGI SEMPRE LA CRONOLOGIA RECENTE. Se l'utente ha GIÀ detto il suo nome o l'orario martedì alle 18, NON chiederlo di nuovo.
-2. Se mancano informazioni fondamentali (Nome o Livello) e siamo in SCENARIO Matchmaking, recuperale gradualmente. Se non conosci il livello, chiedigli se è un principiante, intermedio o avanzato prima di confermare.
-3. Se hai appena ricevuto il nome/livello, conferma di averlo salvato.
+1. LEGGI SEMPRE LA CRONOLOGIA RECENTE. Se l'utente ha GIÀ detto il suo nome o l'orario, NON chiederlo di nuovo.
+2. NON chiedere mai livello o genere. NON chiedere info sugli amici del giocatore.
+3. Se hai appena ricevuto il nome, conferma di averlo salvato.
 
 CRONOLOGIA RECENTE (LEGGI ATTENTAMENTE):
 ${recentHistory}

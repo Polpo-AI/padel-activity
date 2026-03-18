@@ -58,10 +58,14 @@ app.use(express.json({
 }));
 app.use(express.urlencoded({ extended: true }));
 
+app.disable('x-powered-by');
+
 app.use((req, res, next) => {
     res.header('Access-Control-Allow-Origin', process.env.DASHBOARD_ORIGIN || '*');
     res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
     res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+    res.header('X-Content-Type-Options', 'nosniff');
+    res.header('X-Frame-Options', 'DENY');
     if (req.method === 'OPTIONS') return res.sendStatus(200);
     next();
 });
@@ -82,7 +86,7 @@ if (process.env.NODE_ENV === 'production') {
     });
 }
 
-app.use('/api', webhooksRouter);
+app.use('/api/webhooks', webhooksRouter);
 app.use('/api/dashboard', dashboardRouter);
 
 // ─────────────────────────────────────────────
@@ -113,6 +117,27 @@ app.get('/health', async (req, res) => {
 // ─────────────────────────────────────────────
 // JOB SCHEDULATI
 // ─────────────────────────────────────────────
+
+// ─────────────────────────────────────────────
+// GLOBAL EXPRESS ERROR HANDLER
+// ─────────────────────────────────────────────
+// Cattura errori di parse JSON e altri errori Express prima che diventino 500 non gestiti
+app.use((err: any, req: any, res: any, _next: any) => {
+    // Payload too large (413)
+    if (err.type === 'entity.too.large' || err.status === 413) {
+        return res.status(413).json({ error: 'Payload troppo grande' });
+    }
+    // JSON parse errors (400)
+    if (err.type === 'entity.parse.failed' || err instanceof SyntaxError) {
+        return res.status(400).json({ error: 'Body JSON non valido o Content-Type errato' });
+    }
+    // Other 4xx errors — preserva il codice originale
+    if (err.status && err.status >= 400 && err.status < 500) {
+        return res.status(err.status).json({ error: err.message || 'Bad request' });
+    }
+    logger.error({ err, url: req.url, method: req.method }, 'Unhandled Express error');
+    return res.status(500).json({ error: 'Internal server error' });
+});
 
 async function scheduleMaintenance() {
     await maintenanceQueue.add('daily-reset', {}, {

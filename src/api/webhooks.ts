@@ -108,19 +108,22 @@ router.post('/slots', verifyWebhookSignature, async (req, res) => {
         const initialDelayMs = Math.floor(Math.random() * (maxDelayMs - minDelayMs + 1)) + minDelayMs;
 
         // ✅ FIX: aggiungiamo scheduledAt nel payload del job per lo staleness check
-        await waveQueue.add(
-            'process-wave',
-            {
-                matchId: match.id,
-                waveNumber: 1,
-                limit: 4,
-                scheduledAt: Date.now() + initialDelayMs, // usato dallo staleness check nel worker
-            },
-            {
-                delay: initialDelayMs,
-                removeOnComplete: true,
-            }
-        );
+        await Promise.race([
+            waveQueue.add(
+                'process-wave',
+                {
+                    matchId: match.id,
+                    waveNumber: 1,
+                    limit: 4,
+                    scheduledAt: Date.now() + initialDelayMs, // usato dallo staleness check nel worker
+                },
+                {
+                    delay: initialDelayMs,
+                    removeOnComplete: true,
+                }
+            ),
+            new Promise<never>((_, rej) => setTimeout(() => rej(new Error('Redis timeout')), 5000))
+        ]);
 
         res.status(201).json({
             message: 'Match slotted and Initial Wave scheduled',

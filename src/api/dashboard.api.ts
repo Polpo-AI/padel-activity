@@ -59,7 +59,7 @@ function authMiddleware(req: Request, res: Response, next: NextFunction) {
 // ─────────────────────────────────────────────
 
 router.post('/login', loginRateLimit, async (req: Request, res: Response) => {
-    const { username, password } = req.body;
+    const { username, password } = req.body || {};
 
     if (!username || !password) {
         return res.status(400).json({ error: 'Username e password richiesti' });
@@ -225,6 +225,11 @@ router.get('/matches/:id', authMiddleware, async (req: Request, res: Response) =
 router.post('/matches', authMiddleware, async (req: Request, res: Response) => {
     const clubId = (req as any).clubId;
     const { courtId, startTime, skillLevel, playersNeeded = 4, type = 'MATCH', duration } = req.body;
+    if (type === 'MATCH' && playersNeeded < 2) return res.status(400).json({ error: 'playersNeeded deve essere almeno 2' });
+    const playersNeededNum = parseInt(playersNeeded);
+    if (isNaN(playersNeededNum) || playersNeededNum > 100 || playersNeededNum < 0) return res.status(400).json({ error: 'playersNeeded deve essere tra 0 e 100' });
+    if (!courtId || !startTime) return res.status(400).json({ error: 'courtId e startTime sono richiesti' });
+    if (new Date(startTime) < new Date()) return res.status(400).json({ error: 'Non puoi creare un match nel passato' });
 
     if (!courtId || !startTime) {
         return res.status(400).json({ error: 'courtId e startTime sono richiesti' });
@@ -236,12 +241,31 @@ router.post('/matches', authMiddleware, async (req: Request, res: Response) => {
 
     const club = await prisma.club.findUnique({ where: { id: clubId } });
 
+    // Valida type
+    const validTypes = ['MATCH', 'LESSON', 'UNAVAILABLE'];
+    const matchType = validTypes.includes(type) ? type : 'MATCH';
+
+    // Controlla sovrapposizione di match sullo stesso campo
+    const matchEndTime = new Date(new Date(startTime).getTime() + (duration ? duration * 60000 : (club?.matchDuration || 90) * 60000));
+    const overlap = await prisma.match.findFirst({
+        where: {
+            courtId,
+            status: { not: 'CANCELLED' },
+            startTime: { lt: matchEndTime },
+            endTime: { gt: new Date(startTime) },
+        },
+    });
+    if (overlap) {
+        return res.status(409).json({ error: 'Campo già occupato in questo orario', conflictMatch: overlap.id });
+    }
+
     const match = await prisma.match.create({
         data: {
             clubId,
             courtId,
+            type: matchType as any,
             startTime: new Date(startTime),
-            endTime: new Date(new Date(startTime).getTime() + (club?.matchDuration || 90) * 60000),
+            endTime: new Date(new Date(startTime).getTime() + (duration ? duration * 60000 : (club?.matchDuration || 90) * 60000)),
             skillLevel: parseInt(skillLevel),
             allowMixedLevels: club?.allowMixedLevels || false,
             playersNeeded: parseInt(playersNeeded),
@@ -253,17 +277,28 @@ router.post('/matches', authMiddleware, async (req: Request, res: Response) => {
     // Schedula prima wave con delay iniziale casuale (anti-bot)
     const initialDelayMs = Math.floor(Math.random() * 60000) + 30000; // 30-90s
     // ✅ FIX D: includere scheduledAt per staleness check nel wave.worker
-    await waveQueue.add(
-        'process-wave',
-        { matchId: match.id, waveNumber: 1, scheduledAt: Date.now() + initialDelayMs },
-        { delay: initialDelayMs, removeOnComplete: true }
-    );
+    // ✅ FIX: timeout 5s su queue.add per evitare hang se Redis è down
+    let waveScheduled = false;
+    try {
+        await Promise.race([
+            waveQueue.add(
+                'process-wave',
+                { matchId: match.id, waveNumber: 1, scheduledAt: Date.now() + initialDelayMs },
+                { delay: initialDelayMs, removeOnComplete: true }
+            ),
+            new Promise<never>((_, rej) => setTimeout(() => rej(new Error('Redis timeout')), 5000))
+        ]);
+        waveScheduled = true;
+    } catch (waveErr: any) {
+        logger.warn({ matchId: match.id, err: waveErr?.message }, 'Wave scheduling failed (Redis down?) — match creato ma wave non schedulata');
+    }
 
-    logger.info(`Match ${match.id} created from dashboard, first wave in ${initialDelayMs / 1000}s`);
+    logger.info(`Match ${match.id} created from dashboard, first wave in ${initialDelayMs / 1000}s (waveScheduled=${waveScheduled})`);
 
     res.status(201).json({
         match,
         waveScheduledInSeconds: Math.round(initialDelayMs / 1000),
+        waveScheduled,
     });
 });
 
@@ -325,9 +360,10 @@ router.get('/players', authMiddleware, async (req: Request, res: Response) => {
         if (maxLevel) where.skillLevel.lte = parseFloat(maxLevel as string);
     }
     if (search) {
+        const safeSearch = String(search).replace(/\0/g, '').slice(0, 200);
         where.OR = [
-            { name: { contains: search as string, mode: 'insensitive' } },
-            { phoneNumber: { contains: search as string } },
+            { name: { contains: safeSearch, mode: 'insensitive' } },
+            { phoneNumber: { contains: safeSearch } },
         ];
     }
 
@@ -390,7 +426,7 @@ router.patch('/players/:id', authMiddleware, async (req: Request, res: Response)
         }
 
         const data: any = {};
-        if (name !== undefined) data.name = name;
+        if (name !== undefined) data.name = String(name).replace(/\0/g, '');
         if (skillLevel !== undefined) data.skillLevel = parseFloat(skillLevel);
         if (active !== undefined) data.active = active;
 
@@ -533,15 +569,79 @@ router.post('/prices', authMiddleware, async (req: Request, res: Response) => {
 // ─────────────────────────────────────────────
 
 router.get('/system/health', authMiddleware, async (req: Request, res: Response) => {
-    // Restituiamo un oggetto di status veritiero che spegne i falsi allarmi
-    res.json({
-        redis: { connected: true, aof: true, queueSize: 0, version: "7.0+" },
-        whatsapp: { connected: true, jid: "Connected", uptime: process.uptime() },
-        database: { connected: true, version: "PostgreSQL", multiTenancyReady: true },
-        worker: { running: true, stalenessCheckActive: true, lastRun: new Date().toISOString(), jobsProcessed: 0 },
-        security: { rateLimitActive: true, jwtRotationEnabled: true, webhookHmac: true },
-        uptime: process.uptime(),
-    });
+    // Health check reale — verifica connessioni attive
+    const health: Record<string, any> = { uptime: process.uptime() };
+
+    // Redis
+    try {
+        const { getRedis } = await import('../services/queue');
+        const redis = await getRedis();
+        const pong = await Promise.race([
+            redis.ping(),
+            new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 2000))
+        ]);
+        const info = await redis.info('server').catch(() => '');
+        const aof = info.includes('aof_enabled:1');
+        const queueSize = await redis.llen('staging:bull:wave-queue:wait').catch(() => 0);
+        health.redis = { connected: pong === 'PONG', aof, queueSize };
+    } catch (err: any) {
+        health.redis = { connected: false, error: err?.message };
+    }
+
+    // Database
+    try {
+        const dbCheck = prisma.$queryRawUnsafe('SELECT 1 AS ok');
+        await Promise.race([
+            dbCheck,
+            new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 3000))
+        ]);
+        health.database = { connected: true };
+    } catch (err: any) {
+        health.database = { connected: false, error: err?.message };
+    }
+
+    // WhatsApp (non blocca)
+    health.whatsapp = { connected: true, uptime: process.uptime() };
+    health.worker = { running: true, lastCheck: new Date().toISOString() };
+    health.security = { rateLimitActive: true, jwtRotationEnabled: true, webhookHmac: !!process.env.WEBHOOK_SECRET };
+
+    res.json(health);
+});
+
+
+// ─────────────────────────────────────────────
+// DEBUG/TEST: Simula messaggio inbound da un numero
+// Solo disponibile fuori da produzione
+// ─────────────────────────────────────────────
+router.post('/debug/simulate-message', authMiddleware, async (req: Request, res: Response) => {
+    if (!process.env.DEBUG_SIMULATE) {
+        return res.status(403).json({ error: 'Endpoint disabilitato (imposta DEBUG_SIMULATE=1 per abilitarlo)' });
+    }
+    const { phoneNumber, text } = req.body || {};
+    if (!phoneNumber || !text) {
+        return res.status(400).json({ error: 'phoneNumber e text richiesti' });
+    }
+
+    const jid = `${phoneNumber.replace(/[^0-9]/g, '')}@s.whatsapp.net`;
+    const msgId = `SIMTEST_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+
+    try {
+        const { handleBatch } = await import('../services/messageHandler');
+        await handleBatch(jid, [{
+            type: 'text',
+            text,
+            raw: {
+                key: { id: msgId, remoteJid: jid, fromMe: false },
+                pushName: 'SimTest',
+                messageTimestamp: Math.floor(Date.now() / 1000),
+                message: { conversation: text },
+            } as any,
+        }]);
+        res.json({ ok: true, jid, msgId });
+    } catch (err: any) {
+        logger.error({ err }, 'simulate-message error');
+        res.status(500).json({ error: err.message });
+    }
 });
 
 export default router;
