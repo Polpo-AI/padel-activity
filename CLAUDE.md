@@ -52,6 +52,11 @@ DATABASE_URL="postgresql://postgres.ildhffoxuufcbvmmqitj:...@aws-1-eu-west-1.poo
 ### 9. `prisma db push` invece di `migrate dev` su DB condiviso
 **Regola:** il DB Supabase ha drift rispetto alla migration history → `migrate dev` va in errore. Usare sempre `prisma db push` per sincronizzare lo schema senza toccare la history.
 
+### 13. MAI usare `prisma db push --force-reset` — cancella tutto, Club incluso
+**Bug reale:** usato `--force-reset` per fixare `column notes does not exist` → ha droppato e ricreato tutte le tabelle, cancellando Club, Courts, dashboard credentials e CLUB_ID.
+**Regola:** usare sempre `prisma db push` (senza `--force-reset`). Se il client è desincronizzato dallo schema, il fix è `npx prisma generate` + restart — mai toccare i dati.
+**Per resettare solo i dati transienti:** usare `db-reset.ts` (cancella solo partite/giocatori/messaggi, non il Club).
+
 ### 12. Dopo ogni `prisma db push`, rigenerare il client su VPS con `prisma generate`
 **Bug reale:** `notes` aggiunto allo schema, `db push` ok, ma il client JS sul VPS era vecchio → `Unknown argument 'notes'` a runtime → errore Prisma grezzo inviato all'utente.
 **Regola:** dopo ogni `prisma db push` sul VPS, eseguire sempre `npx prisma generate` + restart.
