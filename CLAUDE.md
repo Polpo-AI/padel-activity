@@ -4,6 +4,61 @@ Questo file è la mappa operativa del progetto. Leggilo prima di toccare qualsia
 
 ---
 
+## ⚠️ LESSONS LEARNED — Leggi sempre prima di toccare codice
+
+Questi errori sono già stati commessi. Non ripeterli.
+
+### 1. Locale e VPS devono essere sempre allineati
+**Regola:** ogni modifica va committata + pushata su `main` + pullata sul VPS. MAI modificare file direttamente sul VPS senza poi aggiornare il locale (o viceversa). Verificare sempre con `git log --oneline -3` su entrambi prima di iniziare.
+**Workflow corretto:**
+```bash
+# Locale
+git add <files> && git commit && git push origin main
+# VPS
+cd /root/padel-staging && git pull origin main
+systemctl restart padel-staging padel-worker-staging
+git push origin HEAD:preview
+```
+
+### 2. Mai impostare lo stato Redis DOPO aver inviato il messaggio
+**Bug reale:** `startSingleOnboarding` inviava il messaggio prima di salvare lo stato in Redis → il secondo batch del debounce trovava nessuno stato → inviava "Come ti chiami?" due volte.
+**Regola:** `setState(...)` SEMPRE prima di `simulateTypingAndSend(...)`.
+
+### 3. Il nome del giocatore NON va mai estratto con fallback al testo grezzo
+**Bug reale:** `let name = messageText.trim()` come fallback → il messaggio intero ("voglio prenotare domani alle 18") diventava il nome del giocatore.
+**Regola:** il prompt AI deve restituire esplicitamente `"NULL"` se il nome non è trovato. Se è NULL, ri-chiedere — MAI usare il testo del messaggio come nome.
+
+### 4. Nessun gruppo, nessun playerCount
+**Bug reale:** il brain estraeva `playerCount` dal testo ("siamo in 3", "campo da 7") e creava partite con 3 o 7 giocatori.
+**Regola:** il padel è sempre 4 giocatori. `playerCount` non esiste. Ogni giocatore prenota per sé. `INVITE_PREFERRED` è l'unico modo per coinvolgere un amico specifico.
+
+### 5. skillLevel = 0 o negativo = nessuna wave
+**Regola:** se `player.skillLevel <= 0`, la partita viene creata ma NON si avvia la wave. Il brain non deve promettere abbinamento con altri giocatori. Skill Test in attesa = può prenotare campo, non può ricevere inviti automatici.
+
+### 6. `simulateTypingAndSend` già salva il messaggio nel DB
+**Bug reale:** `messageHandler` salvava manualmente ogni risposta del bot → ogni messaggio veniva duplicato nel log `WhatsAppMessage`.
+**Regola:** non salvare mai manualmente i messaggi outbound — `simulateTypingAndSend` lo fa già.
+
+### 7. Fallback AI MAI identico due volte
+**Regola:** il catch di `callBrain` deve restituire uno di N messaggi random, mai sempre lo stesso. Utente che riceve "Scusa, ho un problema tecnico" due volte di fila → pessima esperienza.
+
+### 8. Reset DB locale: usare DIRECT_URL (porta 5432), non DATABASE_URL (pgBouncer 6543)
+**Regola:** per operazioni dirette (script, `db push`, `migrate dev`) usare sempre `DIRECT_URL` / porta 5432. Il pgBouncer su 6543 non supporta prepared statements.
+```bash
+DATABASE_URL="$DIRECT_URL_STAGING" npx tsx src/scripts/db-reset.ts
+```
+
+### 9. `prisma db push` invece di `migrate dev` su DB condiviso
+**Regola:** il DB Supabase ha drift rispetto alla migration history → `migrate dev` va in errore. Usare sempre `prisma db push` per sincronizzare lo schema senza toccare la history.
+
+### 10. Il brain genera il messaggio PRIMA che `executeAction` venga eseguita
+**Conseguenza:** il brain non conosce il campo assegnato, il prezzo, ecc. al momento della risposta.
+**Pattern corretto:** il brain manda una conferma breve e generica. `executeAction` restituisce `{ matchId }`. Il messageHandler manda poi una scheda strutturata separata con i dettagli reali (campo, coperto/scoperto, prezzo, indirizzo).
+
+---
+
+---
+
 ## Stack Tecnologico
 
 | Layer | Tecnologia |
@@ -13,8 +68,7 @@ Questo file è la mappa operativa del progetto. Leggilo prima di toccare qualsia
 | ORM / DB | Prisma + PostgreSQL (Supabase) |
 | Cache / Code | Redis (ioredis) — `127.0.0.1:6379` sul VPS |
 | Code WhatsApp | Baileys (`@whiskeysockets/baileys`) |
-| AI | Anthropic Claude (Haiku per classificazioni veloci, Sonnet per testo) |
-| AI fallback | OpenAI (usato in alcuni prompt) |
+| AI | Anthropic Claude (Haiku per classificazioni veloci, Sonnet 4.6 per brain/conversazione) |
 | Code interne | BullMQ su Redis |
 | Process manager | systemd (NON PM2 — rimosso) |
 | Test | Vitest |
@@ -79,16 +133,16 @@ Due processi separati per ambiente:
 | File | Cosa fa |
 |------|---------|
 | `src/services/whatsapp.ts` | Connessione Baileys, invio messaggi, gestione reconnect, recovery messaggi offline |
-| `src/services/messageHandler.ts` | **Cervello del bot** — routing intent → azione, gestione stati conversazionali |
+| `src/services/messageHandler.ts` | Routing messaggi: onboarding attivo → brain. Dopo BOOK_FIELD invia scheda prenotazione dettagliata |
+| `src/services/brain.ts` | **Cervello AI del bot** — unica chiamata Claude Sonnet con contesto completo → `{ message, action, params }`. Nessuna frase hardcodata |
 | `src/services/inbound-queue.ts` | Debouncing messaggi in entrata (10s per JID), batch processing, recovery dopo crash |
-| `src/services/ai.ts` | Wrapper AI: classificazione intent, generazione testi inviti, requiresResponse() |
-| `src/services/intent-resolver.ts` | Classificazione intent con retry (max 5 tentativi), stati UNCLEAR su Redis |
-| `src/services/conversational-manager.ts` | Gestione conversazione fluida (fallback quando intent non chiaro) |
+| `src/services/ai.ts` | Wrapper AI: generazione testi inviti, requiresResponse(), inferGender() |
+| `src/services/conversational-manager.ts` | ⚠️ LEGACY — ancora presente ma non più nel path principale. Il brain gestisce tutto |
 
 ### Booking & Matchmaking
 | File | Cosa fa |
 |------|---------|
-| `src/services/booking.ts` | Flusso prenotazione step-by-step, buildRomeTime() per timezone IT, cerca match aperti |
+| `src/services/booking.ts` | buildRomeTime() per timezone IT — ancora usato per conversione orari. Flusso step-by-step legacy |
 | `src/services/matchmaker.ts` | Orchestra wave di inviti, trova match aperto, buildMatchSocialContext() |
 | `src/services/scoring.ts` | Selezione giocatori per wave (skill range, gender, reliability), processMatchOutcomes() |
 | `src/services/redirect.ts` | Algoritmo P1-P5: trova 5 alternative quando slot è pieno (redirectGroup) |
@@ -133,7 +187,7 @@ Tutti in `src/prompts/*.md` — modificabili senza toccare codice TypeScript.
 
 | Model | Ruolo |
 |-------|-------|
-| `Club` | Circolo — configura regole (matchLowerRange, matchUpperRange, waveMultiplier, maxDailyMessages) |
+| `Club` | Circolo — configura regole (matchLowerRange, matchUpperRange, waveMultiplier, maxDailyMessages, **city, address**) |
 | `Player` | Giocatore — skillLevel float 1.0-7.0 (assegnato SOLO dal club), reliabilityScore, dailyMessagesCount |
 | `Court` | Campo — nome, isCovered |
 | `Match` | Partita — status: OPEN→LOCKED→ARCHIVED, skillLevel, playersNeeded |
@@ -177,24 +231,29 @@ messageHandler._handleBatchInner()
     ├── Deduplication check (WhatsAppMessage.messageId)
     ├── Player lookup (by phoneNumber + clubId)
     │
-    ├── [STATO ATTIVO?] — controlla Redis in ordine:
-    │   ├── onboarding state → continueOnboarding()
-    │   ├── AWAITING_REDIRECT_CHOICE → confirmRedirectChoice()
-    │   ├── AWAITING_INVITATION_CHOICE → handleInvitationChoiceReply()
-    │   ├── booking state → continueBookingFlow()
-    │   └── altri AWAITING_* → handler specifico
+    ├── [ONBOARDING ATTIVO?] — controlla Redis:
+    │   └── onboarding state → continueOnboarding()
+    │       (nome → finalizzazione → pending-intent replay)
     │
-    ├── [NESSUNO STATO] → classifica intent (AI Haiku)
-    │   ├── YES/NO → gestione invitation PENDING
-    │   ├── BOOK → startBookingFlow()
-    │   ├── CANCEL → handleCancellation()
-    │   ├── BRING_FRIEND/GROUP/WHOLE_COURT → handler dedicato
-    │   ├── OPT_OUT → handleOptOut()
-    │   ├── INVITE_PREFERRED → gestione giocatori preferiti
-    │   └── UNKNOWN/UNCLEAR → conversational manager (fluido)
+    ├── [PLAYER NON TROVATO] → startSingleOnboarding() con pending-intent
+    │   ⚠️ setState PRIMA di simulateTypingAndSend (evita race condition)
     │
-    └── [PLAYER NON TROVATO] → startSingleOnboarding() con pending-intent
+    └── [PLAYER TROVATO, NESSUN ONBOARDING] → brain.ts
+        ├── buildBrainContext() — carica inviti, partite, messaggi recenti
+        ├── callBrain() → Claude Sonnet → { message, action, params }
+        ├── simulateTypingAndSend(message)
+        └── executeAction(action, params)
+            ├── NONE — solo risposta conversazionale
+            ├── ACCEPT_INVITATION — transazione con SELECT FOR UPDATE
+            ├── REJECT_INVITATION
+            ├── CANCEL_MATCH — riapre match se era LOCKED
+            ├── BOOK_FIELD — crea/unisce match + wave → restituisce matchId
+            │   └── ➜ messageHandler invia scheda prenotazione (campo, prezzo, indirizzo)
+            ├── OPT_OUT — player.active = false + notifica admin
+            └── INVITE_PREFERRED — cerca player per nome nel club
 ```
+
+**BrainAction types:** `NONE | ACCEPT_INVITATION | REJECT_INVITATION | CANCEL_MATCH | BOOK_FIELD | OPT_OUT | INVITE_PREFERRED`
 
 ---
 
@@ -231,7 +290,7 @@ La dimensione di ogni wave non usa un moltiplicatore fisso, ma accumula giocator
 - Float **1.0–7.0** (standard padel internazionale)
 - Assegnato **ONLY** dal club: skill test fisico o modifica manuale dalla dashboard
 - Il bot **non chiede mai** il livello all'utente
-- Nuovi giocatori registrati con `skillLevel: 0` in attesa di skill test
+- Nuovi giocatori registrati con `skillLevel: 0` in attesa di skill test (non ricevono wave, possono prenotare campi)
 - Le wave rispettano `matchLowerRange` / `matchUpperRange` del club (es. ±1.0)
 
 ---
@@ -253,6 +312,8 @@ La dimensione di ogni wave non usa un moltiplicatore fisso, ma accumula giocator
 - **Race condition**: transazioni Prisma con `SELECT ... FOR UPDATE` per operazioni critiche (accettazione invito)
 - **Prompts**: in `src/prompts/*.md`, caricati a runtime — modificabili senza redeploy del codice
 - **Nessun livello self-assigned**: skillLevel solo da club, mai da onboarding o conversazione
+- **Nessun playerCount**: ogni giocatore prenota sempre per sé solo (4 posti totali). `INVITE_PREFERRED` è l'unico modo per coinvolgere un amico specifico
+- **DB reset script**: `src/scripts/db-reset.ts` — usare con `DATABASE_URL="$DIRECT_URL_STAGING" npx tsx src/scripts/db-reset.ts`
 
 ---
 
@@ -269,6 +330,9 @@ La dimensione di ogni wave non usa un moltiplicatore fisso, ma accumula giocator
 | buildRomeTime() | Evita doppia conversione UTC quando l'utente fornisce orario italiano |
 | cleanup-pending-invitations ogni ora | Invitation PENDING su match passati inquinano acceptanceRate e statistiche |
 | selectPlayersForWave esclude tutti gli invitati | Evita reinviti per lo stesso match (qualsiasi status) |
+| Brain + scheda separata per BOOK_FIELD | Il brain non conosce il campo al momento della risposta — scheda inviata dopo executeAction con dati reali |
+| OPT_OUT rilevato da AI (brain) | Nessun "rispondi stop" nei messaggi — il brain capisce naturalmente "non voglio più messaggi" e simili |
+| `prisma db push` invece di `migrate dev` | DB Supabase condiviso ha drift dalla migration history — db push sincronizza senza toccarla |
 
 ---
 
