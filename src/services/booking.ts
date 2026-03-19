@@ -165,11 +165,6 @@ async function searchAndProposeMatches(
     to: Date,
     messageKey?: any
 ): Promise<void> {
-    if (player.skillLevel <= 0) {
-        await simulateTypingAndSend(jid, "Per giocare con noi devi prima fare lo Skill Test con il maestro 🎾 Ti contatteremo noi per organizzarlo!", messageKey);
-        return;
-    }
-
     const openMatches = await prisma.match.findMany({
         where: {
             clubId: player.clubId,
@@ -456,14 +451,18 @@ async function _continueBookingFlowInner(
     }
 
     if (state.step === 'AWAITING_SKILL_TEST_CONFIRMATION') {
-        const text = messageText.toLowerCase();
-        if (text.includes('si') || text.includes('sno') || text.includes('ok') || text.includes('certo') || text.includes('confermo')) {
-            await simulateTypingAndSend(jid, ["Ottimo! Ti ho messo in lista. Riceverai un messaggio dal nostro maestro per fissare l'orario della valutazione! 🎾", "Perfetto! Sei in lista per lo Skill Test 🎾 Il maestro ti contatterà presto!", "Aggiunto alla lista! Ti avvisiamo non appena il maestro è disponibile per la valutazione 💪"][Math.floor(Math.random() * 3)], messageKey);
-            // Opzionale: notifiche al gestore o salvataggio da qualche parte
+        const stResp = await anthropic.messages.create({
+            model: 'claude-haiku-4-5-20251001',
+            max_tokens: 10,
+            temperature: 0,
+            messages: [{ role: 'user', content: `L'utente ha risposto a "vuoi essere contattato per lo Skill Test?". Risposta: "${messageText}". Ha detto SI (vuole essere contattato/vuole fissarlo) o NO (aspetta/non ora)? Rispondi solo SI o NO.` }],
+        });
+        const stAnswer = (stResp.content[0] as any).text?.trim().toUpperCase();
+        if (stAnswer === 'SI' || stAnswer === 'SÌ') {
+            await simulateTypingAndSend(jid, 'Perfetto! Ti abbiamo messo in lista 🎾 Il nostro maestro ti contatterà presto per fissare lo Skill Test. Nel frattempo, se hai domande scrivimi pure!', messageKey);
         } else {
-            await simulateTypingAndSend(jid, ["Nessun problema. Se cambi idea, scrivimi pure per prenotare il tuo Skill Test! 🎾", "Ok, capito! Quando vuoi farlo, basta che mi scrivi 🎾", "Perfetto, nessun problema! Sono qui quando sei pronto per la valutazione 😊"][Math.floor(Math.random() * 3)], messageKey);
+            await simulateTypingAndSend(jid, 'Nessun problema! Saremo noi a contattarti a breve 😊 Se cambi idea o hai domande, sono qui.', messageKey);
         }
-        const { clearBookingState } = await import('./booking');
         await clearBookingState(jid);
         return;
     }
@@ -641,13 +640,18 @@ async function createNewMatch(
         return;
     }
 
+    // Giocatori senza livello (pending skill test) non possono fare matchmaking —
+    // creiamo il campo ma senza wave. Il match è OPEN ma nessuno viene invitato.
+    const isPendingSkillTest = player.skillLevel <= 0;
+    const matchSkillLevel = isPendingSkillTest ? 1.0 : player.skillLevel;
+
     const match = await prisma.match.create({
         data: {
             clubId,
             courtId: freeCourt?.id,
             startTime,
             isMixed: context.isMixed ?? false,
-            skillLevel: player.skillLevel,
+            skillLevel: matchSkillLevel,
             allowMixedLevels: player.club?.allowMixedLevels ?? false,
             playersNeeded: 4,
             status: playerCount >= 4 ? 'LOCKED' : 'OPEN',
@@ -657,9 +661,9 @@ async function createNewMatch(
     await prisma.matchPlayer.create({ data: { matchId: match.id, playerId: player.id } });
     await prisma.invitation.create({ data: { matchId: match.id, playerId: player.id, status: 'ACCEPTED' } });
 
-    // Ogni spot rimanente cercato tramite wave — nessun placeholder
+    // Lancia wave solo se il giocatore ha un livello valido
     const spotsNeeded = match.playersNeeded - 1;
-    if (spotsNeeded > 0) {
+    if (spotsNeeded > 0 && !isPendingSkillTest) {
         await waveQueue.add('process-wave', {
             matchId: match.id,
             waveNumber: 1,
@@ -674,11 +678,10 @@ async function createNewMatch(
 
     const courtName = freeCourt?.name || 'Campo';
     const timeStr = startTime.toLocaleTimeString('it-IT', { timeZone: 'Europe/Rome', hour: '2-digit', minute: '2-digit' });
-    await simulateTypingAndSend(
-        jid,
-        `Partita aperta! 🏟️ ${courtName} ${freeCourt?.isCovered ? '🏠' : '☀️'} · ${timeStr}${cost > 0 ? ` · €${(cost / 4).toFixed(2)} a testa` : ''} · Cerco altri ${spotsNeeded} giocatori!`,
-        messageKey
-    );
+    const searchingMsg = isPendingSkillTest
+        ? `Campo prenotato! 🏟️ ${courtName} ${freeCourt?.isCovered ? '🏠' : '☀️'} · ${timeStr}${cost > 0 ? ` · €${(cost / 4).toFixed(2)} a testa` : ''} · Porta i tuoi amici e divertitevi! 🎾`
+        : `Partita aperta! 🏟️ ${courtName} ${freeCourt?.isCovered ? '🏠' : '☀️'} · ${timeStr}${cost > 0 ? ` · €${(cost / 4).toFixed(2)} a testa` : ''} · Cerco altri ${spotsNeeded} giocatori!`;
+    await simulateTypingAndSend(jid, searchingMsg, messageKey);
 }
 
 // ─────────────────────────────────────────────

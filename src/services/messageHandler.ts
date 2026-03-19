@@ -118,7 +118,6 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[], cor
     // separati → doppio onboarding, stati conversazionali duplicati, loop di messaggi.
     jid = `${phoneNumber}@s.whatsapp.net`;
 
-    const pushName = messages[0]?.raw?.pushName;
     logger.info(`Batch: ${messages.length} msg from ${phoneNumber}`);
 
     // ── Persisti ─────────────────────────────────────────────────
@@ -131,7 +130,7 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[], cor
 
             if (content) {
                 const messageId = msg.raw.key?.id;
-                
+
                 if (messageId) {
                     const existing = await prisma.whatsAppMessage.findFirst({
                         where: { messageId }
@@ -160,8 +159,8 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[], cor
 
     // Se tutti i messaggi sono stati skippati (duplicati), esci presto
     if (filteredMessages.length === 0 && messages.length > 0) {
-         logger.info({ jid }, 'All messages in batch were duplicates, stopping early');
-         return;
+        logger.info({ jid }, 'All messages in batch were duplicates, stopping early');
+        return;
     }
     messages = filteredMessages; // lavora solo su quelli nuovi
 
@@ -181,10 +180,10 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[], cor
                     await simulateTypingAndSend(
                         jid,
                         [
-                    "Non riesco ad ascoltare il messaggio vocale al momento 😅 Puoi scrivermi?",
-                    "Non riesco ad elaborare l'audio in questo momento 🙉 Prova a scrivere!",
-                    "Ho problemi con l'audio adesso 😅 Scrivimi quello che volevi dire!",
-                ][Math.floor(Math.random() * 3)],
+                            "Non riesco ad ascoltare il messaggio vocale al momento 😅 Puoi scrivermi?",
+                            "Non riesco ad elaborare l'audio in questo momento 🙉 Prova a scrivere!",
+                            "Ho problemi con l'audio adesso 😅 Scrivimi quello che volevi dire!",
+                        ][Math.floor(Math.random() * 3)],
                         undefined
                     );
                     return;
@@ -195,244 +194,106 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[], cor
 
     // ── Estrai contesto dal batch ─────────────────────────────────
     const contactCards = messages.filter(m => m.type === 'contact' && m.contactPhone);
-    const firstCard = contactCards[0];
     const textMessages = messages.filter(m => m.type === 'text' && m.text);
     const combinedText = textMessages.map(m => m.text).join(' ').trim();
-    // undefined è definito nel wrapper esterno handleBatch e usato nel fallback
-    // qui usiamo quello del batch corrente per i messaggi normali
-    const batchFirstKey = messages[0]?.raw?.key;
 
-    // ─────────────────────────────────────────
-    // STEP 1: stati conversazionali attivi
-    // (priorità assoluta su tutto il resto)
-    // ─────────────────────────────────────────
-
-    // 1a. Onboarding nuovo giocatore
+    // ─── ONBOARDING ───
     const onboardingState = await getOnboardingState(jid);
     if (onboardingState) {
         const input = combinedText || contactCards.map(c => `${c.contactName || ''} ${c.contactPhone || ''}`).join(' ').trim();
-        // Passa phoneNumber già risolto (gestisce LID → numero italiano)
         if (input) await continueOnboarding(jid, input, onboardingState.step, { ...onboardingState.data, resolvedPhone: phoneNumber });
         return;
     }
 
-    // 1b. Redirect in attesa di conferma scelta
+    const currentClubId = process.env.CLUB_ID;
+    const phoneVariants = [phoneNumber, '+' + phoneNumber, phoneNumber.replace(/^\+/, '')];
+    const player = await prisma.player.findFirst({
+        where: { phoneNumber: { in: phoneVariants }, clubId: currentClubId ? currentClubId : { not: '' } }
+    });
+    let club = currentClubId
+        ? await prisma.club.findUnique({ where: { id: currentClubId } })
+        : await prisma.club.findFirst();
+    if (!club) club = await prisma.club.findFirst();
+
+    if (!player) {
+        // Nuovo utente — avvia onboarding
+        const onboardingConfig = {
+            clubId: club?.id || '',
+            botName: club?.name || 'Bot',
+            welcomeMessage: `Ciao! 👋 Come ti chiami?`,
+            askAvailability: false,
+            askTimePreference: false,
+            skipLevel: true,
+            notifyAdminOnNewPlayer: true,
+            allowMixedLevels: club?.allowMixedLevels ?? false,
+            maxDailyMessages: club?.maxDailyMessages ?? 2,
+        };
+        // Salva intent pendente così viene ripreso dopo l'onboarding
+        if (combinedText) {
+            const { setState } = await import('./conversation-state');
+            await setState(`state:pending-intent:${jid}`, { intent: 'PENDING', combinedText }, 600);
+        }
+        await startSingleOnboarding(jid, onboardingConfig);
+        return;
+    }
+
+    // ─── REDIRECT CHOICE ───
     const redirectState = await getStateByRole(jid, 'AWAITING_REDIRECT_CHOICE');
     if (redirectState && combinedText) {
         await confirmRedirectChoice(jid, combinedText, redirectState);
         return;
     }
 
-    // 1b2. Scelta tra più invitation pending
-    const invChoiceState = await getAwaitingState(jid);
-    if (invChoiceState?.role === 'AWAITING_INVITATION_CHOICE' && combinedText) {
-        await handleInvitationChoiceReply(jid, phoneNumber, combinedText, invChoiceState.data);
-        return;
-    }
-
-    // 1c. Booking flow attivo
-    const bookingState = await getBookingState(jid);
-    if (bookingState) {
-        const contactInfo = firstCard ? { phone: firstCard.contactPhone, name: firstCard.contactName } : null;
-        // Se il giocatore non esiste ancora, consideriamo lo stato 'stale' e procediamo a conversazione fluida
-        const currentClubId = process.env.CLUB_ID;
-        const playerExists = await prisma.player.findFirst({ 
-            where: { 
-                phoneNumber, 
-                clubId: currentClubId ? currentClubId : { not: '' } 
-            } 
-        });
-        if (playerExists) {
-            await continueBookingFlow(jid, combinedText, contactInfo, bookingState);
-            return;
-        } else {
-            logger.warn({ jid, phoneNumber }, 'Booking state found for unknown player — ignoring state to allow fluid interaction');
-            // Opzionale: puliamo lo stato sporco
-            const { clearBookingState } = await import('./booking');
-            await clearBookingState(jid);
-        }
-    }
-
-    // 1d. Awaiting friend phone/level
-    const awaitingState = await getAwaitingState(jid);
-    if (awaitingState) {
-        if (awaitingState.role === 'AWAITING_SKILL_TEST_CONFIRM') {
-            const { handleSkillTestConfirm } = await import('./onboarding');
-            await handleSkillTestConfirm(jid, combinedText, awaitingState.data, batchFirstKey);
-            return;
-        }
-
-        if (awaitingState.role === 'AWAITING_PREFERRED_PLAYERS') {
-            const { processPreferredPlayers } = await import('./onboarding');
-            await processPreferredPlayers(jid, combinedText, awaitingState.data, batchFirstKey);
-            return;
-        }
-
-        if (awaitingState.role === 'AWAITING_FRIEND_PHONE' || awaitingState.role === 'AWAITING_GROUP_PHONES') {
-            if (contactCards.length > 0) {
-                // Processa TUTTE le card ricevute in sequenza
-                for (const card of contactCards) {
-                    await processFriendPhone(
-                        jid,
-                        `${card.contactPhone} ${card.contactName || ''}`.trim(),
-                        awaitingState.data,
-                        undefined,
-                        { phone: card.contactPhone!, name: card.contactName }
-                    );
-                }
-
-                // Se Mario aveva detto N amici ma ha mandato meno card, notificalo
-                const expectedCount = awaitingState.data.expectedFriendCount || 1;
-                const receivedCount = contactCards.length;
-                if (receivedCount < expectedCount) {
-                    const missing = expectedCount - receivedCount;
-                    await simulateTypingAndSend(
-                        jid,
-                        `Ho ricevuto ${receivedCount} contatt${receivedCount === 1 ? 'o' : 'i'} su ${expectedCount}. Mancano ancora ${missing} — intanto ho segnato quelli che mi hai mandato, il posto per ${missing} è riservato sotto tua responsabilità 👍`,
-                        undefined
-                    );
-                }
-            } else if (combinedText) {
-                await processFriendPhone(jid, combinedText, awaitingState.data);
-            }
-            return;
-        }
-
-        if (awaitingState.role === 'AWAITING_FRIEND_LEVEL' && combinedText) {
-            await processFriendLevel(jid, combinedText, awaitingState.data);
-            return;
-        }
-    }
-
-    // ─────────────────────────────────────────
-    // STEP 2: Recupero storia recente
-    // ─────────────────────────────────────────
-    const recentMessages = await prisma.whatsAppMessage.findMany({
-        where: { chatId: jid },
-        take: 15,
-        orderBy: { timestamp: 'desc' }
-    });
-    const historyText = recentMessages.slice().reverse()
-        .map(m => `${m.role === 'USER' ? 'User' : 'Bot'}: ${m.content}`)
-        .join('\n');
-
-    // 1e. Clarification (intent poco chiaro, tentativi in corso)
-    const unclearState = await getUnclearState(jid);
-    if (unclearState && combinedText) {
-        const result = await classifyWithConfidence(combinedText, unclearState.context, historyText);
-        if (result.confident && result.intent !== 'UNKNOWN') {
-            await clearUnclearState(jid);
-            // Riprocessa con intent chiaro
-            conversationalPhase.set(getCorrelationId() || correlationId, true);
-    await routeIntent(jid, phoneNumber, result.intent, combinedText, contactCards);
-        } else {
-            await handleUnclearIntent(
-                jid,
-                combinedText,
-                unclearState.attempt,
-                unclearState.context,
-                unclearState.availableIntents,
-                undefined
-            );
-        }
-        return;
-    }
-
-    // ─────────────────────────────────────────
-    // STEP 2: risoluzione club e caricamento player
-    // ─────────────────────────────────────────
-
-    const currentClubId = process.env.CLUB_ID;
-    // ✅ FIX: normalizza numero di telefono per lookup — gestisce sia '393...' che '+393...'
-    const phoneVariants = [phoneNumber, '+' + phoneNumber, phoneNumber.replace(/^\+/, '')];
-    const player = await prisma.player.findFirst({ 
-        where: { 
-            phoneNumber: { in: phoneVariants },
-            clubId: currentClubId ? currentClubId : { not: '' } 
-        } 
-    });
-    
-    // Identifica il club
-    let club = null;
-    if (currentClubId) {
-        club = await prisma.club.findUnique({ where: { id: currentClubId } });
-    } else {
-        const clubCount = await prisma.club.count();
-        if (clubCount === 1) {
-            club = await prisma.club.findFirst();
-        } else {
-            club = await prisma.club.findFirst({ where: { groupJids: { has: jid } } });
-        }
-    }
-    if (!club) club = await prisma.club.findFirst(); // fallback al primo se proprio non lo sappiamo
-
-    // Nota: skillLevel <= 0 (pending skill test) non blocca la conversazione.
-    // Il wave system esclude già questi giocatori (filtro gt:0 in scoring.ts).
-    // Il messaggio sullo skill test viene mandato una volta sola durante l'onboarding.
-
-    // ─────────────────────────────────────────
-    // STEP 3: classifica intent e routing fluido
-    // ─────────────────────────────────────────
-
-    let intent: string;
-    let confident: boolean;
-
-    if (contactCards.length > 0 && !combinedText) {
-        intent = 'BRING_FRIEND';
-        confident = true;
-    } else if (combinedText) {
-        // ✅ FIX: fornisci contesto inviti pendenti per aumentare confidenza classificazione
-        let classifyContext: string | undefined;
-        if (player) {
-            const pendingInvCount = await prisma.invitation.count({
-                where: { playerId: player.id, status: 'PENDING', match: { status: 'OPEN' } }
-            });
-            if (pendingInvCount > 0) {
-                classifyContext = `Il giocatore ha ${pendingInvCount} invito/i pendente/i per partite di padel (in attesa di accettare o rifiutare).`;
-            }
-            const confirmedMatchCount = await prisma.matchPlayer.count({
-                where: { playerId: player.id, leftAt: null, match: { status: { in: ['OPEN', 'LOCKED'] } } }
-            });
-            if (confirmedMatchCount > 0) {
-                classifyContext = (classifyContext || '') + ` Il giocatore è già confermato in ${confirmedMatchCount} partita/e (possibile cancellazione).`;
-            }
-        }
-        const result = await classifyWithConfidence(combinedText, classifyContext, historyText);
-        intent = result.intent;
-        confident = result.confident;
-
-        // ✅ FIX: se ci sono inviti pendenti e l'intent è YES/NO/CANCEL, forza routing
-        // anche con confidence bassa (l'invito è il contesto sufficiente)
-
-    } else {
-        return;
-    }
-
-    // Se l'utente è sconosciuto O l'intent non è chiarissimo O è una domanda generica
-    // usiamo il ConversationalManager naturale invece del flusso rigido.
-    if (!player || !confident || intent === 'UNKNOWN' || intent === 'QUESTION') {
-        const fluidAction = await handleFluidConversation({
-            jid,
-            phoneNumber,
-            player,
-            club,
-            recentMessages: recentMessages.slice().reverse()
-        }, combinedText);
-
-        // Se l'AI fluida ha rilevato un impegno concreto (BOOK o BRING_FRIEND), bridge verso business logic
-        if (fluidAction) {
-            logger.info({ jid, action: fluidAction.intent, params: fluidAction.params }, 'Bridging fluid action to structured flow');
-            conversationalPhase.set(getCorrelationId() || correlationId, true);
-    await routeIntent(jid, phoneNumber, fluidAction.intent, combinedText, contactCards, club?.id, fluidAction.params);
-        }
-        return;
-    }
-
-    // Delay umano per intent confermati
-    await sleep(randomInt(8, 35) * 1000);
-
+    // ─── BRAIN ───
     conversationalPhase.set(getCorrelationId() || correlationId, true);
-    await routeIntent(jid, phoneNumber, intent as any, combinedText, contactCards, club?.id);
+
+    const { buildBrainContext, callBrain, executeAction } = await import('./brain');
+    const brainContext = await buildBrainContext(jid, phoneNumber);
+
+    const mappedContactCards = contactCards.map(c => ({ phone: c.contactPhone ?? undefined, name: c.contactName ?? undefined }));
+    const { message, action, params } = await callBrain(
+        brainContext,
+        combinedText || '(messaggio senza testo)',
+        mappedContactCards.length > 0 ? mappedContactCards : undefined,
+    );
+
+    await simulateTypingAndSend(jid, message, undefined);
+
+    // Persisti risposta bot
+    try {
+        await prisma.whatsAppMessage.create({
+            data: {
+                chatId: jid,
+                sender: 'bot',
+                role: 'BOT',
+                content: message,
+            },
+        });
+    } catch (err) {
+        logger.error({ err }, 'Failed to persist bot message');
+    }
+
+    // Aggiorna dailyMessagesCount
+    try {
+        await prisma.player.update({
+            where: { id: player.id },
+            data: { dailyMessagesCount: { increment: 1 } },
+        });
+    } catch (err) {
+        logger.error({ err }, 'Failed to update dailyMessagesCount');
+    }
+
+    if (action !== 'NONE') {
+        const result = await executeAction(action, params, player, club);
+        if (!result.success && result.errorMessage) {
+            await simulateTypingAndSend(jid, `Ops! ${result.errorMessage} 😕`);
+        }
+        // OPT_OUT: notifica admin
+        if (action === 'OPT_OUT') {
+            const { notifyAdmin } = await import('../utils/notify-admin');
+            notifyAdmin(`⚠️ OPT_OUT: ${player.name || phoneNumber} (${phoneNumber}) ha disattivato i messaggi.`).catch(() => {});
+        }
+    }
 }
 
 // ─────────────────────────────────────────────
@@ -481,6 +342,8 @@ async function routeIntent(
             askTimePreference: false,
             skipLevel: true,
             notifyAdminOnNewPlayer: true,
+            allowMixedLevels: club.allowMixedLevels ?? false,
+            maxDailyMessages: club.maxDailyMessages ?? 2,
         });
         return;
     }

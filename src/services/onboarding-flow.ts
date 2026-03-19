@@ -229,13 +229,12 @@ export async function startSingleOnboarding(
     senderJid: string,
     config: ClubOnboardingConfig
 ): Promise<void> {
-    const botName = config.botName || 'Padel Bot';
-    const welcome = config.welcomeMessage ||
-        `Ciao! Sono ${botName} 🎾 Ti aggiungo al sistema per ricevere inviti alle partite.\n\nCome ti chiami?`;
-
-    await simulateTypingAndSend(senderJid, welcome);
-
+    // Setta lo stato PRIMA di inviare il messaggio — evita race condition
+    // se un secondo batch arriva durante la typing simulation
     await setOnboardingState(senderJid, 'AWAITING_NAME', { config });
+
+    const welcome = config.welcomeMessage || `Ciao! 👋 Come ti chiami?`;
+    await simulateTypingAndSend(senderJid, welcome);
 }
 
 export async function continueOnboarding(
@@ -249,18 +248,30 @@ export async function continueOnboarding(
 
     if (step === 'AWAITING_NAME') {
         // ✅ USA AI per estrarre il nome — gestisce "mi chiamo X", "sono X", "X" ecc.
-        let name = messageText.trim();
+        let name: string | null = null;
         try {
             const { anthropic } = await import('./ai');
             const response = await anthropic.messages.create({
                 model: 'claude-haiku-4-5-20251001',
                 max_tokens: 20,
                 temperature: 0,
-                messages: [{ role: 'user', content: `Estrai solo il nome proprio da questo messaggio WhatsApp. Rispondi SOLO con il nome, nient'altro. Se non trovi un nome, rispondi con il messaggio originale. Messaggio: "${messageText}"` }],
+                messages: [{ role: 'user', content: `Estrai solo il nome proprio da questo messaggio WhatsApp. Rispondi SOLO con il nome, nient'altro. Se non riesci a trovare un nome proprio rispondi con "NULL". Messaggio: "${messageText}"` }],
             });
             const extracted = response.content[0].type === 'text' ? response.content[0].text.trim() : null;
-            if (extracted && extracted.length > 0 && extracted.length < 30) name = extracted;
-        } catch { /* usa il testo originale come fallback */ }
+            if (extracted && extracted.length > 0 && extracted.length < 30 && extracted.toUpperCase() !== 'NULL') {
+                name = extracted;
+            }
+        } catch { /* nessun nome estratto */ }
+
+        // Se non abbiamo un nome valido, l'utente ha inviato qualcosa che non è un nome
+        // (es. una richiesta di prenotazione). Aggiorna l'intent pendente e ri-chiedi il nome.
+        if (!name) {
+            const { setState } = await import('./conversation-state');
+            await setState(`state:pending-intent:${senderJid}`, { intent: 'PENDING', combinedText: messageText }, 600);
+            await simulateTypingAndSend(senderJid, `Capito! Ma prima dimmi il tuo nome così ti registro 😊`, messageKey);
+            return;
+        }
+
         // Capitalizza prima lettera
         name = name.charAt(0).toUpperCase() + name.slice(1).toLowerCase();
         // Livello -1 = pending skill test — assegnato solo dal circolo tramite skill test o dashboard
@@ -329,17 +340,10 @@ async function finalizeOnboarding(senderJid: string, stateData: any, messageKey?
 
     await clearOnboardingState(senderJid);
 
-    // Messaggio 1 — benvenuto nella community
+    // Messaggio di benvenuto — caldo, skill test menzionato en passant senza pressione
     await simulateTypingAndSend(
         senderJid,
-        `Benvenuto ${name}! 🎾 Sei entrato in un circuito di giocatori organizzati per livello — persone che, come te, vogliono fare belle partite e conoscere nuova gente.`,
-        messageKey
-    );
-
-    // Messaggio 2 — spiegazione skill test
-    await simulateTypingAndSend(
-        senderJid,
-        `Per ricevere inviti alle partite ti chiediamo di fare uno **Skill Test** 📊 — una lezione con un nostro istruttore che ti dà una prima valutazione imparziale. Da lì il tuo punteggio viene calibrato e comincerai a ricevere inviti per giocare con persone misurate sul tuo livello.\n\nSaremo noi a contattarti per organizzarlo!`,
+        `Benvenuto ${name}! 🎾 Qui organizziamo partite tra giocatori dello stesso livello, così ogni match è sempre divertente e competitivo al punto giusto.\n\nPer abbinarti ai compagni giusti, ti contatteremo per una valutazione informale con il nostro maestro — niente di formale, solo per capire dove ti posizioni. Nel frattempo puoi già prenotare un campo quando vuoi!`,
         messageKey
     );
 
