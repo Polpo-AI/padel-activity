@@ -187,6 +187,7 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[], cor
         const onboardingConfig = {
             clubId: club?.id || '',
             botName: (club as any)?.botName || 'Francesca',
+            aiTone: club?.aiTone || undefined,
             askAvailability: false,
             askTimePreference: false,
             skipLevel: true,

@@ -32,7 +32,8 @@ const randomInt = (min: number, max: number) => Math.floor(Math.random() * (max 
 
 export interface ClubOnboardingConfig {
     clubId: string;
-    botName: string;                    // es. "Circolo Padel Roma Bot"
+    botName: string;
+    aiTone?: string;                    // tono del circolo — usato per generare i messaggi AI
     skipLevel?: boolean;                // se true, registra con skill 0 senza chiedere il livello
     welcomeMessage?: string;            // messaggio custom di benvenuto
     askAvailability: boolean;           // chiedi giorni preferiti?
@@ -239,7 +240,19 @@ export async function startSingleOnboarding(
     await setOnboardingState(senderJid, 'AWAITING_NAME', { config });
 
     const botName = config.botName || 'Francesca';
-    const welcome = config.welcomeMessage || `Ciao! Sono ${botName} 👋 Come ti chiami? Così ti salvo e ti aggiungo alla nostra community di giocatori 😊`;
+    let welcome = config.welcomeMessage || `Ciao! Sono ${botName} 👋 Lasciami nome e cognome così ti salvo — userai i tuoi dati solo per trovare partite con persone del tuo livello, nient'altro 🔒`;
+    if (!config.welcomeMessage && config.aiTone) {
+        try {
+            const { anthropic } = await import('./ai');
+            const response = await anthropic.messages.create({
+                model: 'claude-haiku-4-5-20251001',
+                max_tokens: 120,
+                temperature: 0.7,
+                messages: [{ role: 'user', content: `Scrivi il primo messaggio WhatsApp che ${botName} (assistente del circolo padel) invia a un nuovo contatto.\n\nTONO: ${config.aiTone}\nMAX: 2 frasi. Nessuna formattazione.\n\nIl messaggio deve:\n1. Presentarsi come ${botName}\n2. Chiedere esplicitamente "nome e cognome" (non solo "come ti chiami")\n3. Spiegare brevemente il perché: per entrare nella lista giocatori e trovare partite col proprio livello\n4. Rassicurare che i dati vengono usati solo per organizzare partite, non per altro\n\nScrivi solo il messaggio.` }],
+            });
+            if (response.content[0].type === 'text') welcome = response.content[0].text.trim();
+        } catch { /* usa il default */ }
+    }
     await simulateTypingAndSend(senderJid, welcome);
 }
 

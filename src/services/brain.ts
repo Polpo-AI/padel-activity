@@ -19,6 +19,7 @@ export type BrainAction =
     | 'CANCEL_MATCH'
     | 'BOOK_FIELD'
     | 'OPT_OUT'
+    | 'OPT_IN'
     | 'INVITE_PREFERRED'
     | 'SAVE_NOTE'
     | 'REQUEST_LESSON'
@@ -285,7 +286,8 @@ Rispondi SEMPRE con JSON valido: { "message": "...", "action": "NOME", "params":
   Messaggio di conferma: breve e caldo, es. "Perfetto, sei dentro! 🎾" — i dettagli (campo, prezzo, indirizzo) li manda il sistema subito dopo.
   ${skillTestPending ? 'Skill Test pendente: conferma la prenotazione ma NON promettere abbinamento altri giocatori.' : ''}
   ⚠️ ATTENZIONE: se il giocatore ha già partite confermate E chiede un nuovo slot, valuta se è una correzione o un'aggiunta (vedi regola RESCHEDULE sotto).
-- OPT_OUT — params: {} — utente non vuole più messaggi
+- OPT_OUT — params: {} — utente non vuole più messaggi / vuole essere rimosso dalla lista
+- OPT_IN — params: {} — utente vuole rientrare nella lista (es. "voglio ricominciare", "rimettimi dentro", "voglio ricevere partite di nuovo"). Usa solo se il giocatore risulta inattivo o lo chiede esplicitamente.
 - INVITE_PREFERRED — params: { "playerName": "..." } — utente vuole che un amico specifico venga invitato
 - SAVE_NOTE — params: { "note": "..." } — utente esprime una preferenza, abitudine o richiesta speciale (es. "voglio sempre giocare al coperto", "preferisco il mattino", "non mi piace la terra rossa"). Riassumi in una frase breve e salva. Puoi combinare con NONE per rispondere anche in modo conversazionale — in quel caso usa SAVE_NOTE e metti la risposta nel campo "message".
 - REQUEST_LESSON — params: { "day": "opzionale", "time": "opzionale" } — utente chiede di prenotare una lezione con il maestro. Rispondi con conferma che hai avvisato il maestro + durata + costo. Il maestro li contatterà per l'orario esatto.
@@ -509,6 +511,13 @@ export async function executeAction(
 
         if (action === 'OPT_OUT') {
             await prisma.player.update({ where: { id: player.id }, data: { active: false } });
+            return { success: true };
+        }
+
+        if (action === 'OPT_IN') {
+            await prisma.player.update({ where: { id: player.id }, data: { active: true } });
+            const { notifyAdmin } = await import('../utils/notify-admin');
+            notifyAdmin(`✅ OPT_IN: ${player.name || player.id} ha richiesto di rientrare nella lista.`).catch(() => {});
             return { success: true };
         }
 
