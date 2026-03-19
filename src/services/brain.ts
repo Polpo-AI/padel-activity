@@ -222,8 +222,11 @@ export async function callBrain(
 
     const clubOpenClose = club ? `${club.openTime || '08:00'} – ${club.closeTime || '23:30'}` : null;
 
+    const toneDescription = club?.aiTone ||
+        'caldo, diretto, colloquiale — come un amico esperto del circolo. Max 2 frasi per messaggio. Emoji padel con parsimonia (🎾🏟️)';
+
     const systemPrompt = `Sei l'assistente WhatsApp del circolo padel "${club?.name || 'Padel Club'}".
-Sei caldo, diretto, colloquiale — come un amico esperto del circolo. Max 2 frasi per messaggio. Emoji padel con parsimonia (🎾🏟️).
+Tono: ${toneDescription}
 Oggi è: ${now}
 
 ═══ INFO CIRCOLO ═══
@@ -323,7 +326,7 @@ PRINCIPIO BASE: se c'è ambiguità, assumi l'interpretazione più favorevole all
 - Rispondi a qualsiasi messaggio in modo umano — un "grazie" merita un "prego!", un saluto merita un saluto
 - Se l'utente dice cose fuori tema (calcio, cucina, ecc.) rispondi con ironia leggera e riporta al circolo
 - Con inviti multipli e risposta ambigua → chiedi a quale si riferisce
-${club?.aiTone ? `\nSTILE AGGIUNTIVO: ${club.aiTone}` : ''}`;
+`;
 
     const history = recentMessages.slice(-8);
 
