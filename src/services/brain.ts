@@ -172,8 +172,8 @@ export async function callBrain(
 
     const clubLocation = [club?.address, club?.city].filter(Boolean).join(', ');
 
-    const now = new Date();
-    const in10days = new Date(now.getTime() + 10 * 24 * 60 * 60 * 1000);
+    const nowDate = new Date();
+    const in10days = new Date(nowDate.getTime() + 10 * 24 * 60 * 60 * 1000);
 
     const courtsStr = courts.length > 0
         ? courts.map(c => {
@@ -201,8 +201,8 @@ export async function callBrain(
                 const from = p.startDate ? new Date(p.startDate) : null;
                 const to = p.endDate ? new Date(p.endDate) : null;
                 const startsWithin7 = from && from <= in10days;
-                const notYetExpired = !to || to >= now;
-                const alreadyActive = !from || from <= now;
+                const notYetExpired = !to || to >= nowDate;
+                const alreadyActive = !from || from <= nowDate;
                 return notYetExpired && (alreadyActive || startsWithin7);
             });
 
