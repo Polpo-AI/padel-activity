@@ -220,7 +220,6 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[], cor
         const onboardingConfig = {
             clubId: club?.id || '',
             botName: club?.name || 'Bot',
-            welcomeMessage: `Ciao! 👋 Come ti chiami?`,
             askAvailability: false,
             askTimePreference: false,
             skipLevel: true,
@@ -367,7 +366,6 @@ async function routeIntent(
         await startSingleOnboarding(jid, {
             clubId: club.id,
             botName: club.name || 'Padel Bot',
-            welcomeMessage: `Ciao! 👋 Come ti chiami?`,
             askAvailability: false,
             askTimePreference: false,
             skipLevel: true,

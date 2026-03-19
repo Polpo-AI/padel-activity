@@ -229,8 +229,13 @@ export async function startSingleOnboarding(
     senderJid: string,
     config: ClubOnboardingConfig
 ): Promise<void> {
-    // Setta lo stato PRIMA di inviare il messaggio — evita race condition
-    // se un secondo batch arriva durante la typing simulation
+    // Lock Redis NX atomico: previene doppio messaggio se due batch concorrenti
+    // passano entrambi il check "no state + no player" prima che il primo scriva su Redis
+    const redis = getRedis();
+    const lockKey = `onboarding_start:${senderJid}`;
+    const acquired = await redis.set(lockKey, '1', 'EX', 60, 'NX');
+    if (!acquired) return; // un'altra chiamata concorrente ha già avviato l'onboarding
+
     await setOnboardingState(senderJid, 'AWAITING_NAME', { config });
 
     const welcome = config.welcomeMessage || `Ciao! Dimmi come ti chiami così metto un nome al numero 😄`;

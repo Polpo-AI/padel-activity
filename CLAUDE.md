@@ -20,9 +20,10 @@ systemctl restart padel-staging padel-worker-staging
 git push origin HEAD:preview
 ```
 
-### 2. Mai impostare lo stato Redis DOPO aver inviato il messaggio
-**Bug reale:** `startSingleOnboarding` inviava il messaggio prima di salvare lo stato in Redis → il secondo batch del debounce trovava nessuno stato → inviava "Come ti chiami?" due volte.
-**Regola:** `setState(...)` SEMPRE prima di `simulateTypingAndSend(...)`.
+### 2. Lock Redis NX in `startSingleOnboarding` — non rimuoverlo mai
+**Bug reale (doppio):** (a) stato impostato DOPO il messaggio → race condition col debounce. (b) due `_handleBatchInner` concorrenti trovano entrambi "no state + no player" prima che il primo scriva Redis → doppio messaggio.
+**Fix in place:** `redis.set(lockKey, '1', 'EX', 60, 'NX')` all'inizio di `startSingleOnboarding` — atomico, garantisce un solo avvio per JID. NON rimuovere questo lock.
+**Regola aggiuntiva:** non hardcodiare `welcomeMessage` nelle config che chiamano `startSingleOnboarding` — usare il default della funzione.
 
 ### 3. Il nome del giocatore NON va mai estratto con fallback al testo grezzo
 **Bug reale:** `let name = messageText.trim()` come fallback → il messaggio intero ("voglio prenotare domani alle 18") diventava il nome del giocatore.
