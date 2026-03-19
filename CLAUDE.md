@@ -55,7 +55,12 @@ DATABASE_URL="postgresql://postgres.ildhffoxuufcbvmmqitj:...@aws-1-eu-west-1.poo
 ### 13. MAI usare `prisma db push --force-reset` — cancella tutto, Club incluso
 **Bug reale:** usato `--force-reset` per fixare `column notes does not exist` → ha droppato e ricreato tutte le tabelle, cancellando Club, Courts, dashboard credentials e CLUB_ID.
 **Regola:** usare sempre `prisma db push` (senza `--force-reset`). Se il client è desincronizzato dallo schema, il fix è `npx prisma generate` + restart — mai toccare i dati.
-**Per resettare solo i dati transienti:** usare `db-reset.ts` (cancella solo partite/giocatori/messaggi, non il Club).
+**Per resettare solo i dati transienti:** usare `db-reset.ts` (cancella partite/giocatori/messaggi, non il Club, e fa anche `redis.flushdb()` per evitare wave fantasma).
+
+### 14. Quando si resetta il DB di test, flushare anche Redis
+**Bug reale:** dopo un reset DB, BullMQ aveva job delayed in Redis per match che non esistevano più → wave partita su match ID inesistente → comportamento imprevisto (es. partita di Davide cancellata nonostante skill -1).
+**Regola:** `db-reset.ts` ora esegue anche `redis.flushdb()` automaticamente. Se si resetta il DB manualmente (es. cancellando tabelle a mano), eseguire anche `redis-cli flushdb` sul VPS.
+**Attenzione:** `flushdb` cancella TUTTI i job BullMQ — usare SOLO in ambiente di test/staging, MAI in produzione.
 
 ### 12. Dopo ogni `prisma db push`, rigenerare il client su VPS con `prisma generate`
 **Bug reale:** `notes` aggiunto allo schema, `db push` ok, ma il client JS sul VPS era vecchio → `Unknown argument 'notes'` a runtime → errore Prisma grezzo inviato all'utente.

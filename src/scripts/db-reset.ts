@@ -1,6 +1,7 @@
 import { PrismaClient } from '@prisma/client';
 import { Pool } from 'pg';
 import { PrismaPg } from '@prisma/adapter-pg';
+import Redis from 'ioredis';
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 const adapter = new PrismaPg(pool);
@@ -16,6 +17,15 @@ async function reset() {
     await prisma.whatsAppMessage.deleteMany();
     await prisma.player.deleteMany();
     console.log('DB reset OK');
+
+    // Flush Redis BullMQ queues to prevent ghost wave/maintenance jobs
+    // from re-running on non-existent matchIds after a DB reset.
+    // ⚠️ This deletes ALL Redis keys — do NOT run on production.
+    const redis = new Redis(process.env.REDIS_URL || '127.0.0.1:6379');
+    await redis.flushdb();
+    await redis.quit();
+    console.log('Redis flushed OK');
+
     await prisma.$disconnect();
     await pool.end();
 }
