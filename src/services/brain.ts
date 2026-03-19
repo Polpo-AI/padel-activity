@@ -63,6 +63,7 @@ export async function buildBrainContext(jid: string, phoneNumber: string): Promi
 
     const courts = await prisma.court.findMany({
         where: { clubId: club?.id, active: true },
+        include: { prices: true },
         orderBy: { name: 'asc' },
     });
 
@@ -171,8 +172,52 @@ export async function callBrain(
 
     const clubLocation = [club?.address, club?.city].filter(Boolean).join(', ');
 
+    const now = new Date();
+    const in10days = new Date(now.getTime() + 10 * 24 * 60 * 60 * 1000);
+
     const courtsStr = courts.length > 0
-        ? courts.map(c => `  - ${c.name}: ${c.isCovered ? '🏟️ coperto' : '☀️ scoperto'}${c.notes ? ` (${c.notes})` : ''}`).join('\n')
+        ? courts.map(c => {
+            const label = `${c.name}: ${c.isCovered ? '🏟️ coperto' : '☀️ scoperto'}${c.notes ? ` (${c.notes})` : ''}`;
+
+            if (!c.prices || c.prices.length === 0) return `  - ${label}`;
+
+            const standardPrices = c.prices.filter((p: any) => !p.startDate && !p.endDate);
+            const exceptionPrices = c.prices.filter((p: any) => p.startDate || p.endDate);
+
+            // Prezzo standard: mostra il range (min-max) oppure unico valore
+            let priceStr = '';
+            if (standardPrices.length > 0) {
+                const vals = standardPrices.map((p: any) => p.price);
+                const minP = Math.min(...vals);
+                const maxP = Math.max(...vals);
+                const perPerson = (v: number) => (v * 1.5 / 4).toFixed(0);
+                priceStr = minP === maxP
+                    ? `€${perPerson(minP)}/persona`
+                    : `€${perPerson(minP)}-${perPerson(maxP)}/persona a seconda dell'orario`;
+            }
+
+            // Prezzi speciali attivi ora o nei prossimi 7 giorni
+            const activeExceptions = exceptionPrices.filter((p: any) => {
+                const from = p.startDate ? new Date(p.startDate) : null;
+                const to = p.endDate ? new Date(p.endDate) : null;
+                const startsWithin7 = from && from <= in10days;
+                const notYetExpired = !to || to >= now;
+                const alreadyActive = !from || from <= now;
+                return notYetExpired && (alreadyActive || startsWithin7);
+            });
+
+            if (activeExceptions.length > 0) {
+                const vals = activeExceptions.map((p: any) => p.price);
+                const maxSpecial = Math.max(...vals);
+                const perPerson = (maxSpecial * 1.5 / 4).toFixed(0);
+                const from = activeExceptions[0].startDate ? new Date(activeExceptions[0].startDate).toLocaleDateString('it-IT') : null;
+                const to = activeExceptions[0].endDate ? new Date(activeExceptions[0].endDate).toLocaleDateString('it-IT') : null;
+                const period = from && to ? ` (dal ${from} al ${to})` : from ? ` (dal ${from})` : to ? ` (fino al ${to})` : '';
+                priceStr += priceStr ? ` | Tariffa speciale${period}: €${perPerson}/persona` : `Tariffa speciale${period}: €${perPerson}/persona`;
+            }
+
+            return `  - ${label}${priceStr ? ` — ${priceStr}` : ''}`;
+        }).join('\n')
         : '  nessun campo configurato';
 
     const systemPrompt = `Sei l'assistente WhatsApp del circolo padel "${club?.name || 'Padel Club'}".
