@@ -647,4 +647,26 @@ router.post('/debug/simulate-message', authMiddleware, async (req: Request, res:
     }
 });
 
+// ─────────────────────────────────────────────
+// TEST: Manda messaggio WA all'admin (verifica connessione + JID)
+// ─────────────────────────────────────────────
+router.post('/test-notification', authMiddleware, async (req: Request, res: Response) => {
+    try {
+        const clubId = (req as any).clubId;
+        const club = await prisma.club.findUnique({ where: { id: clubId }, select: { adminPhone: true, name: true } });
+        if (!club?.adminPhone) return res.status(400).json({ error: 'adminPhone non configurato' });
+
+        const { sendMessage, getConnectionStatus } = await import('../services/whatsapp');
+        const status = getConnectionStatus();
+        if (status !== 'open') return res.status(503).json({ error: `WhatsApp non connesso (stato: ${status})` });
+
+        const jid = `${club.adminPhone.replace(/\D/g, '')}@s.whatsapp.net`;
+        await sendMessage(jid, `🎾 *Test notifica Francesca*\nConnessione attiva. JID utilizzato: ${jid}`);
+        res.json({ ok: true, jid });
+    } catch (err: any) {
+        logger.error({ err }, 'test-notification failed');
+        res.status(500).json({ error: err.message });
+    }
+});
+
 export default router;

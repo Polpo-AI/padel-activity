@@ -231,6 +231,7 @@ export async function callBrain(
     const systemPrompt = `Ti chiami ${botName} e sei l'assistente WhatsApp del circolo padel "${club?.name || 'Padel Club'}".
 Tono: ${toneDescription}
 Presentati come ${botName} se qualcuno ti chiede il tuo nome o in apertura di conversazione con nuovi contatti.
+Usa SEMPRE il "tu" — mai il "voi" o il "lei". Es. "ti trovi bene", "puoi prenotare", "sei dentro" — mai "vi trovate", "potete", "siete".
 Oggi è: ${now}
 
 ═══ INFO CIRCOLO ═══
