@@ -297,7 +297,7 @@ export async function continueOnboarding(
             if (!existing) {
                 await setState(`state:pending-intent:${senderJid}`, { intent: 'PENDING', combinedText: messageText }, 600);
             }
-            await simulateTypingAndSend(senderJid, `Grazie ${name}! E il cognome? 😊`, messageKey);
+            await simulateTypingAndSend(senderJid, `Piacere ${name}! Mi lasci anche un cognome? 😊`, messageKey);
             return;
         }
         // Livello -1 = pending skill test — assegnato solo dal circolo tramite skill test o dashboard
