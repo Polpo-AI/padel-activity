@@ -19,6 +19,7 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { prisma } from '../services/db';
 import { waveQueue } from '../services/queue';
+import { sendMessage } from '../services/whatsapp';
 import * as jwt from 'jsonwebtoken';
 import * as bcrypt from 'bcrypt';
 import pino from 'pino';
@@ -656,7 +657,6 @@ router.post('/test-notification', authMiddleware, async (req: Request, res: Resp
         const club = await prisma.club.findUnique({ where: { id: clubId }, select: { adminPhone: true, name: true } });
         if (!club?.adminPhone) return res.status(400).json({ error: 'adminPhone non configurato' });
 
-        const { sendMessage } = await import('../services/whatsapp');
         const jid = `${club.adminPhone.replace(/\D/g, '')}@s.whatsapp.net`;
         await sendMessage(jid, `🎾 *Test notifica Francesca*\nConnessione attiva. JID utilizzato: ${jid}`);
         res.json({ ok: true, jid });
