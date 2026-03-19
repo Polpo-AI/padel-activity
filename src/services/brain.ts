@@ -19,7 +19,8 @@ export type BrainAction =
     | 'CANCEL_MATCH'
     | 'BOOK_FIELD'
     | 'OPT_OUT'
-    | 'INVITE_PREFERRED';
+    | 'INVITE_PREFERRED'
+    | 'SAVE_NOTE';
 
 export interface BrainResponse {
     message: string;
@@ -179,6 +180,7 @@ NON devi mai dire "errore tecnico" o cose simili — se non puoi fare qualcosa, 
 Nome: ${player?.name || 'non registrato'}
 Livello: ${player && player.skillLevel > 0 ? player.skillLevel + ' (scala 1-7, dove 1=principiante, 7=agonista)' : 'da assegnare — Skill Test in attesa'}
 ${skillTestPending ? 'NOTA: questo giocatore non ha ancora il livello. Può prenotare campi, ma non riceverà inviti automatici finché non completa lo Skill Test.' : ''}
+${player?.notes ? `Note/preferenze giocatore: ${player.notes}` : ''}
 
 ═══ INVITI IN ATTESA ═══
 ${invitationsStr}
@@ -205,6 +207,7 @@ Rispondi SEMPRE con JSON valido: { "message": "...", "action": "NOME", "params":
   ${skillTestPending ? 'Skill Test pendente: conferma la prenotazione ma NON promettere abbinamento altri giocatori.' : ''}
 - OPT_OUT — params: {} — utente non vuole più messaggi
 - INVITE_PREFERRED — params: { "playerName": "..." } — utente vuole che un amico specifico venga invitato
+- SAVE_NOTE — params: { "note": "..." } — utente esprime una preferenza, abitudine o richiesta speciale (es. "voglio sempre giocare al coperto", "preferisco il mattino", "non mi piace la terra rossa"). Riassumi in una frase breve e salva. Puoi combinare con NONE per rispondere anche in modo conversazionale — in quel caso usa SAVE_NOTE e metti la risposta nel campo "message".
 
 ═══ MENTALITÀ COMMERCIALE — PORTA SEMPRE A CASA IL RISULTATO ═══
 Il tuo obiettivo è vendere il campo e riempire la partita. Qualsiasi domanda o situazione strana va gestita in modo da non bloccare mai la prenotazione.
@@ -412,6 +415,15 @@ export async function executeAction(
             // Store as preferred player (no-op for now, matchmaker handles it)
             return { success: true };
         }
+
+        if (action === 'SAVE_NOTE') {
+            if (!params.note || typeof params.note !== 'string') return { success: true };
+            const existing = player.notes ? player.notes.trim() : '';
+            // Append new note, separated by '; ' if there's already content
+            const newNotes = existing ? `${existing}; ${params.note.trim()}` : params.note.trim();
+            await prisma.player.update({ where: { id: player.id }, data: { notes: newNotes } });
+            return { success: true };
+        }
     } catch (err: any) {
         logger.error({ err, action, params }, 'executeAction failed');
         return { success: false, errorMessage: err.message || 'Errore imprevisto.' };
@@ -472,7 +484,7 @@ async function createNewMatchAction(
     const occupiedIds = occupied.map(m => m.courtId).filter(Boolean) as string[];
     const freeCourt = await prisma.court.findFirst({
         where: { clubId: player.clubId, active: true, id: { notIn: occupiedIds } },
-        orderBy: { name: 'asc' },
+        orderBy: [{ isCovered: 'asc' }, { name: 'asc' }], // scoperto prima, coperto solo se non disponibili
     });
 
     if (!freeCourt) return { success: false, errorMessage: "Tutti i campi sono occupati a quell'orario." };

@@ -238,7 +238,7 @@ export async function startSingleOnboarding(
 
     await setOnboardingState(senderJid, 'AWAITING_NAME', { config });
 
-    const welcome = config.welcomeMessage || `Ciao! Dimmi come ti chiami così metto un nome al numero 😄`;
+    const welcome = config.welcomeMessage || `Ciao! Come ti chiami? Dimmi nome e cognome così ti registro 😄`;
     await simulateTypingAndSend(senderJid, welcome);
 }
 
@@ -252,48 +252,49 @@ export async function continueOnboarding(
     const { config } = stateData;
 
     if (step === 'AWAITING_NAME') {
-        // ✅ USA AI per estrarre il nome — gestisce "mi chiamo X", "sono X", "X" ecc.
+        // Estrae nome + cognome. Rifiuta nickname/nomi con numeri/nomi inventati.
         let name: string | null = null;
         try {
             const { anthropic } = await import('./ai');
             const response = await anthropic.messages.create({
                 model: 'claude-haiku-4-5-20251001',
-                max_tokens: 20,
+                max_tokens: 30,
                 temperature: 0,
-                messages: [{ role: 'user', content: `Estrai solo il nome proprio da questo messaggio WhatsApp. Rispondi SOLO con il nome, nient'altro. Se non riesci a trovare un nome proprio rispondi con "NULL". Messaggio: "${messageText}"` }],
+                messages: [{ role: 'user', content: `Estrai nome e cognome da questo messaggio WhatsApp di registrazione. Rispondi SOLO con "Nome Cognome" (prima lettera maiuscola). Regole:\n- Se contiene numeri o simboli (es. "pallina55", "user_123") → rispondi NULL\n- Se è un soprannome o nickname senza cognome plausibile → rispondi NULL\n- Se c'è solo il nome senza cognome, va bene restituire solo il nome se sembra reale\n- Se non riesci a trovare un nome reale → rispondi NULL\nMessaggio: "${messageText}"` }],
             });
             const extracted = response.content[0].type === 'text' ? response.content[0].text.trim() : null;
-            if (extracted && extracted.length > 0 && extracted.length < 30 && extracted.toUpperCase() !== 'NULL') {
-                name = extracted;
+            if (extracted && extracted.length > 0 && extracted.length < 60 && extracted.toUpperCase() !== 'NULL') {
+                // Doppia verifica: niente numeri nel risultato
+                if (!/\d/.test(extracted)) {
+                    // Capitalizza ogni parola
+                    name = extracted.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
+                }
             }
         } catch { /* nessun nome estratto */ }
 
-        // Se non abbiamo un nome valido, l'utente ha inviato qualcosa che non è un nome
-        // (es. una richiesta di prenotazione). Aggiorna l'intent pendente e ri-chiedi il nome.
+        // Se non abbiamo un nome valido, ri-chiedi spiegando cosa aspettiamo
         if (!name) {
             const { setState } = await import('./conversation-state');
             await setState(`state:pending-intent:${senderJid}`, { intent: 'PENDING', combinedText: messageText }, 600);
-            await simulateTypingAndSend(senderJid, `Capito! Ma prima dimmi il tuo nome così ti registro 😊`, messageKey);
+            await simulateTypingAndSend(senderJid, `Dimmi nome e cognome per registrarti — così ti riconosco quando prenoti 😊`, messageKey);
             return;
         }
-
-        // Capitalizza prima lettera
-        name = name.charAt(0).toUpperCase() + name.slice(1).toLowerCase();
         // Livello -1 = pending skill test — assegnato solo dal circolo tramite skill test o dashboard
         const updatedState = { ...stateData, name, skillLevel: -1 };
 
+        const firstName = name.split(' ')[0];
         if (config.askAvailability) {
             await setOnboardingState(senderJid, 'AWAITING_AVAILABILITY', updatedState);
             await simulateTypingAndSend(
                 senderJid,
-                `Piacere ${name}! 🤝 Che giorni sei disponibile di solito? (es. "lunedì e mercoledì sera", "weekend", "qualsiasi")`,
+                `Piacere ${firstName}! 🤝 Che giorni sei disponibile di solito? (es. "lunedì e mercoledì sera", "weekend", "qualsiasi")`,
                 messageKey
             );
         } else if (config.askTimePreference) {
             await setOnboardingState(senderJid, 'AWAITING_TIME_PREFERENCE', updatedState);
             await simulateTypingAndSend(
                 senderJid,
-                `Piacere ${name}! 🤝 Hai preferenze sull'orario? (es. "mattina", "sera dopo le 18", "no preference")`,
+                `Piacere ${firstName}! 🤝 Hai preferenze sull'orario? (es. "mattina", "sera dopo le 18", "no preference")`,
                 messageKey
             );
         } else {
@@ -345,10 +346,11 @@ async function finalizeOnboarding(senderJid: string, stateData: any, messageKey?
 
     await clearOnboardingState(senderJid);
 
+    const firstName = name?.split(' ')[0] || name;
     // Messaggio di benvenuto — caldo, skill test menzionato en passant senza pressione
     await simulateTypingAndSend(
         senderJid,
-        `Benvenuto ${name}! 🎾 Qui organizziamo partite tra giocatori dello stesso livello, così ogni match è sempre divertente e competitivo al punto giusto.\n\nPer abbinarti ai compagni giusti, ti contatteremo per una valutazione informale con il nostro maestro — niente di formale, solo per capire dove ti posizioni. Nel frattempo puoi già prenotare un campo quando vuoi!`,
+        `Benvenuto ${firstName}! 🎾 Qui organizziamo partite tra giocatori dello stesso livello, così ogni match è sempre divertente e competitivo al punto giusto.\n\nPer abbinarti ai compagni giusti, ti contatteremo per una valutazione informale con il nostro maestro — niente di formale, solo per capire dove ti posizioni. Nel frattempo puoi già prenotare un campo quando vuoi!`,
         messageKey
     );
 

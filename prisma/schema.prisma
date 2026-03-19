@@ -17,6 +17,7 @@ model Player {
   dailyMessagesCount Int                 @default(0)
   active             Boolean             @default(true)
   groupIds           String[]            @default([])
+  notes              String?
   clubId             String?
   invitations        Invitation[]
   MatchPlayer        MatchPlayer[]
