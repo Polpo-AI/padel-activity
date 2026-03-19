@@ -20,7 +20,9 @@ export type BrainAction =
     | 'BOOK_FIELD'
     | 'OPT_OUT'
     | 'INVITE_PREFERRED'
-    | 'SAVE_NOTE';
+    | 'SAVE_NOTE'
+    | 'REQUEST_LESSON'
+    | 'RESCHEDULE_MATCH';
 
 export interface BrainResponse {
     message: string;
@@ -156,6 +158,10 @@ export async function callBrain(
 
     const skillTestPending = !player || player.skillLevel <= 0;
 
+    const lessonInfo = club
+        ? `Lezione individuale: ${club.skillTestDuration || 60} min, ${club.skillTestCost > 0 ? club.skillTestCost + '€' : 'costo da definire'}`
+        : null;
+
     const clubLocation = [club?.address, club?.city].filter(Boolean).join(', ');
 
     const systemPrompt = `Sei l'assistente WhatsApp del circolo padel "${club?.name || 'Padel Club'}".
@@ -181,6 +187,7 @@ Nome: ${player?.name || 'non registrato'}
 Livello: ${player && player.skillLevel > 0 ? player.skillLevel + ' (scala 1-7, dove 1=principiante, 7=agonista)' : 'da assegnare — Skill Test in attesa'}
 ${skillTestPending ? 'NOTA: questo giocatore non ha ancora il livello. Può prenotare campi, ma non riceverà inviti automatici finché non completa lo Skill Test.' : ''}
 ${player?.notes ? `Note/preferenze giocatore: ${player.notes}` : ''}
+${lessonInfo ? `\n═══ LEZIONE INDIVIDUALE ═══\n${lessonInfo}\nIl maestro contatterà il giocatore per l'orario — il sistema invia solo la notifica.` : ''}
 
 ═══ INVITI IN ATTESA ═══
 ${invitationsStr}
@@ -199,8 +206,9 @@ Rispondi SEMPRE con JSON valido: { "message": "...", "action": "NOME", "params":
 - ACCEPT_INVITATION — params: { "invitationId": "..." } — utente conferma presenza a partita
 - REJECT_INVITATION — params: { "invitationId": "..." } — utente declina partita
 - CANCEL_MATCH — params: { "matchPlayerId": "..." } — utente vuole annullare partecipazione confermata
-- BOOK_FIELD — params: { "day": "YYYY-MM-DD o oggi/domani/lunedì/martedì/...", "time": "HH:MM", "joinMatchId": "id o null" }
+- BOOK_FIELD — params: { "day": "YYYY-MM-DD o oggi/domani/lunedì/martedì/...", "time": "HH:MM", "joinMatchId": "id o null", "preferCovered": false }
   Usa quando l'utente vuole giocare/prenotare e ha fornito giorno + orario.
+  preferCovered: true SOLO se l'utente lo chiede esplicitamente (es. "campo al coperto", "al chiuso").
   Se manca l'orario → NONE e chiedi solo quello.
   Se c'è una partita aperta compatibile → metti joinMatchId.
   Messaggio di conferma: breve e caldo, es. "Perfetto, sei dentro! 🎾" — i dettagli (campo, prezzo, indirizzo) li manda il sistema subito dopo.
@@ -208,6 +216,8 @@ Rispondi SEMPRE con JSON valido: { "message": "...", "action": "NOME", "params":
 - OPT_OUT — params: {} — utente non vuole più messaggi
 - INVITE_PREFERRED — params: { "playerName": "..." } — utente vuole che un amico specifico venga invitato
 - SAVE_NOTE — params: { "note": "..." } — utente esprime una preferenza, abitudine o richiesta speciale (es. "voglio sempre giocare al coperto", "preferisco il mattino", "non mi piace la terra rossa"). Riassumi in una frase breve e salva. Puoi combinare con NONE per rispondere anche in modo conversazionale — in quel caso usa SAVE_NOTE e metti la risposta nel campo "message".
+- REQUEST_LESSON — params: { "day": "opzionale", "time": "opzionale" } — utente chiede di prenotare una lezione con il maestro. Rispondi con conferma che hai avvisato il maestro + durata + costo. Il maestro li contatterà per l'orario esatto.
+- RESCHEDULE_MATCH — params: { "matchPlayerId": "...", "newDay": "YYYY-MM-DD o oggi/domani/lunedì/...", "newTime": "HH:MM" } — utente vuole spostare una partita confermata. Cancella quella vecchia e prenota il nuovo slot. Messaggio breve tipo "Fatto! Ho spostato la tua partita 🎾" — i dettagli arrivano subito dopo.
 
 ═══ MENTALITÀ COMMERCIALE — PORTA SEMPRE A CASA IL RISULTATO ═══
 Il tuo obiettivo è vendere il campo e riempire la partita. Qualsiasi domanda o situazione strana va gestita in modo da non bloccare mai la prenotazione.
@@ -345,8 +355,13 @@ export async function executeAction(
             const match = await prisma.match.findUnique({ where: { id: mp.matchId } });
             if (match?.status === 'LOCKED') {
                 await prisma.match.update({ where: { id: mp.matchId }, data: { status: 'OPEN' } });
-                const { handleMatchUnfillable } = await import('./recovery');
-                handleMatchUnfillable(mp.matchId).catch(() => {});
+                // Wave immediata con urgency x2: manca 1 posto ma invitiamo come se mancassero 2
+                await waveQueue.add('process-wave', {
+                    matchId: mp.matchId,
+                    waveNumber: 1,
+                    urgencyMultiplier: 2,
+                    scheduledAt: Date.now(),
+                }, { delay: 0 });
             }
 
             const { decreaseReliability } = await import('./scoring');
@@ -354,48 +369,55 @@ export async function executeAction(
             return { success: true };
         }
 
+        if (action === 'RESCHEDULE_MATCH') {
+            const startTime = parseBookingDateTime(params.newDay, params.newTime);
+            if (!startTime) return { success: false, errorMessage: 'Orario non valido.' };
+
+            const mp = await prisma.matchPlayer.findUnique({ where: { id: params.matchPlayerId } });
+            if (!mp) return { success: false, errorMessage: 'Partecipazione non trovata.' };
+
+            // 1. Cancella partecipazione vecchia
+            await prisma.matchPlayer.update({ where: { id: mp.id }, data: { leftAt: new Date() } });
+
+            // 2. Se LOCKED → riapri + wave immediata con urgency x2
+            const oldMatch = await prisma.match.findUnique({ where: { id: mp.matchId } });
+            if (oldMatch?.status === 'LOCKED') {
+                await prisma.match.update({ where: { id: mp.matchId }, data: { status: 'OPEN' } });
+                await waveQueue.add('process-wave', {
+                    matchId: mp.matchId,
+                    waveNumber: 1,
+                    urgencyMultiplier: 2,
+                    scheduledAt: Date.now(),
+                }, { delay: 0 });
+            }
+
+            const { decreaseReliability } = await import('./scoring');
+            await decreaseReliability(player.id).catch(() => {});
+
+            // 3. Prenota nuovo slot
+            return await bookSlotForPlayer(startTime, player, club);
+        }
+
+        if (action === 'REQUEST_LESSON') {
+            if (club?.adminAlternativePhone) {
+                const { simulateTypingAndSend } = await import('./whatsapp');
+                const dayPart = params.day ? ` (richiesta: ${params.day}${params.time ? ' alle ' + params.time : ''})` : '';
+                const msg = `🎾 Richiesta lezione da ${player.name || player.phoneNumber} (${player.phoneNumber})${dayPart}. Contattalo per confermare orario.`;
+                simulateTypingAndSend(`${club.adminAlternativePhone}@s.whatsapp.net`, msg).catch(() => {});
+            }
+            return { success: true };
+        }
+
         if (action === 'BOOK_FIELD') {
             const startTime = parseBookingDateTime(params.day, params.time);
             if (!startTime) return { success: false, errorMessage: 'Orario non valido.' };
 
-            // Join existing match if specified
             if (params.joinMatchId) {
                 const joinResult = await joinExistingMatch(params.joinMatchId, player);
                 return { ...joinResult, matchId: params.joinMatchId };
             }
 
-            // Search for open matches in ±30min window
-            const from = new Date(startTime.getTime() - 30 * 60 * 1000);
-            const to = new Date(startTime.getTime() + 30 * 60 * 1000);
-
-            if (player.skillLevel > 0) {
-                const skillMin = player.skillLevel - (club?.matchLowerRange ?? 1.0);
-                const skillMax = player.skillLevel + (club?.matchUpperRange ?? 1.0);
-                const existing = await prisma.match.findFirst({
-                    where: {
-                        clubId: player.clubId,
-                        status: 'OPEN',
-                        skillLevel: { gte: skillMin, lte: skillMax },
-                        startTime: { gte: from, lte: to },
-                        NOT: {
-                            OR: [
-                                { MatchPlayer: { some: { playerId: player.id, leftAt: null } } },
-                                { invitations: { some: { playerId: player.id, status: { in: ['PENDING', 'ACCEPTED'] } } } },
-                            ],
-                        },
-                    },
-                    include: { MatchPlayer: { where: { leftAt: null } } },
-                    orderBy: { startTime: 'asc' },
-                });
-
-                if (existing && existing.MatchPlayer.length < existing.playersNeeded) {
-                    const joinResult = await joinExistingMatch(existing.id, player);
-                    return { ...joinResult, matchId: existing.id };
-                }
-            }
-
-            // Create new match
-            return await createNewMatchAction(startTime, player, club); // returns { success, matchId }
+            return await bookSlotForPlayer(startTime, player, club, params.preferCovered === true);
         }
 
         if (action === 'OPT_OUT') {
@@ -475,10 +497,50 @@ async function joinExistingMatch(matchId: string, player: any): Promise<{ succes
     }
 }
 
+async function bookSlotForPlayer(
+    startTime: Date,
+    player: any,
+    club: any,
+    preferCovered: boolean = false,
+): Promise<{ success: boolean; errorMessage?: string; matchId?: string }> {
+    // Cerca match aperto compatibile nella finestra ±30min
+    const from = new Date(startTime.getTime() - 30 * 60 * 1000);
+    const to = new Date(startTime.getTime() + 30 * 60 * 1000);
+
+    if (player.skillLevel > 0) {
+        const skillMin = player.skillLevel - (club?.matchLowerRange ?? 1.0);
+        const skillMax = player.skillLevel + (club?.matchUpperRange ?? 1.0);
+        const existing = await prisma.match.findFirst({
+            where: {
+                clubId: player.clubId,
+                status: 'OPEN',
+                skillLevel: { gte: skillMin, lte: skillMax },
+                startTime: { gte: from, lte: to },
+                NOT: {
+                    OR: [
+                        { MatchPlayer: { some: { playerId: player.id, leftAt: null } } },
+                        { invitations: { some: { playerId: player.id, status: { in: ['PENDING', 'ACCEPTED'] } } } },
+                    ],
+                },
+            },
+            include: { MatchPlayer: { where: { leftAt: null } } },
+            orderBy: { startTime: 'asc' },
+        });
+
+        if (existing && existing.MatchPlayer.length < existing.playersNeeded) {
+            const joinResult = await joinExistingMatch(existing.id, player);
+            return { ...joinResult, matchId: existing.id };
+        }
+    }
+
+    return await createNewMatchAction(startTime, player, club, preferCovered);
+}
+
 async function createNewMatchAction(
     startTime: Date,
     player: any,
     club: any,
+    preferCovered: boolean = false,
 ): Promise<{ success: boolean; errorMessage?: string; matchId?: string }> {
     const occupied = await prisma.match.findMany({
         where: { clubId: player.clubId, status: { in: ['OPEN', 'LOCKED'] }, startTime },
@@ -487,7 +549,9 @@ async function createNewMatchAction(
     const occupiedIds = occupied.map(m => m.courtId).filter(Boolean) as string[];
     const freeCourt = await prisma.court.findFirst({
         where: { clubId: player.clubId, active: true, id: { notIn: occupiedIds } },
-        orderBy: [{ isCovered: 'asc' }, { name: 'asc' }], // scoperto prima, coperto solo se non disponibili
+        orderBy: preferCovered
+            ? [{ isCovered: 'desc' }, { name: 'asc' }]
+            : [{ isCovered: 'asc' }, { name: 'asc' }],
     });
 
     if (!freeCourt) return { success: false, errorMessage: "Tutti i campi sono occupati a quell'orario." };

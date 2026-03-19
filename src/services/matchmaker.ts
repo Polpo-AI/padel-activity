@@ -52,7 +52,7 @@ async function withMatchLock<T>(matchId: string, fn: () => Promise<T>): Promise<
 // Fase 2 (senza lock): invio messaggi WhatsApp (lento, non reversibile)
 // ─────────────────────────────────────────────
 
-export async function processWave(matchId: string, waveNumber: number): Promise<void> {
+export async function processWave(matchId: string, waveNumber: number, urgencyMultiplier: number = 1): Promise<void> {
     // ── FASE 1: Selezione e creazione invitation atomica ──────────────────
     const context = await withMatchLock(matchId, async () => {
         const match = await prisma.match.findUnique({
@@ -66,7 +66,8 @@ export async function processWave(matchId: string, waveNumber: number): Promise<
         }
 
         const confirmedCount = match.MatchPlayer.filter(mp => !mp.leftAt).length;
-        const spotsNeeded = match.playersNeeded - confirmedCount;
+        const actualSpotsNeeded = match.playersNeeded - confirmedCount;
+        const spotsNeeded = Math.max(actualSpotsNeeded, Math.round(actualSpotsNeeded * urgencyMultiplier));
 
         if (spotsNeeded <= 0) {
             logger.info(`Match ${matchId} already full, skipping wave ${waveNumber}`);

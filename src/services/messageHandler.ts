@@ -241,8 +241,8 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[], cor
         if (!result.success && result.errorMessage) {
             await simulateTypingAndSend(jid, `Ops! ${result.errorMessage} 😕`);
         }
-        // BOOK_FIELD: invia scheda prenotazione con dettagli campo + prezzo + indirizzo
-        if (action === 'BOOK_FIELD' && result.success && result.matchId) {
+        // BOOK_FIELD / RESCHEDULE_MATCH: invia scheda prenotazione con dettagli campo + prezzo + indirizzo
+        if ((action === 'BOOK_FIELD' || action === 'RESCHEDULE_MATCH') && result.success && result.matchId) {
             try {
                 const { calculateSlotCost } = await import('./pricing');
                 const match = await prisma.match.findUnique({

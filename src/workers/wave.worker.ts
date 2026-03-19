@@ -20,7 +20,7 @@ const prefix = process.env.QUEUE_PREFIX ? `${process.env.QUEUE_PREFIX}-` : '';
 const waveWorker = new Worker(
     `${prefix}wave`,
     async (job) => {
-        const { matchId, waveNumber, scheduledAt } = job.data;
+        const { matchId, waveNumber, scheduledAt, urgencyMultiplier } = job.data;
 
         // ✅ FIX: staleness check — scarta job troppo vecchi dopo un riavvio
         if (scheduledAt && Date.now() - scheduledAt > STALE_THRESHOLD_MS) {
@@ -32,7 +32,7 @@ const waveWorker = new Worker(
         }
 
         logger.info(`Processing wave ${waveNumber} for match ${matchId}`);
-        await processWave(matchId, waveNumber);
+        await processWave(matchId, waveNumber, urgencyMultiplier);
     },
     {
         connection,
