@@ -233,7 +233,7 @@ export async function startSingleOnboarding(
     // se un secondo batch arriva durante la typing simulation
     await setOnboardingState(senderJid, 'AWAITING_NAME', { config });
 
-    const welcome = config.welcomeMessage || `Ciao! 👋 Come ti chiami?`;
+    const welcome = config.welcomeMessage || `Ciao! Dimmi come ti chiami così metto un nome al numero 😄`;
     await simulateTypingAndSend(senderJid, welcome);
 }
 
