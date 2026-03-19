@@ -40,6 +40,14 @@ let batchHandler: BatchHandler | null = null;
 const recentMsgIds = new Set<string>();
 const DEDUP_WINDOW_MS = 60000; // 1 minute window
 
+// Secondary dedup by content hash — catches Baileys replays with null/missing messageId
+const recentContentHashes = new Set<string>();
+const CONTENT_DEDUP_WINDOW_MS = 30000; // 30 seconds
+
+function contentHash(jid: string, text: string): string {
+    return `${jid}::${text.trim().toLowerCase().slice(0, 120)}`;
+}
+
 // ─────────────────────────────────────────────
 // REGISTRA HANDLER
 // ─────────────────────────────────────────────
@@ -57,7 +65,7 @@ export function enqueue(raw: proto.IWebMessageInfo): void {
     const jid = raw.key?.remoteJid;
     if (!jid || jid.endsWith('@g.us')) return;
 
-    // Deduplication: skip already-seen message IDs
+    // Deduplication primaria: messageId già visto
     const msgId = raw.key?.id;
     if (msgId) {
         if (recentMsgIds.has(msgId)) {
@@ -70,6 +78,18 @@ export function enqueue(raw: proto.IWebMessageInfo): void {
 
     const msg = normalize(raw);
     if (!msg) return;
+
+    // Deduplication secondaria: catch Baileys replays con messageId null/diverso
+    // (succede dopo simulateTypingAndSend che aggiorna lo stato crypto di Baileys)
+    if (msg.type === 'text' && msg.text) {
+        const hash = contentHash(jid, msg.text);
+        if (recentContentHashes.has(hash)) {
+            logger.warn({ jid, text: msg.text.slice(0, 40) }, 'Duplicate content detected (Baileys replay) — skipping');
+            return;
+        }
+        recentContentHashes.add(hash);
+        setTimeout(() => recentContentHashes.delete(hash), CONTENT_DEDUP_WINDOW_MS);
+    }
 
     if (pending.has(jid)) {
         clearTimeout(pending.get(jid)!.timer);

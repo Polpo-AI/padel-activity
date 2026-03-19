@@ -37,6 +37,7 @@ export interface BrainContext {
     pendingInvitations: any[];
     confirmedMatches: any[];
     availableMatches: any[];
+    courts: any[];
 }
 
 // ─────────────────────────────────────────────
@@ -58,6 +59,11 @@ export async function buildBrainContext(jid: string, phoneNumber: string): Promi
         where: { chatId: jid },
         orderBy: { timestamp: 'desc' },
         take: 20,
+    });
+
+    const courts = await prisma.court.findMany({
+        where: { clubId: club?.id, active: true },
+        orderBy: { name: 'asc' },
     });
 
     let pendingInvitations: any[] = [];
@@ -106,6 +112,7 @@ export async function buildBrainContext(jid: string, phoneNumber: string): Promi
         pendingInvitations,
         confirmedMatches,
         availableMatches,
+        courts,
     };
 }
 
@@ -125,7 +132,7 @@ export async function callBrain(
     userMessage: string,
     contactCards?: { phone?: string; name?: string }[],
 ): Promise<BrainResponse> {
-    const { club, player, recentMessages, pendingInvitations, confirmedMatches, availableMatches } = context;
+    const { club, player, recentMessages, pendingInvitations, confirmedMatches, availableMatches, courts } = context;
 
     const now = new Date().toLocaleString('it-IT', {
         timeZone: 'Europe/Rome', weekday: 'long', day: 'numeric',
@@ -164,6 +171,10 @@ export async function callBrain(
 
     const clubLocation = [club?.address, club?.city].filter(Boolean).join(', ');
 
+    const courtsStr = courts.length > 0
+        ? courts.map(c => `  - ${c.name}: ${c.isCovered ? '🏟️ coperto' : '☀️ scoperto'}${c.notes ? ` (${c.notes})` : ''}`).join('\n')
+        : '  nessun campo configurato';
+
     const systemPrompt = `Sei l'assistente WhatsApp del circolo padel "${club?.name || 'Padel Club'}".
 Sei caldo, diretto, colloquiale — come un amico esperto del circolo. Max 2 frasi per messaggio. Emoji padel con parsimonia (🎾🏟️).
 Oggi è: ${now}
@@ -189,6 +200,9 @@ ${skillTestPending ? 'NOTA: questo giocatore non ha ancora il livello. Può pren
 ${player?.notes ? `Note/preferenze giocatore: ${player.notes}` : ''}
 ${lessonInfo ? `\n═══ LEZIONE INDIVIDUALE ═══\n${lessonInfo}\nIl maestro contatterà il giocatore per l'orario — il sistema invia solo la notifica.` : ''}
 
+═══ CAMPI DEL CIRCOLO ═══
+${courtsStr}
+
 ═══ INVITI IN ATTESA ═══
 ${invitationsStr}
 
@@ -213,11 +227,27 @@ Rispondi SEMPRE con JSON valido: { "message": "...", "action": "NOME", "params":
   Se c'è una partita aperta compatibile → metti joinMatchId.
   Messaggio di conferma: breve e caldo, es. "Perfetto, sei dentro! 🎾" — i dettagli (campo, prezzo, indirizzo) li manda il sistema subito dopo.
   ${skillTestPending ? 'Skill Test pendente: conferma la prenotazione ma NON promettere abbinamento altri giocatori.' : ''}
+  ⚠️ ATTENZIONE: se il giocatore ha già partite confermate E chiede un nuovo slot, valuta se è una correzione o un'aggiunta (vedi regola RESCHEDULE sotto).
 - OPT_OUT — params: {} — utente non vuole più messaggi
 - INVITE_PREFERRED — params: { "playerName": "..." } — utente vuole che un amico specifico venga invitato
 - SAVE_NOTE — params: { "note": "..." } — utente esprime una preferenza, abitudine o richiesta speciale (es. "voglio sempre giocare al coperto", "preferisco il mattino", "non mi piace la terra rossa"). Riassumi in una frase breve e salva. Puoi combinare con NONE per rispondere anche in modo conversazionale — in quel caso usa SAVE_NOTE e metti la risposta nel campo "message".
 - REQUEST_LESSON — params: { "day": "opzionale", "time": "opzionale" } — utente chiede di prenotare una lezione con il maestro. Rispondi con conferma che hai avvisato il maestro + durata + costo. Il maestro li contatterà per l'orario esatto.
 - RESCHEDULE_MATCH — params: { "matchPlayerId": "...", "newDay": "YYYY-MM-DD o oggi/domani/lunedì/...", "newTime": "HH:MM" } — utente vuole spostare una partita confermata. Cancella quella vecchia e prenota il nuovo slot. Messaggio breve tipo "Fatto! Ho spostato la tua partita 🎾" — i dettagli arrivano subito dopo.
+
+═══ REGOLA RESCHEDULE vs BOOK_FIELD ═══
+Quando il giocatore ha già partite confermate E chiede un nuovo slot, devi capire dal contesto se sta correggendo/spostando o aggiungendo:
+
+SEGNALI DI CORREZIONE (→ chiedi conferma prima di agire):
+  - Nega esplicitamente la data esistente: "non venerdì", "non domani", "non quello"
+  - Usa "invece", "piuttosto", "voglio cambiare", "sposta", "intendevo"
+  - Il nuovo slot è simile a quello esistente (stesso orario, giorno diverso)
+  In questo caso → NONE con messaggio tipo: "Hai già Campo X prenotato per [data] — vuoi spostare quella o aggiungere una nuova prenotazione per [nuova data]?"
+  Quando l'utente conferma "sposta" → RESCHEDULE_MATCH. Quando conferma "nuova" → BOOK_FIELD.
+
+SEGNALI DI AGGIUNTA (→ BOOK_FIELD diretto, nessuna domanda):
+  - Usa "anche", "pure", "un'altra", "in più", "altra partita"
+  - Il contesto è chiaramente additivo
+  - L'utente non fa riferimento alla prenotazione esistente
 
 ═══ MENTALITÀ COMMERCIALE — PORTA SEMPRE A CASA IL RISULTATO ═══
 Il tuo obiettivo è vendere il campo e riempire la partita. Qualsiasi domanda o situazione strana va gestita in modo da non bloccare mai la prenotazione.
