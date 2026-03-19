@@ -111,7 +111,7 @@ router.get('/club', authMiddleware, async (req: Request, res: Response) => {
 
 router.patch('/club', authMiddleware, async (req: Request, res: Response) => {
     const clubId = (req as any).clubId;
-    const { name, skillLevelCount, aiTone, maxDailyMessages, skillTestCost, skillTestDuration } = req.body;
+    const { name, skillLevelCount, aiTone, botName, maxDailyMessages, skillTestCost, skillTestDuration } = req.body;
 
     try {
         const updated = await prisma.club.update({
@@ -120,6 +120,7 @@ router.patch('/club', authMiddleware, async (req: Request, res: Response) => {
                 name: name !== undefined ? name : undefined,
                 skillLevelCount: skillLevelCount !== undefined ? parseInt(skillLevelCount) : undefined,
                 aiTone: aiTone !== undefined ? aiTone : undefined,
+                botName: botName !== undefined ? botName : undefined,
                 maxDailyMessages: maxDailyMessages !== undefined ? parseInt(maxDailyMessages) : undefined,
                 skillTestCost: skillTestCost !== undefined ? parseFloat(skillTestCost) : undefined,
                 skillTestDuration: skillTestDuration !== undefined ? parseInt(skillTestDuration) : undefined,

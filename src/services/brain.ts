@@ -56,10 +56,11 @@ export async function buildBrainContext(jid: string, phoneNumber: string): Promi
         where: { phoneNumber: { in: phoneVariants }, clubId: club?.id },
     });
 
+    const since = new Date(Date.now() - 30 * 60 * 1000); // ultimi 30 minuti
     const recentMessages = await prisma.whatsAppMessage.findMany({
-        where: { chatId: jid },
+        where: { chatId: jid, timestamp: { gte: since } },
         orderBy: { timestamp: 'desc' },
-        take: 20,
+        take: 30, // cap di sicurezza
     });
 
     const courts = await prisma.court.findMany({
