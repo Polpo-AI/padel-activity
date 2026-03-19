@@ -327,9 +327,12 @@ La dimensione di ogni wave non usa un moltiplicatore fisso, ma accumula giocator
 
 ## Timezone
 
-- Tutti gli orari in DB sono **UTC**
+- Prisma scrive i timestamp in **UTC** (comportamento standard di Node.js `new Date()`)
+- Il DB PostgreSQL ha `timezone = 'Europe/Rome'` impostato a livello database (`ALTER DATABASE postgres SET timezone TO 'Europe/Rome'`) → Supabase dashboard mostra orario italiano automaticamente
+- Prisma e le query non sono influenzati dal timezone del DB (usa il protocollo binario wire, sempre UTC)
 - Output verso utenti: sempre `{ timeZone: 'Europe/Rome' }` in `toLocaleTimeString/toLocaleDateString`
 - Input utente (es. "alle 18"): convertito con `buildRomeTime()` in `booking.ts` che gestisce DST automaticamente
+- **Non usare mai** `ALTER DATABASE ... SET timezone TO 'UTC'` — tornerebbe a mostrare UTC nel dashboard
 
 ---
 
