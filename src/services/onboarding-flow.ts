@@ -272,11 +272,32 @@ export async function continueOnboarding(
             }
         } catch { /* nessun nome estratto */ }
 
-        // Se non abbiamo un nome valido, ri-chiedi spiegando cosa aspettiamo
+        // Se non abbiamo un nome valido, ri-chiedi con messaggio variato
         if (!name) {
-            const { setState } = await import('./conversation-state');
-            await setState(`state:pending-intent:${senderJid}`, { intent: 'PENDING', combinedText: messageText }, 600);
-            await simulateTypingAndSend(senderJid, `Dimmi nome e cognome per registrarti — così ti riconosco quando prenoti 😊`, messageKey);
+            // Salva pending-intent SOLO se non già presente (non sovrascrivere con rumore conversazionale)
+            const { setState, getState } = await import('./conversation-state');
+            const existing = await getState(`state:pending-intent:${senderJid}`);
+            if (!existing) {
+                await setState(`state:pending-intent:${senderJid}`, { intent: 'PENDING', combinedText: messageText }, 600);
+            }
+            const reAskOptions = [
+                `Dimmi nome e cognome per registrarti — così ti riconosco quando prenoti 😊`,
+                `Non ho capito il nome! Scrivimi nome e cognome, es. "Marco Rossi" 😄`,
+                `Per registrarti ho bisogno di nome e cognome — come ti chiami? 🎾`,
+            ];
+            const reAsk = reAskOptions[Math.floor(Math.random() * reAskOptions.length)];
+            await simulateTypingAndSend(senderJid, reAsk, messageKey);
+            return;
+        }
+
+        // Se estratto solo il nome senza cognome, chiedi il cognome
+        if (!name.includes(' ')) {
+            const { setState, getState } = await import('./conversation-state');
+            const existing = await getState(`state:pending-intent:${senderJid}`);
+            if (!existing) {
+                await setState(`state:pending-intent:${senderJid}`, { intent: 'PENDING', combinedText: messageText }, 600);
+            }
+            await simulateTypingAndSend(senderJid, `Grazie ${name}! E il cognome? 😊`, messageKey);
             return;
         }
         // Livello -1 = pending skill test — assegnato solo dal circolo tramite skill test o dashboard

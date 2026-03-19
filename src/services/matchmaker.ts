@@ -143,7 +143,13 @@ export async function processWave(matchId: string, waveNumber: number, urgencyMu
     if (!context) return;
 
     // Pool esaurito → gestisci fuori dal lock (può fare import dinamici lenti)
+    // Wave 1: non cancellare mai — il club potrebbe avere pochi iscritti al momento
+    // ma altri si potrebbero aggiungere. Solo dalla wave 2 in poi dichiariamo unfillable.
     if (context.empty) {
+        if (waveNumber < 2) {
+            logger.warn(`Wave ${waveNumber} for match ${matchId}: pool empty but too early to cancel — waiting for next wave`);
+            return;
+        }
         const isCancelled = await checkAndCancelIfUnfillable(matchId);
         if (!isCancelled) {
             const { handleMatchUnfillable } = await import('./recovery');
