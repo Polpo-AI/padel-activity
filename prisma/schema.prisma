@@ -135,6 +135,8 @@ model Club {
   skillTestCost              Float    @default(0.0)
   skillLevelCount            Int      @default(3)
   maxDailyMessages           Int      @default(2)
+  city                       String?
+  address                    String?
   dashboardUsername          String?  @unique
   dashboardPasswordHash      String?
   groupJids                  String[] @default([])

@@ -61,6 +61,8 @@ router.post('/club', requireSetupSecret, async (req, res) => {
             waveMultiplier,
             maxDailyMessages,
             aiTone,
+            city,
+            address,
             dashboardUsername,
             dashboardPassword,
         } = req.body;
@@ -114,6 +116,8 @@ router.post('/club', requireSetupSecret, async (req, res) => {
                 waveMultiplier: Number(waveMultiplier) || 3,
                 maxDailyMessages: Number(maxDailyMessages) || 2,
                 aiTone: aiTone || null,
+                city: city || null,
+                address: address || null,
                 dashboardUsername: String(dashboardUsername).trim(),
                 dashboardPasswordHash,
                 courts: { create: courtsData },

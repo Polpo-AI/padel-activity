@@ -410,6 +410,17 @@
 
     <div class="field-row">
       <div>
+        <label>Città</label>
+        <input type="text" id="city" placeholder="Es. Roma" />
+      </div>
+      <div>
+        <label>Indirizzo</label>
+        <input type="text" id="address" placeholder="Es. Via delle Terme, 12" />
+      </div>
+    </div>
+
+    <div class="field-row">
+      <div>
         <label>Telefono admin WhatsApp *<span class="label-hint">+39...</span></label>
         <input type="tel" id="adminPhone" placeholder="+393471234567" />
       </div>
@@ -619,7 +630,7 @@
 
 <script>
 const STATE = {
-  name: '', adminPhone: '', adminAltPhone: '',
+  name: '', city: '', address: '', adminPhone: '', adminAltPhone: '',
   openTime: '08:00', closeTime: '23:30',
   matchDuration: 90, timezone: 'Europe/Rome',
   courts: [{ name: 'Campo 1', covered: false }],
@@ -693,6 +704,8 @@ function v(id) { return (document.getElementById(id)?.value || '').trim(); }
 function collectStep(step) {
   if (step === 1) {
     STATE.name = v('name');
+    STATE.city = v('city');
+    STATE.address = v('address');
     STATE.adminPhone = v('adminPhone');
     STATE.adminAltPhone = v('adminAltPhone');
     STATE.openTime = v('openTime') || '08:00';
@@ -796,6 +809,7 @@ function buildSummary() {
   const grid = document.getElementById('summary-grid');
   const items = [
     { k: 'Circolo',          v: STATE.name },
+    ...(STATE.city ? [{ k: 'Città', v: STATE.city + (STATE.address ? ` — ${STATE.address}` : '') }] : []),
     { k: 'Admin WA',         v: STATE.adminPhone },
     { k: 'Orari',            v: `${STATE.openTime} – ${STATE.closeTime}` },
     { k: 'Durata partita',   v: `${STATE.matchDuration} min` },
@@ -823,6 +837,8 @@ function buildSummary() {
 function buildJson() {
   return {
     name: STATE.name,
+    ...(STATE.city && { city: STATE.city }),
+    ...(STATE.address && { address: STATE.address }),
     adminPhone: STATE.adminPhone,
     ...(STATE.adminAltPhone && { adminAlternativePhone: STATE.adminAltPhone }),
     timezone: STATE.timezone,

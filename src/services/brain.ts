@@ -155,9 +155,12 @@ export async function callBrain(
 
     const skillTestPending = !player || player.skillLevel <= 0;
 
+    const clubLocation = [club?.address, club?.city].filter(Boolean).join(', ');
+
     const systemPrompt = `Sei l'assistente WhatsApp del circolo padel "${club?.name || 'Padel Club'}".
 Sei caldo, diretto, colloquiale — come un amico esperto del circolo. Max 2 frasi per messaggio. Emoji padel con parsimonia (🎾🏟️).
 Oggi è: ${now}
+${clubLocation ? `Circolo: ${clubLocation}` : ''}
 
 ═══ CHI SEI E COSA SAI FARE ═══
 Gestisci prenotazioni campi e partite del circolo. Puoi rispondere a qualsiasi domanda sulla vita del circolo in modo naturale.
@@ -198,7 +201,7 @@ Rispondi SEMPRE con JSON valido: { "message": "...", "action": "NOME", "params":
   Usa quando l'utente vuole giocare/prenotare e ha fornito giorno + orario.
   Se manca l'orario → NONE e chiedi solo quello.
   Se c'è una partita aperta compatibile → metti joinMatchId.
-  Messaggio di conferma: naturale e breve, es. "Perfetto, sei dentro per [giorno] alle [ora]! 🎾"
+  Messaggio di conferma: breve e caldo, es. "Perfetto, sei dentro! 🎾" — i dettagli (campo, prezzo, indirizzo) li manda il sistema subito dopo.
   ${skillTestPending ? 'Skill Test pendente: conferma la prenotazione ma NON promettere abbinamento altri giocatori.' : ''}
 - OPT_OUT — params: {} — utente non vuole più messaggi
 - INVITE_PREFERRED — params: { "playerName": "..." } — utente vuole che un amico specifico venga invitato
@@ -267,7 +270,7 @@ export async function executeAction(
     params: any,
     player: any,
     club: any,
-): Promise<{ success: boolean; errorMessage?: string }> {
+): Promise<{ success: boolean; errorMessage?: string; matchId?: string }> {
     if (action === 'NONE') return { success: true };
 
     try {
@@ -340,7 +343,8 @@ export async function executeAction(
 
             // Join existing match if specified
             if (params.joinMatchId) {
-                return await joinExistingMatch(params.joinMatchId, player);
+                const joinResult = await joinExistingMatch(params.joinMatchId, player);
+                return { ...joinResult, matchId: params.joinMatchId };
             }
 
             // Search for open matches in ±30min window
@@ -368,12 +372,13 @@ export async function executeAction(
                 });
 
                 if (existing && existing.MatchPlayer.length < existing.playersNeeded) {
-                    return await joinExistingMatch(existing.id, player);
+                    const joinResult = await joinExistingMatch(existing.id, player);
+                    return { ...joinResult, matchId: existing.id };
                 }
             }
 
             // Create new match
-            return await createNewMatchAction(startTime, player, club);
+            return await createNewMatchAction(startTime, player, club); // returns { success, matchId }
         }
 
         if (action === 'OPT_OUT') {
@@ -445,7 +450,7 @@ async function createNewMatchAction(
     startTime: Date,
     player: any,
     club: any,
-): Promise<{ success: boolean; errorMessage?: string }> {
+): Promise<{ success: boolean; errorMessage?: string; matchId?: string }> {
     const occupied = await prisma.match.findMany({
         where: { clubId: player.clubId, status: { in: ['OPEN', 'LOCKED'] }, startTime },
         select: { courtId: true },
@@ -456,7 +461,7 @@ async function createNewMatchAction(
         orderBy: { name: 'asc' },
     });
 
-    if (!freeCourt) return { success: false, errorMessage: 'Tutti i campi sono occupati a quell\'orario.' };
+    if (!freeCourt) return { success: false, errorMessage: "Tutti i campi sono occupati a quell'orario." };
 
     const skillLevel = player.skillLevel > 0 ? player.skillLevel : 1.0;
 
@@ -486,7 +491,7 @@ async function createNewMatchAction(
         }, { delay: Math.floor(Math.random() * 60000) + 30000 });
     }
 
-    return { success: true };
+    return { success: true, matchId: match.id };
 }
 
 function buildRomeTime(baseDate: Date, h: number, m: number): Date {

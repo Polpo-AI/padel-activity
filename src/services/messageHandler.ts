@@ -288,6 +288,36 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[], cor
         if (!result.success && result.errorMessage) {
             await simulateTypingAndSend(jid, `Ops! ${result.errorMessage} 😕`);
         }
+        // BOOK_FIELD: invia scheda prenotazione con dettagli campo + prezzo + indirizzo
+        if (action === 'BOOK_FIELD' && result.success && result.matchId) {
+            try {
+                const { calculateSlotCost } = await import('./pricing');
+                const match = await prisma.match.findUnique({
+                    where: { id: result.matchId },
+                    include: { court: true },
+                });
+                if (match && match.court) {
+                    const totalCost = await calculateSlotCost(match.court.id, match.startTime);
+                    const pricePerPerson = totalCost > 0 ? (totalCost / 4).toFixed(2) : null;
+                    const timeStr = match.startTime.toLocaleString('it-IT', {
+                        timeZone: 'Europe/Rome', weekday: 'long', day: 'numeric',
+                        month: 'long', hour: '2-digit', minute: '2-digit',
+                    });
+                    const courtType = match.court.isCovered ? '🏟️ coperto' : '☀️ all\'aperto';
+                    const clubLocation = [club?.address, club?.city].filter(Boolean).join(' — ');
+                    const lines = [
+                        `📋 *Dettagli prenotazione*`,
+                        `📅 ${timeStr}`,
+                        `🎾 ${match.court.name} (${courtType})`,
+                        pricePerPerson ? `💶 ${pricePerPerson}€ a persona` : null,
+                        clubLocation ? `📍 ${clubLocation}` : null,
+                    ].filter(Boolean);
+                    await simulateTypingAndSend(jid, lines.join('\n'));
+                }
+            } catch (err) {
+                logger.error({ err }, 'Failed to send booking detail card');
+            }
+        }
         // OPT_OUT: notifica admin
         if (action === 'OPT_OUT') {
             const { notifyAdmin } = await import('../utils/notify-admin');

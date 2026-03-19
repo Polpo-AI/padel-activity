@@ -415,7 +415,7 @@ async function sendWelcomeBatch(
 
     for (const player of players) {
         const msg = customWelcome ||
-            `Ciao! Sono ${botName} 🎾 D'ora in poi ti contatterò quando si apre un posto per una partita di padel. Rispondi "stop" in qualsiasi momento per uscire dalla lista. A presto!`;
+            `Ciao ${player.name ? player.name.split(' ')[0] : ''}! 👋\n\nSono ${botName}, l'assistente del tuo circolo padel.\n\nTi scrivo per una cosa sola: quando si apre un posto in una partita con giocatori del tuo livello, ti mando un messaggio. Niente newsletter, niente spam — solo una notifica quando c'è qualcosa che fa al caso tuo. 🎾\n\nA presto in campo! 💪`;
 
         await sleep(randomInt(8000, 25000)); // delay umano tra messaggi
 
