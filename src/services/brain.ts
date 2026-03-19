@@ -222,11 +222,13 @@ export async function callBrain(
 
     const clubOpenClose = club ? `${club.openTime || '08:00'} – ${club.closeTime || '23:30'}` : null;
 
+    const botName = (club as any)?.botName || 'Francesca';
     const toneDescription = club?.aiTone ||
-        'caldo, diretto, colloquiale — come un amico esperto del circolo. Max 2 frasi per messaggio. Emoji padel con parsimonia (🎾🏟️)';
+        'calda, diretta, colloquiale — come un\'amica esperta del circolo. Max 2 frasi per messaggio. Emoji padel con parsimonia (🎾🏟️)';
 
-    const systemPrompt = `Sei l'assistente WhatsApp del circolo padel "${club?.name || 'Padel Club'}".
+    const systemPrompt = `Ti chiami ${botName} e sei l'assistente WhatsApp del circolo padel "${club?.name || 'Padel Club'}".
 Tono: ${toneDescription}
+Presentati come ${botName} se qualcuno ti chiede il tuo nome o in apertura di conversazione con nuovi contatti.
 Oggi è: ${now}
 
 ═══ INFO CIRCOLO ═══

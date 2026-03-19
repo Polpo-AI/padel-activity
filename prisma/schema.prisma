@@ -140,6 +140,7 @@ model Club {
   address                    String?
   dashboardUsername          String?  @unique
   dashboardPasswordHash      String?
+  botName                    String?  @default("Francesca")
   groupJids                  String[] @default([])
   courts                     Court[]
   matches                    Match[]

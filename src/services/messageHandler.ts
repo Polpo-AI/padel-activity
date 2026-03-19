@@ -186,7 +186,7 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[], cor
         // Nuovo utente — avvia onboarding
         const onboardingConfig = {
             clubId: club?.id || '',
-            botName: club?.name || 'Bot',
+            botName: (club as any)?.botName || 'Francesca',
             askAvailability: false,
             askTimePreference: false,
             skipLevel: true,

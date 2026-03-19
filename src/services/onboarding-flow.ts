@@ -238,7 +238,8 @@ export async function startSingleOnboarding(
 
     await setOnboardingState(senderJid, 'AWAITING_NAME', { config });
 
-    const welcome = config.welcomeMessage || `Ciao! Come ti chiami? Dimmi nome e cognome così ti registro 😄`;
+    const botName = config.botName || 'Francesca';
+    const welcome = config.welcomeMessage || `Ciao! Sono ${botName} 👋 Come ti chiami? Così ti salvo e ti aggiungo alla nostra community di giocatori 😊`;
     await simulateTypingAndSend(senderJid, welcome);
 }
 
@@ -368,12 +369,41 @@ async function finalizeOnboarding(senderJid: string, stateData: any, messageKey?
     await clearOnboardingState(senderJid);
 
     const firstName = name?.split(' ')[0] || name;
-    // Messaggio di benvenuto — caldo, skill test menzionato en passant senza pressione
-    await simulateTypingAndSend(
-        senderJid,
-        `Benvenuto ${firstName}! 🎾 Qui organizziamo partite tra giocatori dello stesso livello, così ogni match è sempre divertente e competitivo al punto giusto.\n\nPer abbinarti ai compagni giusti, ti contatteremo per una valutazione informale con il nostro maestro — niente di formale, solo per capire dove ti posizioni. Nel frattempo puoi già prenotare un campo quando vuoi!`,
-        messageKey
-    );
+    const botName = config.botName || 'Francesca';
+
+    // Genera il messaggio di benvenuto con Haiku adattato all'aiTone del circolo
+    let welcomeText = `${firstName}, sei nella lista! 🎾 Ti abbinerò con giocatori del tuo livello — ogni partita sarà una bella sfida.\n\nPer giocare con altri ti serve una valutazione con il nostro maestro (rilassatissima, promesso). Scrivimi quando sei pronto e organizziamo! Nel frattempo puoi prenotare un campo quando vuoi 🙌`;
+    try {
+        const club = await prisma.club.findUnique({ where: { id: config.clubId } });
+        const { anthropic } = await import('./ai');
+        const aiTone = club?.aiTone || 'caldo, diretto, colloquiale';
+        const prompt = `Scrivi un messaggio WhatsApp di benvenuto per ${firstName} che si è appena registrato al circolo padel.
+
+TONO: ${aiTone}
+MITTENTE: ${botName} (assistente del circolo)
+MAX: 3 frasi brevi. Niente titoli o formattazione.
+
+Il messaggio deve:
+1. Confermare l'iscrizione alla community di giocatori dello stesso livello (trasmetti il valore: conoscere persone, migliorare, divertirsi)
+2. Spiegare che per giocare con altri serve una valutazione con il maestro (lezione breve e tranquilla) — invitare a scrivere quando vuole fissarla
+3. Ricordare che nel frattempo può già prenotare un campo
+
+Non usare "benvenuto/a" come prima parola. Scrivi solo il messaggio, nient'altro.`;
+
+        const response = await anthropic.messages.create({
+            model: 'claude-haiku-4-5-20251001',
+            max_tokens: 200,
+            temperature: 0.7,
+            messages: [{ role: 'user', content: prompt }],
+        });
+        if (response.content[0].type === 'text') {
+            welcomeText = response.content[0].text.trim();
+        }
+    } catch (err) {
+        logger.warn({ err }, 'Welcome message generation failed, using default');
+    }
+
+    await simulateTypingAndSend(senderJid, welcomeText, messageKey);
 
     // Controlla se c'era un intent pendente (es. prenotazione interrotta per onboarding)
     let hasPendingIntent = false;
@@ -401,13 +431,7 @@ async function finalizeOnboarding(senderJid: string, stateData: any, messageKey?
         logger.error({ err }, 'Failed to resume pending intent after onboarding');
     }
 
-    if (!hasPendingIntent) {
-        await simulateTypingAndSend(
-            senderJid,
-            `Nel frattempo, posso aiutarti a prenotare un campo? 🎾`,
-            messageKey
-        );
-    }
+    // Se non c'è pending intent, il welcome già invita a interagire — nessun follow-up necessario
 
     // Notifica admin
     if (config.notifyAdminOnNewPlayer) {
