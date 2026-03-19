@@ -52,6 +52,15 @@ DATABASE_URL="postgresql://postgres.ildhffoxuufcbvmmqitj:...@aws-1-eu-west-1.poo
 ### 9. `prisma db push` invece di `migrate dev` su DB condiviso
 **Regola:** il DB Supabase ha drift rispetto alla migration history → `migrate dev` va in errore. Usare sempre `prisma db push` per sincronizzare lo schema senza toccare la history.
 
+### 12. Dopo ogni `prisma db push`, rigenerare il client su VPS con `prisma generate`
+**Bug reale:** `notes` aggiunto allo schema, `db push` ok, ma il client JS sul VPS era vecchio → `Unknown argument 'notes'` a runtime → errore Prisma grezzo inviato all'utente.
+**Regola:** dopo ogni `prisma db push` sul VPS, eseguire sempre `npx prisma generate` + restart.
+```bash
+cd /root/padel-staging
+npx prisma generate
+systemctl restart padel-staging padel-worker-staging
+```
+
 ### 11. Ogni modifica schema va applicata sia a staging che a produzione
 **Regola:** `prisma db push` va eseguito su **entrambi** i DB dopo ogni modifica a `schema.prisma`. Staging usa `DIRECT_URL_STAGING`, produzione usa `DIRECT_URL`.
 ```bash

@@ -224,20 +224,7 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[], cor
     );
 
     await simulateTypingAndSend(jid, message, undefined);
-
-    // Persisti risposta bot
-    try {
-        await prisma.whatsAppMessage.create({
-            data: {
-                chatId: jid,
-                sender: 'bot',
-                role: 'BOT',
-                content: message,
-            },
-        });
-    } catch (err) {
-        logger.error({ err }, 'Failed to persist bot message');
-    }
+    // NON salvare qui: simulateTypingAndSend salva già il messaggio (Lesson #6)
 
     // Aggiorna dailyMessagesCount
     try {

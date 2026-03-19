@@ -418,11 +418,14 @@ export async function executeAction(
 
         if (action === 'SAVE_NOTE') {
             if (!params.note || typeof params.note !== 'string') return { success: true };
-            const existing = player.notes ? player.notes.trim() : '';
-            // Append new note, separated by '; ' if there's already content
-            const newNotes = existing ? `${existing}; ${params.note.trim()}` : params.note.trim();
-            await prisma.player.update({ where: { id: player.id }, data: { notes: newNotes } });
-            return { success: true };
+            try {
+                const existing = player.notes ? player.notes.trim() : '';
+                const newNotes = existing ? `${existing}; ${params.note.trim()}` : params.note.trim();
+                await prisma.player.update({ where: { id: player.id }, data: { notes: newNotes } });
+            } catch (noteErr) {
+                logger.error({ noteErr, playerId: player.id }, 'SAVE_NOTE failed silently');
+            }
+            return { success: true }; // best-effort — mai fallire verso l'utente
         }
     } catch (err: any) {
         logger.error({ err, action, params }, 'executeAction failed');
