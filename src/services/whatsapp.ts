@@ -47,6 +47,7 @@ const OFFLINE_MSG_WINDOW_MS = 24 * 60 * 60 * 1000; // solo ultimi 24h
 // ✅ FIX I: backoff esponenziale per reconnect — evita loop infinito e accelerazione ban
 let reconnectAttempts = 0;
 const MAX_RECONNECT_DELAY_MS = 64000; // cap a 64s
+let isReconnecting = false; // guard: un solo reconnect in volo alla volta
 
 // ------------------------------------------------------------------
 // UTILITY HELPERS
@@ -158,16 +159,22 @@ export async function connectToWhatsApp() {
                 message: errorMsg 
             }, `WhatsApp connection closed. Reconnecting: ${shouldReconnect}`);
             
-            if (shouldReconnect) {
-                // ✅ FIX I: backoff esponenziale con cap — non chiamare mai ricorsivamente senza delay
+            if (shouldReconnect && !isReconnecting) {
+                isReconnecting = true;
                 const delayMs = Math.min(1000 * Math.pow(2, reconnectAttempts), MAX_RECONNECT_DELAY_MS);
                 reconnectAttempts++;
                 logger.warn({ attempt: reconnectAttempts, delayMs }, `Reconnecting in ${delayMs}ms...`);
-                setTimeout(connectToWhatsApp, delayMs);
+                setTimeout(() => {
+                    isReconnecting = false;
+                    connectToWhatsApp();
+                }, delayMs);
+            } else if (shouldReconnect && isReconnecting) {
+                logger.warn({ attempt: reconnectAttempts }, 'Reconnect already scheduled — skipping duplicate');
             }
         } else if (connection === 'open') {
             logger.info('✅ WhatsApp Connected Successfully!');
             reconnectAttempts = 0; // ✅ reset counter su connessione riuscita
+            isReconnecting = false;
             connectionStatus = 'open';
 
             // ✅ Notifica Startup alla Segreteria
