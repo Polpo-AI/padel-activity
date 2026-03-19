@@ -85,6 +85,21 @@ MAI dimenticare la produzione — uno schema disallineato causa crash silenziosi
 **Conseguenza:** il brain non conosce il campo assegnato, il prezzo, ecc. al momento della risposta.
 **Pattern corretto:** il brain manda una conferma breve e generica. `executeAction` restituisce `{ matchId }`. Il messageHandler manda poi una scheda strutturata separata con i dettagli reali (campo, coperto/scoperto, prezzo, indirizzo).
 
+### 15. `adminPhone` deve avere il prefisso internazionale completo
+**Bug reale:** `adminPhone` salvato come `3457991255` invece di `393457991255` → `notifyAdmin` costruisce `3457991255@s.whatsapp.net` che non esiste su WhatsApp → tutte le notifiche admin silenziosamente perse.
+**Regola:** salvare sempre con prefisso internazionale senza `+` (es. `393457991255`). Il setup wizard deve validare e normalizzare il numero prima di salvarlo.
+
+### 16. MAI importare `whatsapp.ts` con dynamic import dentro route handler
+**Bug reale:** `await import('../services/whatsapp')` dentro un route handler crea un modulo isolato dove `sock` è sempre `null` e `connectionStatus` è sempre `'connecting'` → `sendMessage` lancia "socket not initialized" e `getConnectionStatus()` restituisce sempre 'connecting' anche a WA connesso.
+**Regola:** importare `sendMessage` e `simulateTypingAndSend` sempre staticamente in cima al file. Il dynamic import è accettabile solo per moduli che non dipendono da stato singleton (es. `notify-admin`, `recovery`).
+
+### 17. I riavvii WA non sono necessariamente crash — verificare sempre la causa
+**Regola:** prima di allarmarsi per riavvii multipli del bot, controllare se sono `SIGTERM received — graceful shutdown` (riavvii intenzionali nostri via `systemctl restart`) o crash reali (`code=exited status=1/FAILURE`). Usare: `journalctl -u padel-staging | grep -E 'SIGTERM|exited|Failed'`.
+
+### 18. `getConnectionStatus()` da dynamic import restituisce sempre il valore iniziale
+**Bug reale:** `connectionStatus` è una variabile module-level in `whatsapp.ts`. Se importata dinamicamente da un route handler, il modulo è una istanza separata → il valore è sempre quello iniziale (`'connecting'`), mai aggiornato dall'event loop principale.
+**Fix:** usare solo import statici per `whatsapp.ts`. Per verificare lo stato WA dall'esterno usare l'endpoint `/health` che usa l'import statico di `index.ts`.
+
 ---
 
 ---
