@@ -43,14 +43,24 @@ git push origin HEAD:preview
 ### 7. Fallback AI MAI identico due volte
 **Regola:** il catch di `callBrain` deve restituire uno di N messaggi random, mai sempre lo stesso. Utente che riceve "Scusa, ho un problema tecnico" due volte di fila → pessima esperienza.
 
-### 8. Reset DB locale: usare DIRECT_URL (porta 5432), non DATABASE_URL (pgBouncer 6543)
-**Regola:** per operazioni dirette (script, `db push`, `migrate dev`) usare sempre `DIRECT_URL` / porta 5432. Il pgBouncer su 6543 non supporta prepared statements.
+### 8. Reset DB locale: usare DIRECT_URL_STAGING (porta 5432), non DATABASE_URL (pgBouncer 6543)
+**Regola:** per operazioni dirette (script, `db push`, `migrate dev`) usare sempre il valore letterale di `DIRECT_URL_STAGING` / porta 5432. Il pgBouncer su 6543 non supporta prepared statements. Il parsing `$(grep DIRECT_URL .env ...)` può estrarre la variabile sbagliata — passare sempre il valore esplicito.
 ```bash
-DATABASE_URL="$DIRECT_URL_STAGING" npx tsx src/scripts/db-reset.ts
+DATABASE_URL="postgresql://postgres.ildhffoxuufcbvmmqitj:...@aws-1-eu-west-1.pooler.supabase.com:5432/postgres" npx tsx src/scripts/db-reset.ts
 ```
 
 ### 9. `prisma db push` invece di `migrate dev` su DB condiviso
 **Regola:** il DB Supabase ha drift rispetto alla migration history → `migrate dev` va in errore. Usare sempre `prisma db push` per sincronizzare lo schema senza toccare la history.
+
+### 11. Ogni modifica schema va applicata sia a staging che a produzione
+**Regola:** `prisma db push` va eseguito su **entrambi** i DB dopo ogni modifica a `schema.prisma`. Staging usa `DIRECT_URL_STAGING`, produzione usa `DIRECT_URL`.
+```bash
+# Staging
+DATABASE_URL="<DIRECT_URL_STAGING>" npx prisma db push
+# Produzione
+DATABASE_URL="<DIRECT_URL>" npx prisma db push
+```
+MAI dimenticare la produzione — uno schema disallineato causa crash silenziosi a runtime.
 
 ### 10. Il brain genera il messaggio PRIMA che `executeAction` venga eseguita
 **Conseguenza:** il brain non conosce il campo assegnato, il prezzo, ecc. al momento della risposta.
