@@ -231,9 +231,10 @@ export async function processFriendPhone(
             });
 
             const timeStr = match.startTime.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
+            const inviterName = invitedByPlayer?.name?.split(' ')[0] || 'Un amico';
             await simulateTypingAndSend(
                 friendPhone,
-                `Ciao ${existingPlayer.name || ''}! Ti ha aggiunto alla partita di padel ${match.court?.name || 'campo'} alle ${timeStr}. Ci vediamo lì! 🎾`
+                `Ciao ${existingPlayer.name?.split(' ')[0] || ''}! 🎾\n\n${inviterName} ti ha aggiunto alla partita di padel — *${match.court?.name || 'campo'}* alle *${timeStr}*.\n\nCi vediamo in campo! 💪`
             );
 
             await simulateTypingAndSend(senderJid, `✅ ${existingPlayer.name || friendPhone} aggiunto! Ci vediamo in campo 🎾`, messageKey);

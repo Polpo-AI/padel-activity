@@ -98,17 +98,11 @@ export async function processMatchOutcomes(matchId: string): Promise<void> {
                 const player = match.MatchPlayer.find(mp => mp.playerId === inv.playerId)?.player;
                 if (player && player.phoneNumber && !player.phoneNumber.startsWith('FRIEND_')) {
                     const { simulateTypingAndSend } = await import('./whatsapp');
-                    const { setBookingState } = await import('./booking');
                     const jid = `${player.phoneNumber}@s.whatsapp.net`;
                     const message = `Ciao ${player.name || ''}! 👋 Com'è andata la partita di oggi al ${match.court?.name || 'campo'}? 🎾 Raccontami pure qui! 😊`;
-                    
+
                     try {
                         await simulateTypingAndSend(jid, message);
-                        await setBookingState(jid, { 
-                            step: 'AWAITING_POST_MATCH_FEEDBACK', 
-                            matchId: match.id, 
-                            courtId: match.courtId || '' 
-                        });
                         await redis.set(redisKey, '1', 'EX', 86400); // 24 ore
                     } catch (err) {
                         logger.error({ err, playerId: inv.playerId }, 'Error sending feedback request');
