@@ -110,6 +110,19 @@ MAI dimenticare la produzione — uno schema disallineato causa crash silenziosi
 **Schema:** `Club.botPhoneNumber String?` + `WhatsAppMessage.clubId String?` (nullable per record legacy).
 **Auth folder Baileys:** `baileys_auth_info_{clubId}` per ogni club, `baileys_auth_info` per default/legacy.
 
+### 23. Query DB rapide: usare psql diretto, MAI `npx tsx -e` inline
+**Bug reale (ripetuto):** `npx tsx -e "... await p.$disconnect() ..."` → esbuild errore `Expected identifier but found "("` perché `$` viene interpretato come shell. `node -e "SELECT ..."` → `bash: SELECT: command not found`.
+**Regola:** per leggere il DB al volo usare SEMPRE psql direttamente:
+```bash
+PGPASSWORD=<password> psql -h <host> -p 5432 -U <user> -d postgres -c 'SELECT role, content FROM "WhatsAppMessage" ORDER BY timestamp DESC LIMIT 20;'
+```
+Credenziali da `DIRECT_URL_STAGING` nel `.env` locale. Per script più complessi, scrivere un file `.ts` e poi `npx tsx file.ts` — mai `-e` inline con Prisma.
+**Dove trovare le credenziali:**
+```bash
+grep DIRECT_URL_STAGING .env   # → host, porta 5432, user, password
+grep REDIS_PASSWORD .env       # → per redis-cli -a <password>
+```
+
 ### 22. Messaggi USER consecutivi in history causano Anthropic 400
 **Bug reale:** il debounce raggruppa più messaggi dello stesso utente in un batch. `_handleBatchInner` salva OGNI messaggio individualmente nel DB come `role=USER`. `buildBrainContext` li ricarica come `recentMessages`. `callBrain` li passa ad Anthropic tutti insieme + aggiunge il `userMessage` (testo combinato) → tre `user` di fila → Anthropic rigetta con 400 "roles must alternate" → catch → fallback casuale.
 **Fix in place:** in `callBrain` (brain.ts), prima di costruire il payload per Anthropic: (1) fonde i messaggi con lo stesso ruolo consecutivi con `\n`; (2) rimuove l'ultimo messaggio se è `user` (il `userMessage` lo sostituisce già). In questo modo Anthropic riceve sempre alternanza corretta.
