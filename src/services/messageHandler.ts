@@ -19,7 +19,7 @@ import { registerBatchHandler, NormalizedMessage } from './inbound-queue';
 import { getOnboardingState, continueOnboarding, startSingleOnboarding } from './onboarding-flow';
 import { confirmRedirectChoice } from './redirect';
 import pino from 'pino';
-import { simulateTypingAndSend, createGroupAndAddPlayers, downloadMediaMessage } from './whatsapp';
+import { simulateTypingAndSend, sendMessage, createGroupAndAddPlayers, downloadMediaMessage } from './whatsapp';
 import { reminderQueue } from './queue';
 import { runWithContext, getCorrelationId } from '../utils/request-context';
 
@@ -186,8 +186,72 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[], cor
         : await prisma.club.findFirst();
     if (!club) club = await prisma.club.findFirst();
 
+    // ── ADMIN APPROVAL COMMAND ─────────────────────────────────────
+    // Admin (club.adminPhone) può scrivere "ok" o "ok 3293256828" al bot
+    // per autorizzare un numero sconosciuto a ricevere risposte.
+    const adminPhone = (club?.adminPhone || '').replace(/\D/g, '');
+    const isFromAdmin = adminPhone && phoneNumber === adminPhone;
+    if (isFromAdmin) {
+        const okMatch = combinedText.match(/^ok\s*(\d{7,15})?$/i);
+        if (okMatch) {
+            const redis = getRedis();
+            let targetPhone = okMatch[1];
+            if (!targetPhone) {
+                // "ok" senza numero: approva l'unico pending o mostra lista
+                const pendingRaw = await redis.get(`approval:last_pending:${club?.id || ''}`);
+                if (pendingRaw) targetPhone = pendingRaw;
+            }
+            if (targetPhone) {
+                await redis.set(`approval:approved:${targetPhone}`, '1', 'EX', 7 * 24 * 3600);
+                await redis.del(`approval:pending:${targetPhone}`);
+                await redis.del(`approval:last_pending:${club?.id || ''}`);
+                logger.info({ targetPhone }, 'Admin approved number');
+                // Replay il messaggio pendente come se fosse appena arrivato
+                const stored = await redis.get(`approval:text:${targetPhone}`);
+                if (stored) {
+                    await redis.del(`approval:text:${targetPhone}`);
+                    const { handleBatch } = await import('./messageHandler');
+                    const { getClubId } = await import('../utils/request-context');
+                    await handleBatch(`${targetPhone}@s.whatsapp.net`, [{
+                        type: 'text',
+                        text: stored,
+                        clubId: getClubId(),
+                        raw: {
+                            key: { id: `APPROVED_${Date.now()}`, remoteJid: `${targetPhone}@s.whatsapp.net`, fromMe: false },
+                            pushName: targetPhone,
+                            messageTimestamp: Math.floor(Date.now() / 1000),
+                            message: { conversation: stored },
+                        } as any,
+                    }]);
+                }
+            } else {
+                await sendMessage(jid, '⚠️ Nessun numero in attesa di approvazione.');
+            }
+            return;
+        }
+    }
+
     if (!player) {
-        // Nuovo utente — avvia onboarding
+        // Numero sconosciuto: richiede approvazione admin prima di rispondere
+        const redis = getRedis();
+        const approved = await redis.get(`approval:approved:${phoneNumber}`);
+        if (!approved) {
+            const alreadyPending = await redis.get(`approval:pending:${phoneNumber}`);
+            if (!alreadyPending && adminPhone) {
+                // Prima volta che scrive: notifica admin e metti in attesa
+                const preview = combinedText.substring(0, 200) || '(nessun testo)';
+                await redis.set(`approval:pending:${phoneNumber}`, '1', 'EX', 86400);
+                await redis.set(`approval:text:${phoneNumber}`, combinedText || '', 'EX', 86400);
+                await redis.set(`approval:last_pending:${club?.id || ''}`, phoneNumber, 'EX', 86400);
+                const adminJid = `${adminPhone}@s.whatsapp.net`;
+                await sendMessage(adminJid,
+                    `🔔 Numero sconosciuto: +${phoneNumber}\n📩 "${preview}"\n\nRispondi *ok ${phoneNumber}* per autorizzare.`
+                );
+                logger.info({ phoneNumber }, 'Unknown number — waiting for admin approval');
+            }
+            return; // Nessuna risposta al numero non autorizzato
+        }
+        // Numero approvato: procedi con l'onboarding
         const onboardingConfig = {
             clubId: club?.id || '',
             botName: (club as any)?.botName || 'Francesca',
@@ -199,7 +263,6 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[], cor
             allowMixedLevels: club?.allowMixedLevels ?? false,
             maxDailyMessages: club?.maxDailyMessages ?? 2,
         };
-        // Salva intent pendente così viene ripreso dopo l'onboarding
         if (combinedText) {
             const { setState } = await import('./conversation-state');
             await setState(`state:pending-intent:${jid}`, { intent: 'PENDING', combinedText }, 600);
