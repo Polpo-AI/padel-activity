@@ -202,7 +202,7 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[], cor
                 if (pendingRaw) targetPhone = pendingRaw;
             }
             if (targetPhone) {
-                await redis.set(`approval:approved:${targetPhone}`, '1', 'EX', 7 * 24 * 3600);
+                await redis.set(`approval:approved:${targetPhone}`, '1', 'EX', 90 * 24 * 3600);
                 await redis.del(`approval:pending:${targetPhone}`);
                 await redis.del(`approval:last_pending:${club?.id || ''}`);
                 logger.info({ targetPhone }, 'Admin approved number');
