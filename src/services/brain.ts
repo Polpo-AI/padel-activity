@@ -334,7 +334,24 @@ PRINCIPIO BASE: se c'è ambiguità, assumi l'interpretazione più favorevole all
 - Con inviti multipli e risposta ambigua → chiedi a quale si riferisce
 `;
 
-    const history = recentMessages.slice(-8);
+    const rawHistory = recentMessages.slice(-8);
+
+    // Merge consecutive same-role messages to avoid Anthropic 400 "roles must alternate".
+    // This happens when a debounced batch saves N user messages individually to DB,
+    // then they all appear back-to-back in recentMessages.
+    const mergedHistory: { role: string; content: string }[] = [];
+    for (const msg of rawHistory) {
+        const last = mergedHistory[mergedHistory.length - 1];
+        if (last && last.role === msg.role) {
+            last.content += '\n' + msg.content;
+        } else {
+            mergedHistory.push({ role: msg.role, content: msg.content });
+        }
+    }
+    // Drop trailing user message — userMessage (combined batch text) already supersedes it.
+    if (mergedHistory.length > 0 && mergedHistory[mergedHistory.length - 1].role === 'user') {
+        mergedHistory.pop();
+    }
 
     try {
         const response = await anthropic.messages.create({
@@ -343,7 +360,7 @@ PRINCIPIO BASE: se c'è ambiguità, assumi l'interpretazione più favorevole all
             temperature: 0.7,
             system: systemPrompt,
             messages: [
-                ...history.map(m => ({
+                ...mergedHistory.map(m => ({
                     role: (m.role === 'USER' ? 'user' : 'assistant') as 'user' | 'assistant',
                     content: m.content,
                 })),
