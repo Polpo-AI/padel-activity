@@ -52,6 +52,8 @@ interface ClubSocketState {
     isResyncing: boolean;
     offlineMessages: Map<string, proto.IWebMessageInfo[]>;
     botPhoneNumber?: string;
+    heartbeatInterval: NodeJS.Timeout | null;
+    lastHeartbeatOk: number; // timestamp ultima conferma socket vivo
 }
 
 // Map<clubId, stato> — supporta N club contemporaneamente
@@ -156,6 +158,8 @@ export async function connectToWhatsApp(clubId?: string, botPhoneNumber?: string
         isResyncing: false,
         offlineMessages: new Map(),
         botPhoneNumber: botPhone,
+        heartbeatInterval: null,
+        lastHeartbeatOk: Date.now(),
     };
     clubSockets.set(key, state);
 
@@ -211,6 +215,10 @@ async function _doConnect(key: string, state: ClubSocketState): Promise<void> {
         if (connection === 'close') {
             const statusCode = (lastDisconnect?.error as Boom)?.output?.statusCode;
             state.status = 'closed';
+            if (state.heartbeatInterval) {
+                clearInterval(state.heartbeatInterval);
+                state.heartbeatInterval = null;
+            }
             const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
 
             logger.error({ statusCode, clubId: key, error: lastDisconnect?.error?.message },
@@ -236,6 +244,46 @@ async function _doConnect(key: string, state: ClubSocketState): Promise<void> {
             state.reconnectAttempts = 0;
             state.isReconnecting = false;
             state.status = 'open';
+            state.lastHeartbeatOk = Date.now();
+
+            // ── Heartbeat anti-drop ──────────────────────────────────
+            // Ogni 5 minuti verifica che il socket sia ancora vivo usando
+            // getState() (API Baileys leggera). Se fallisce 2 volte di fila
+            // forza il reconnect senza aspettare connection.update 'close'.
+            if (state.heartbeatInterval) clearInterval(state.heartbeatInterval);
+            let heartbeatFailures = 0;
+            state.heartbeatInterval = setInterval(async () => {
+                if (state.status !== 'open' || state.isReconnecting) return;
+                try {
+                    // getState() lancia se il socket è zombie/chiuso
+                    if (!state.sock || !state.sock.authState) throw new Error('sock null');
+                    const ws = (state.sock as any).ws;
+                    if (!ws || ws.readyState !== 1 /* OPEN */) throw new Error('ws not open');
+                    heartbeatFailures = 0;
+                    state.lastHeartbeatOk = Date.now();
+                } catch (err) {
+                    heartbeatFailures++;
+                    logger.warn({ clubId: key, failures: heartbeatFailures }, 'WA heartbeat failed');
+                    if (heartbeatFailures >= 2) {
+                        logger.error({ clubId: key }, 'WA socket silently dropped — forcing reconnect');
+                        clearInterval(state.heartbeatInterval!);
+                        state.heartbeatInterval = null;
+                        heartbeatFailures = 0;
+                        state.status = 'closed';
+                        if (!state.isReconnecting) {
+                            state.isReconnecting = true;
+                            const delayMs = Math.min(1000 * Math.pow(2, state.reconnectAttempts), MAX_RECONNECT_DELAY_MS);
+                            state.reconnectAttempts++;
+                            setTimeout(() => {
+                                state.isReconnecting = false;
+                                _doConnect(key, state).catch(e =>
+                                    logger.error({ e, clubId: key }, 'Heartbeat-triggered reconnect failed')
+                                );
+                            }, delayMs);
+                        }
+                    }
+                }
+            }, 5 * 60 * 1000); // ogni 5 minuti
 
             // Notifica admin startup
             setTimeout(async () => {

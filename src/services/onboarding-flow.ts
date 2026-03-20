@@ -429,9 +429,11 @@ Non usare "benvenuto/a" come prima parola. Scrivi solo il messaggio, nient'altro
 
             // Riprende il booking flow con i parametri originali
             const { handleBatch } = await import('./messageHandler');
+            const { getClubId } = await import('../utils/request-context');
             await handleBatch(senderJid, [{
                 type: 'text',
                 text: pending.combinedText,
+                clubId: getClubId(), // propaga il clubId dal context corrente — evita override AsyncLocalStorage
                 raw: {
                     key: { id: `RESUME_${Date.now()}`, remoteJid: senderJid, fromMe: false },
                     pushName: name,
