@@ -226,9 +226,116 @@ export type OnboardingStep =
     | 'AWAITING_TIME_PREFERENCE'
     | 'COMPLETE';
 
+// ─────────────────────────────────────────────
+// ONBOARDING BRAIN — Sonnet con contesto circolo + storia conversazione
+// Risponde naturalmente a tutto e segnala quando ha nome + cognome completi.
+// ─────────────────────────────────────────────
+
+async function callOnboardingBrain(
+    senderJid: string,
+    userMessage: string,
+    config: ClubOnboardingConfig,
+): Promise<{ message: string; extractedName: string | null }> {
+    const club = await prisma.club.findUnique({ where: { id: config.clubId } });
+    const botName = config.botName || 'Francesca';
+    const clubLocation = [club?.address, club?.city].filter(Boolean).join(', ');
+    const clubHours = club ? `${(club as any).openTime || '08:00'}–${(club as any).closeTime || '23:30'}` : null;
+    const aiTone = club?.aiTone || 'calda, diretta, colloquiale — come un\'amica esperta del circolo';
+
+    // Carica storia conversazione delle ultime 24h
+    const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const recentMessages = await prisma.whatsAppMessage.findMany({
+        where: { chatId: senderJid, timestamp: { gte: since } },
+        orderBy: { timestamp: 'asc' },
+        take: 12,
+    });
+
+    // Merge consecutivi stessa role (lesson #22) + drop trailing user
+    const mergedHistory: { role: string; content: string }[] = [];
+    for (const msg of recentMessages) {
+        const last = mergedHistory[mergedHistory.length - 1];
+        if (last && last.role === msg.role) {
+            last.content += '\n' + msg.content;
+        } else {
+            mergedHistory.push({ role: msg.role, content: msg.content });
+        }
+    }
+    if (mergedHistory.length > 0 && mergedHistory[mergedHistory.length - 1].role === 'user') {
+        mergedHistory.pop();
+    }
+
+    const systemPrompt = `Sei ${botName}, l'assistente WhatsApp del circolo padel "${club?.name || 'Padel Club'}".
+Tono: ${aiTone}
+Usa SEMPRE il "tu" — mai "voi" o "lei".
+${clubLocation ? `Indirizzo: ${clubLocation}` : ''}
+${clubHours ? `Orari: ${clubHours}` : ''}
+
+Stai parlando con una persona che NON è ancora registrata.
+
+OBIETTIVO: iscriverla raccogliendo nome e cognome, ma in modo completamente naturale — senza mai sembrare un form.
+
+REGOLE FONDAMENTALI:
+- Rispondi SEMPRE prima a quello che dice/chiede l'utente, come farebbe un'amica del circolo
+- Presentati come ${botName} solo se non l'hai ancora fatto o se te lo chiedono
+- Chiedi nome e cognome solo DOPO aver risposto, e solo quando è naturale farlo
+- Se l'utente ha già dato nome E cognome in questo scambio → estraili
+- Se ha dato solo il nome, rispondi naturalmente e chiedi il cognome con leggerezza
+- MAI ignorare ciò che l'utente ha scritto per chiedere subito il nome
+- MAI usare formule burocratiche come "per registrarti ho bisogno di..."
+- MAX 3 frasi brevi. Caldo, umano, presente.
+
+Rispondi SEMPRE con JSON valido:
+{ "message": "...", "extractedName": "Nome Cognome" | null }
+
+"extractedName": inserisci nome + cognome SOLO se entrambi sono stati forniti esplicitamente (anche in messaggi precedenti visibili nello storico). Se hai solo il nome, metti null e chiedi il cognome.`;
+
+    const { anthropic } = await import('./ai');
+    try {
+        const response = await anthropic.messages.create({
+            model: 'claude-sonnet-4-6',
+            max_tokens: 300,
+            temperature: 0.7,
+            system: systemPrompt,
+            messages: [
+                ...mergedHistory.map(m => ({
+                    role: (m.role === 'USER' ? 'user' : 'assistant') as 'user' | 'assistant',
+                    content: m.content,
+                })),
+                { role: 'user', content: userMessage },
+            ],
+        });
+
+        if (response.content[0].type === 'text') {
+            const text = response.content[0].text.trim();
+            const start = text.indexOf('{');
+            const end = text.lastIndexOf('}');
+            if (start !== -1 && end !== -1) {
+                const parsed = JSON.parse(text.substring(start, end + 1));
+                let extractedName = parsed.extractedName || null;
+                // Sanity check: niente numeri, minimo 2 caratteri
+                if (extractedName && (!/\d/.test(extractedName)) && extractedName.length >= 2) {
+                    // Capitalizza ogni parola
+                    extractedName = extractedName.split(' ')
+                        .map((w: string) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+                        .join(' ');
+                } else {
+                    extractedName = null;
+                }
+                return { message: String(parsed.message || ''), extractedName };
+            }
+        }
+    } catch (err) {
+        logger.error({ err }, 'Onboarding brain call failed');
+    }
+
+    // Fallback minimale
+    return { message: `Ciao! Sono ${botName} del circolo 🎾 Come ti chiami?`, extractedName: null };
+}
+
 export async function startSingleOnboarding(
     senderJid: string,
-    config: ClubOnboardingConfig
+    config: ClubOnboardingConfig,
+    firstMessage?: string,
 ): Promise<void> {
     // Lock Redis NX atomico: previene doppio messaggio se due batch concorrenti
     // passano entrambi il check "no state + no player" prima che il primo scriva su Redis
@@ -239,21 +346,18 @@ export async function startSingleOnboarding(
 
     await setOnboardingState(senderJid, 'AWAITING_NAME', { config });
 
-    const botName = config.botName || 'Francesca';
-    let welcome = config.welcomeMessage || `Ciao! Sono ${botName} 👋 Lasciami nome e cognome così ti salvo — userai i tuoi dati solo per trovare partite con persone del tuo livello, nient'altro 🔒`;
-    if (!config.welcomeMessage && config.aiTone) {
-        try {
-            const { anthropic } = await import('./ai');
-            const response = await anthropic.messages.create({
-                model: 'claude-haiku-4-5-20251001',
-                max_tokens: 120,
-                temperature: 0.7,
-                messages: [{ role: 'user', content: `Scrivi il primo messaggio WhatsApp che ${botName} (assistente del circolo padel) invia a un nuovo contatto.\n\nTONO: ${config.aiTone}\nMAX: 2 frasi. Nessuna formattazione.\n\nIl messaggio deve:\n1. Presentarsi come ${botName}\n2. Chiedere esplicitamente "nome e cognome" (non solo "come ti chiami")\n3. Spiegare brevemente il perché: per entrare nella lista giocatori e trovare partite col proprio livello\n4. Rassicurare che i dati vengono usati solo per organizzare partite, non per altro\n\nScrivi solo il messaggio.` }],
-            });
-            if (response.content[0].type === 'text') welcome = response.content[0].text.trim();
-        } catch { /* usa il default */ }
+    if (firstMessage) {
+        // Risponde al primo messaggio in modo contestuale invece di mandare un benvenuto generico
+        const { message, extractedName } = await callOnboardingBrain(senderJid, firstMessage, config);
+        await simulateTypingAndSend(senderJid, message);
+        if (extractedName && extractedName.includes(' ')) {
+            await finalizeOnboarding(senderJid, { config, name: extractedName, skillLevel: -1 });
+        }
+    } else {
+        // Fallback: nessun messaggio iniziale (es. avvio manuale) → benvenuto generico
+        const botName = config.botName || 'Francesca';
+        await simulateTypingAndSend(senderJid, `Ciao! Sono ${botName} del circolo 🎾 Come ti chiami?`);
     }
-    await simulateTypingAndSend(senderJid, welcome);
 }
 
 export async function continueOnboarding(
@@ -266,75 +370,14 @@ export async function continueOnboarding(
     const { config } = stateData;
 
     if (step === 'AWAITING_NAME') {
-        // Estrae nome + cognome. Rifiuta nickname/nomi con numeri/nomi inventati.
-        let name: string | null = null;
-        try {
-            const { anthropic } = await import('./ai');
-            const response = await anthropic.messages.create({
-                model: 'claude-haiku-4-5-20251001',
-                max_tokens: 30,
-                temperature: 0,
-                messages: [{ role: 'user', content: `Estrai nome e cognome da questo messaggio WhatsApp di registrazione. Rispondi SOLO con "Nome Cognome" (prima lettera maiuscola). Regole:\n- Se contiene numeri o simboli (es. "pallina55", "user_123") → rispondi NULL\n- Se è un soprannome o nickname senza cognome plausibile → rispondi NULL\n- Se c'è solo il nome senza cognome, va bene restituire solo il nome se sembra reale\n- Se non riesci a trovare un nome reale → rispondi NULL\nMessaggio: "${messageText}"` }],
-            });
-            const extracted = response.content[0].type === 'text' ? response.content[0].text.trim() : null;
-            if (extracted && extracted.length > 0 && extracted.length < 60 && extracted.toUpperCase() !== 'NULL') {
-                // Doppia verifica: niente numeri nel risultato
-                if (!/\d/.test(extracted)) {
-                    // Capitalizza ogni parola
-                    name = extracted.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
-                }
-            }
-        } catch { /* nessun nome estratto */ }
+        const { message, extractedName } = await callOnboardingBrain(senderJid, messageText, config);
+        await simulateTypingAndSend(senderJid, message, messageKey);
 
-        // Se non abbiamo un nome valido, ri-chiedi con messaggio variato
-        if (!name) {
-            // Salva pending-intent SOLO se non già presente (non sovrascrivere con rumore conversazionale)
-            const { setState, getState } = await import('./conversation-state');
-            const existing = await getState(`state:pending-intent:${senderJid}`);
-            if (!existing) {
-                await setState(`state:pending-intent:${senderJid}`, { intent: 'PENDING', combinedText: messageText }, 600);
-            }
-            const reAskOptions = [
-                `Dimmi nome e cognome per registrarti — così ti riconosco quando prenoti 😊`,
-                `Non ho capito il nome! Scrivimi nome e cognome, es. "Marco Rossi" 😄`,
-                `Per registrarti ho bisogno di nome e cognome — come ti chiami? 🎾`,
-            ];
-            const reAsk = reAskOptions[Math.floor(Math.random() * reAskOptions.length)];
-            await simulateTypingAndSend(senderJid, reAsk, messageKey);
-            return;
+        if (extractedName && extractedName.includes(' ')) {
+            // Nome + cognome completi → finalizza
+            await finalizeOnboarding(senderJid, { ...stateData, name: extractedName, skillLevel: -1 }, messageKey);
         }
-
-        // Se estratto solo il nome senza cognome, chiedi il cognome
-        if (!name.includes(' ')) {
-            const { setState, getState } = await import('./conversation-state');
-            const existing = await getState(`state:pending-intent:${senderJid}`);
-            if (!existing) {
-                await setState(`state:pending-intent:${senderJid}`, { intent: 'PENDING', combinedText: messageText }, 600);
-            }
-            await simulateTypingAndSend(senderJid, `Piacere ${name}! Mi lasci anche un cognome? 😊`, messageKey);
-            return;
-        }
-        // Livello -1 = pending skill test — assegnato solo dal circolo tramite skill test o dashboard
-        const updatedState = { ...stateData, name, skillLevel: -1 };
-
-        const firstName = name.split(' ')[0];
-        if (config.askAvailability) {
-            await setOnboardingState(senderJid, 'AWAITING_AVAILABILITY', updatedState);
-            await simulateTypingAndSend(
-                senderJid,
-                `Piacere ${firstName}! 🤝 Che giorni sei disponibile di solito? (es. "lunedì e mercoledì sera", "weekend", "qualsiasi")`,
-                messageKey
-            );
-        } else if (config.askTimePreference) {
-            await setOnboardingState(senderJid, 'AWAITING_TIME_PREFERENCE', updatedState);
-            await simulateTypingAndSend(
-                senderJid,
-                `Piacere ${firstName}! 🤝 Hai preferenze sull'orario? (es. "mattina", "sera dopo le 18", "no preference")`,
-                messageKey
-            );
-        } else {
-            await finalizeOnboarding(senderJid, updatedState, messageKey);
-        }
+        // Se extractedName è solo nome (senza spazio) o null → il brain ha già chiesto il cognome nel message
         return;
     }
 

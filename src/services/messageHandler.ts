@@ -267,7 +267,7 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[], cor
             const { setState } = await import('./conversation-state');
             await setState(`state:pending-intent:${jid}`, { intent: 'PENDING', combinedText }, 600);
         }
-        await startSingleOnboarding(jid, onboardingConfig);
+        await startSingleOnboarding(jid, onboardingConfig, combinedText || undefined);
         return;
     }
 
