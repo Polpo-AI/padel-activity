@@ -104,36 +104,7 @@ export default function SettingsView({ token, club, onClubUpdate }) {
         </button>
       </div>
 
-      <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: 24 }}>
-        <div style={{ fontSize: 13, fontWeight: 600, color: C.text, marginBottom: 16 }}>📋 Checklist SaaS Readiness</div>
-        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          {[
-            { label: "Context Injection clubId implementato", done: true, priority: "CRITICO" },
-            { label: "State conversazionale su Redis (non DB)", done: true, priority: "CRITICO" },
-            { label: "AOF Redis attivo in docker-compose", done: true, priority: "ALTO" },
-            { label: "Staleness check sui job scaduti", done: true, priority: "ALTO" },
-            { label: "Rate limiting su /api/", done: true, priority: "ALTO" },
-            { label: "Webhook HMAC validation", done: true, priority: "ALTO" },
-            { label: "Soft-delete match storici", done: true, priority: "MEDIO" },
-            { label: "Fallback deterministico UNCLEAR_INTENT", done: true, priority: "MEDIO" },
-          ].map((item, i) => (
-            <div key={i} style={{
-              display: "flex", alignItems: "center", gap: 12, padding: "10px 14px",
-              background: C.bg, borderRadius: 8, border: `1px solid ${item.done ? `${C.open}30` : C.dim}`,
-            }}>
-              <span style={{ fontSize: 14 }}>{item.done ? "✅" : "⬜"}</span>
-              <span style={{ flex: 1, fontSize: 12, color: item.done ? C.muted : C.text }}>{item.label}</span>
-              <span style={{
-                fontSize: 9, fontWeight: 700, padding: "2px 7px", borderRadius: 6,
-                background: item.priority === "CRITICO" ? `${C.cancelled}18` : item.priority === "ALTO" ? `${C.warning}18` : `${C.locked}18`,
-                color: item.priority === "CRITICO" ? C.cancelled : item.priority === "ALTO" ? C.warning : C.locked,
-              }}>{item.priority}</span>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {toast && <Toast msg={toast.msg} type={toast.type} onDone={() => setToast(null)} />}
+{toast && <Toast msg={toast.msg} type={toast.type} onDone={() => setToast(null)} />}
     </div>
   );
 }
