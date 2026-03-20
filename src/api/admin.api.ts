@@ -92,7 +92,7 @@ router.get('/overview', adminAuth, async (_req: Request, res: Response) => {
             matchesThisMonth,
             openMatches,
             lockedMatches,
-            newPlayersThisMonth,
+            recentlyActivePlayers,
             totalInvitations,
             acceptedInvitations,
         ] = await Promise.all([
@@ -103,9 +103,9 @@ router.get('/overview', adminAuth, async (_req: Request, res: Response) => {
             prisma.match.count({ where: { startTime: { gte: thirtyDaysAgo }, type: 'MATCH' } }),
             prisma.match.count({ where: { status: 'OPEN', type: 'MATCH' } }),
             prisma.match.count({ where: { status: 'LOCKED', type: 'MATCH' } }),
-            prisma.player.count({ where: { createdAt: { gte: thirtyDaysAgo } } }),
-            prisma.invitation.count({ where: { createdAt: { gte: thirtyDaysAgo } } }),
-            prisma.invitation.count({ where: { status: 'ACCEPTED', createdAt: { gte: thirtyDaysAgo } } }),
+            prisma.player.count({ where: { lastContactedAt: { gte: thirtyDaysAgo } } }),
+            prisma.invitation.count({ where: { sentAt: { gte: thirtyDaysAgo } } }),
+            prisma.invitation.count({ where: { status: 'ACCEPTED', sentAt: { gte: thirtyDaysAgo } } }),
         ]);
 
         const fillRate = totalInvitations > 0 ? (acceptedInvitations / totalInvitations) : 0;
@@ -128,7 +128,7 @@ router.get('/overview', adminAuth, async (_req: Request, res: Response) => {
 
         res.json({
             totals: { totalClubs, totalPlayers, activePlayers, openMatches, lockedMatches },
-            period: { matchesToday, matchesThisMonth, newPlayersThisMonth, fillRate },
+            period: { matchesToday, matchesThisMonth, recentlyActivePlayers, fillRate },
             clubs: clubs.map(c => ({
                 id: c.id, name: c.name, city: c.city,
                 players: c._count.players,
@@ -157,7 +157,6 @@ router.get('/clubs', adminAuth, async (_req: Request, res: Response) => {
                 botPhoneNumber: true, adminPhone: true,
                 waveMultiplier: true, matchLowerRange: true, matchUpperRange: true,
                 maxDailyMessages: true, openTime: true, closeTime: true,
-                createdAt: true,
                 _count: {
                     select: {
                         players: true,
@@ -182,7 +181,6 @@ router.get('/clubs', adminAuth, async (_req: Request, res: Response) => {
                 waveMultiplier: c.waveMultiplier, matchLowerRange: c.matchLowerRange,
                 matchUpperRange: c.matchUpperRange, maxDailyMessages: c.maxDailyMessages,
                 openTime: c.openTime, closeTime: c.closeTime,
-                createdAt: c.createdAt,
                 players: c._count.players,
                 courts: c._count.courts,
                 totalMatches: c._count.matches,
@@ -315,7 +313,7 @@ router.get('/players', adminAuth, async (req: Request, res: Response) => {
                     club: { select: { id: true, name: true } },
                     _count: { select: { MatchPlayer: true, invitations: true } },
                 },
-                orderBy: { createdAt: 'desc' },
+                orderBy: { lastContactedAt: 'desc' },
                 take: parseInt(limit),
                 skip: parseInt(offset),
             }),
@@ -331,7 +329,7 @@ router.get('/players', adminAuth, async (req: Request, res: Response) => {
                 clubId: p.clubId, clubName: p.club?.name,
                 totalMatches: p._count.MatchPlayer,
                 totalInvitations: p._count.invitations,
-                createdAt: p.createdAt,
+                lastContactedAt: p.lastContactedAt,
             })),
             total,
         });

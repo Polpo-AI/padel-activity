@@ -63,7 +63,7 @@ export default function OverviewView({ token }) {
         <StatCard label="Partite (30gg)" value={period.matchesThisMonth} icon="📅" />
         <StatCard label="Open ora" value={totals.openMatches} icon="🟢" color={C.open} />
         <StatCard label="Locked ora" value={totals.lockedMatches} icon="🔒" color={C.locked} />
-        <StatCard label="Nuovi giocatori (30gg)" value={period.newPlayersThisMonth} icon="✨" color={C.warning} />
+        <StatCard label="Giocatori attivi (30gg)" value={period.recentlyActivePlayers} icon="✨" color={C.warning} />
         <StatCard label="Fill rate (30gg)" value={`${Math.round((period.fillRate || 0) * 100)}%`} icon="📊"
           color={(period.fillRate || 0) >= 0.7 ? C.open : (period.fillRate || 0) >= 0.4 ? C.warning : C.cancelled} />
       </div>

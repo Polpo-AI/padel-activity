@@ -61,7 +61,7 @@ export default function PlayersAdminView({ token, clubs }) {
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
             <thead>
               <tr style={{ borderBottom: `1px solid ${C.border}` }}>
-                {["Nome", "Telefono", "Circolo", "Livello", "Affidabilità", "Partite", "Stato", "Iscritto"].map(h => (
+                {["Nome", "Telefono", "Circolo", "Livello", "Affidabilità", "Partite", "Stato", "Ultimo contatto"].map(h => (
                   <th key={h} style={{ padding: "12px 16px", textAlign: "left", fontSize: 10, color: C.muted, textTransform: "uppercase", letterSpacing: "0.08em", fontWeight: 600 }}>{h}</th>
                 ))}
               </tr>
@@ -93,7 +93,7 @@ export default function PlayersAdminView({ token, clubs }) {
                     </span>
                   </td>
                   <td style={{ padding: "11px 16px", color: C.muted, fontSize: 11 }}>
-                    {new Date(p.createdAt).toLocaleDateString("it-IT", { day: "numeric", month: "short", year: "2-digit" })}
+                    {p.lastContactedAt ? new Date(p.lastContactedAt).toLocaleDateString("it-IT", { day: "numeric", month: "short", year: "2-digit" }) : "—"}
                   </td>
                 </tr>
               ))}
