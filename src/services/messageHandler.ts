@@ -367,7 +367,7 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[], cor
                 });
                 if (match && match.court) {
                     const totalCost = await calculateSlotCost(match.court.id, match.startTime);
-                    const pricePerPerson = totalCost > 0 ? (totalCost / 4).toFixed(0) : null;
+                    const pricePerPerson = totalCost > 0 ? (totalCost / 4).toFixed(2) : null;
                     const racketPrice = (club as any)?.racketPrice != null ? `${(club as any).racketPrice}€` : null;
                     const timeStr = match.startTime.toLocaleString('it-IT', {
                         timeZone: 'Europe/Rome', weekday: 'long', day: 'numeric',
