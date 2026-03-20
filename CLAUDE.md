@@ -110,6 +110,11 @@ MAI dimenticare la produzione — uno schema disallineato causa crash silenziosi
 **Schema:** `Club.botPhoneNumber String?` + `WhatsAppMessage.clubId String?` (nullable per record legacy).
 **Auth folder Baileys:** `baileys_auth_info_{clubId}` per ogni club, `baileys_auth_info` per default/legacy.
 
+### 22. Messaggi USER consecutivi in history causano Anthropic 400
+**Bug reale:** il debounce raggruppa più messaggi dello stesso utente in un batch. `_handleBatchInner` salva OGNI messaggio individualmente nel DB come `role=USER`. `buildBrainContext` li ricarica come `recentMessages`. `callBrain` li passa ad Anthropic tutti insieme + aggiunge il `userMessage` (testo combinato) → tre `user` di fila → Anthropic rigetta con 400 "roles must alternate" → catch → fallback casuale.
+**Fix in place:** in `callBrain` (brain.ts), prima di costruire il payload per Anthropic: (1) fonde i messaggi con lo stesso ruolo consecutivi con `\n`; (2) rimuove l'ultimo messaggio se è `user` (il `userMessage` lo sostituisce già). In questo modo Anthropic riceve sempre alternanza corretta.
+**Regola:** MAI passare ad Anthropic una lista di messaggi senza prima verificare che i ruoli si alternino correttamente.
+
 ### 21. Vi.mock e module caching in Vitest: usare mockImplementation per catturare ctx
 **Problema:** `mockRunWithContext.mock.calls` è vuoto anche se il codice viene eseguito → il modulo crea il suo reference al momento dell'import, che può essere diverso dall'oggetto nella closure del test.
 **Fix:** usare `mockRunWithContext.mockImplementation((ctx, fn) => { capturedCtx.push(ctx); return fn(); })` nel `beforeEach` di ogni suite, oppure verificare il comportamento indirettamente (es. verificare che la prima query al DB sia quella corretta).
