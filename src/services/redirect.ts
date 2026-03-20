@@ -239,10 +239,12 @@ export async function confirmRedirectChoice(
     const chosenOption = await resolveChoice(choiceText, options);
 
     if (!chosenOption) {
-        await simulateTypingAndSend(
-            jid,
-            "Non ho capito quale preferisci 😅 Rispondimi con il numero dell'opzione (es. \"la prima\", \"opzione 2\") o con l'orario."
-        );
+        const clarifyVariants = [
+            `Non ho capito quale preferisci 😅 Dimmi il numero dell'opzione o l'orario e mi metto subito!`,
+            `Aiutami: scrivi il numero dell'opzione che vuoi (es. "la prima", "opzione 2") 🎾`,
+            `Non sono sicura di aver capito — ripeti con il numero dell'opzione o l'orario? 😊`,
+        ];
+        await simulateTypingAndSend(jid, clarifyVariants[Math.floor(Math.random() * clarifyVariants.length)]);
         return;
     }
 
@@ -323,7 +325,18 @@ async function addGroupToMatch(matchId: string, group: RedirectGroup): Promise<v
                 for (const phone of group.playerPhones) {
                     await sock.groupParticipantsUpdate(match.groupId, [`${phone}@s.whatsapp.net`], 'add');
                 }
-                await sendMessage(match.groupId, `🎾 Siamo al completo! Benvenuti ${group.playerPhones.map(p => p).join(', ')}!`);
+                // Recupera i nomi dei nuovi arrivati
+                const newPlayers = await prisma.player.findMany({
+                    where: { phoneNumber: { in: group.playerPhones } },
+                    select: { name: true },
+                });
+                const newNames = newPlayers.map(p => (p.name || '').split(' ')[0]).filter(Boolean).join(', ') || 'i nuovi arrivati';
+                const welcomeVariants = [
+                    `Siamo al completo! 🎾 Benvenuti ${newNames} — ci vediamo in campo!`,
+                    `Gruppo al completo! Benvenuti ${newNames} 🙌 Preparatevi!`,
+                    `${newNames} sono con noi! 🎾 Squadra al completo, a presto!`,
+                ];
+                await sendMessage(match.groupId, welcomeVariants[Math.floor(Math.random() * welcomeVariants.length)]);
             }
         }
     }
@@ -551,21 +564,54 @@ function buildOptionDescription(
 }
 
 function buildRedirectMessage(group: RedirectGroup, options: RedirectOption[]): string {
-    const reasonText: Record<RedirectGroup['reason'], string> = {
-        CANCELLED: 'La partita purtroppo è stata cancellata',
-        UNFILLED: 'Non siamo riusciti a riempire il campo',
-        SLOT_TAKEN: 'Il posto è stato preso mentre aspettavi',
-        POOL_EXHAUSTED: 'Non ci sono altri giocatori disponibili per completare la partita',
-        CANCELLATION: 'Un giocatore ha disdetto e non riusciamo a trovare un sostituto',
+    const reasonVariants: Record<RedirectGroup['reason'], string[]> = {
+        CANCELLED: [
+            'La partita purtroppo è stata cancellata 😔',
+            'Mi dispiace, la partita non si è potuta tenere 😔',
+            'Purtroppo la partita è saltata 😕',
+        ],
+        UNFILLED: [
+            'Non siamo riusciti a trovare abbastanza giocatori 😔',
+            'Il campo è rimasto vuoto — non abbiamo trovato tutti e 4 😕',
+            'Purtroppo non abbiamo chiuso la squadra in tempo 😔',
+        ],
+        SLOT_TAKEN: [
+            'Il posto è stato preso mentre aspettavi 😕',
+            'Peccato, qualcun altro ha preso il posto un attimo prima! 😅',
+            'Il posto si è liberato ma qualcuno è stato più veloce 😔',
+        ],
+        POOL_EXHAUSTED: [
+            'Ho esaurito i giocatori disponibili per completare la partita 😔',
+            'Non ci sono altri giocatori da chiamare in questo momento 😕',
+            'Il pool di giocatori è esaurito — non riesco a trovare altri 😔',
+        ],
+        CANCELLATION: [
+            'Un giocatore ha disdetto e non riesco a trovare un sostituto in tempo 😔',
+            'Purtroppo qualcuno ha cancellato e non riusciamo a rimpiazzarlo 😕',
+            'Disdetta dell\'ultimo minuto e nessuno disponibile come sostituto 😔',
+        ],
     };
 
-    const reason = reasonText[group.reason];
+    const reasonList = reasonVariants[group.reason];
+    const reason = reasonList[Math.floor(Math.random() * reasonList.length)];
     const lines = options.map((o, i) => `${i + 1}. ${o.description}`).join('\n');
 
-    return `${reason} 😕\n\nHo trovato queste alternative per voi:\n\n${lines}\n\nQuale preferisci? Dimmi il numero e chiudo subito 🎾`;
+    const closingVariants = [
+        `Quale preferisci? Dimmi il numero e chiudo subito 🎾`,
+        `Dimmi quale ti va e mi metto subito in moto 🎾`,
+        `Scegli pure — basta il numero e ci penso io 🙌`,
+    ];
+    const closing = closingVariants[Math.floor(Math.random() * closingVariants.length)];
+
+    return `${reason}\n\nHo trovato queste alternative:\n\n${lines}\n\n${closing}`;
 }
 
 function buildPlayerNotificationMessage(group: RedirectGroup): string {
     const timeStr = group.originalStartTime.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
-    return `Ciao! Purtroppo la partita delle ${timeStr} non si è chiusa. Stiamo cercando un'alternativa — ti aggiorniamo a breve 🎾`;
+    const variants = [
+        `Ciao! Purtroppo la partita delle ${timeStr} non si è chiusa 😔 Stiamo trovando un'alternativa — ti aggiorniamo a breve 🎾`,
+        `La partita delle ${timeStr} è saltata 😕 Stiamo cercando un'altra soluzione per voi — a breve ti dico!`,
+        `Aggiornamento sulla partita delle ${timeStr}: non siamo riusciti a completarla 😔 Sto lavorando su un'alternativa!`,
+    ];
+    return variants[Math.floor(Math.random() * variants.length)];
 }

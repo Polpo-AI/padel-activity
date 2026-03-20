@@ -374,21 +374,26 @@ export async function handleMatchFilled(matchId: string, startTime: Date): Promi
     const dateStr = startTime.toLocaleDateString('it-IT', { timeZone: 'Europe/Rome', weekday: 'long', day: 'numeric', month: 'long' });
     const groupName = `Padel ${timeStr} - ${match.court?.name || 'Campo'}`;
 
-    // Build rich confirmation message
-    const playerList = confirmed.map((mp, i) => `${i + 1}. ${mp.player.name || 'Giocatore'}`).join('\n');
-    const confirmationMsg = `
-✨ **PARTITA CONFERMATA!** 🎾
-
-🏟️ **Circolo**: ${match.club?.name || 'Padel Club'}
-📍 **Campo**: ${match.court?.name || 'Da definire'} ${match.court?.isCovered ? '🏠 coperto' : '☀️ scoperto'}
-📅 **Data**: ${dateStr}
-🕐 **Orario**: ${timeStr}
-
-👥 **Giocatori**:
-${playerList}
-
-🌟 Buon divertimento a tutti! 💪🎾🏁
-`.trim();
+    // Genera messaggio di conferma warm con Haiku
+    const firstNames = confirmed.map(mp => (mp.player.name || 'Giocatore').split(' ')[0]).join(', ');
+    const courtLabel = `${match.court?.name || 'il campo'} (${match.court?.isCovered ? 'coperto 🏠' : 'all\'aperto ☀️'})`;
+    let confirmationMsg = `Partita confermata! 🎾 Siamo in 4: ${firstNames}.\n📅 ${dateStr} alle ${timeStr} — ${courtLabel}\nBuon divertimento a tutti! 💪`;
+    try {
+        const { anthropic } = await import('./ai');
+        const aiTone = (match.club as any)?.aiTone || 'calda, entusiasta, colloquiale';
+        const prompt = `Scrivi un messaggio WhatsApp da mandare in un gruppo padel quando la partita si è appena riempita.
+TONO: ${aiTone}
+CONTESTO: ${firstNames} giocheranno ${dateStr} alle ${timeStr} su ${courtLabel}.
+REGOLE: max 3 frasi, caldo ed entusiasta ma non esagerato, includi orario e nomi, niente markdown (no asterischi), emoji con parsimonia.
+Scrivi solo il messaggio.`;
+        const resp = await anthropic.messages.create({
+            model: 'claude-haiku-4-5-20251001',
+            max_tokens: 150,
+            temperature: 0.8,
+            messages: [{ role: 'user', content: prompt }],
+        });
+        if (resp.content[0].type === 'text') confirmationMsg = resp.content[0].text.trim();
+    } catch { /* usa fallback */ }
 
     // Filter players that have a valid JID/Phone for the WhatsApp group
     // Guests or placeholder players (with fake identifiers) won't be added to the physical group

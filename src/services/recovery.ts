@@ -92,8 +92,16 @@ export async function handleCancellation(
     // Notifica gruppo WhatsApp
     if (match.groupId && !match.groupId.startsWith('WHOLE_COURT_')) {
         const urgencyMsg = isLastMinute
-            ? `⚠️ Un giocatore ha appena disdetto. Stiamo cercando un sostituto urgentemente!`
-            : `Un giocatore ha disdetto. Stiamo cercando un sostituto 🔍`;
+            ? [
+                `⚠️ Disdetta dell'ultimo minuto! Stiamo cercando un sostituto in corsa — tenetevi pronti!`,
+                `⚠️ Un giocatore ha appena disdetto. Ci stiamo muovendo subito per trovare qualcuno!`,
+                `⚠️ Disdetta last-minute! Sto cercando un sostituto urgentemente 🔍`,
+              ][Math.floor(Math.random() * 3)]
+            : [
+                `Un giocatore ha disdetto. Sto cercando qualcuno per completare la squadra 🔍`,
+                `Aggiornamento: una disdetta — cerco subito un sostituto 🎾`,
+                `Ci manca un giocatore. Sto già cercando qualcuno — a breve aggiornamenti!`,
+              ][Math.floor(Math.random() * 3)];
         try {
             const { sendMessage } = await import('./whatsapp');
             await sendMessage(match.groupId, urgencyMsg);
@@ -228,9 +236,16 @@ export async function handleMatchUnfillable(matchId: string, forceCancel: boolea
         for (const mp of confirmedPlayers) {
             await sleep(randomInt(2, 5) * 1000);
             try {
+                const missing = match.playersNeeded - confirmedPlayers.length;
+                const unfillableVariants = [
+                    `Mi dispiace, non siamo riusciti a trovare tutti e ${match.playersNeeded} per le ${timeStr} a ${courtName} 😔 Ho liberato il campo — scrivimi quando vuoi riprovare e ci penso io 🎾`,
+                    `Purtroppo la partita delle ${timeStr} a ${courtName} è saltata — mancavano ancora ${missing} ${missing === 1 ? 'giocatore' : 'giocatori'} 😕 Dimmi quando sei libero e prenotiamo subito!`,
+                    `Non ce l'abbiamo fatta stavolta: ${courtName} alle ${timeStr} è rimasto vuoto 😔 Il campo è già libero — quando vuoi riprovare?`,
+                    `La partita delle ${timeStr} a ${courtName} non si è chiusa, mi dispiace 😔 Se vuoi riprovare in un altro momento dimmi pure!`,
+                ];
                 await simulateTypingAndSend(
                     mp.player.phoneNumber,
-                    `${["Mi dispiace, non siamo riusciti a trovare abbastanza giocatori", "Purtroppo non abbiamo trovato abbastanza persone", "Siamo rimasti in pochi, mi dispiace"][Math.floor(Math.random() * 3)]} per la partita delle ${timeStr} a ${courtName}. Partita annullata 😔 Ci riproveremo!`
+                    unfillableVariants[Math.floor(Math.random() * unfillableVariants.length)]
                 );
             } catch (err) {
                 logger.error({ err }, `Failed to notify ${mp.player.phoneNumber} of cancellation`);
@@ -291,7 +306,12 @@ export async function checkMatchTimeouts(): Promise<void> {
 
             if (!alreadySent) {
                 const timeStr = match.startTime.toLocaleTimeString('it-IT', { timeZone: 'Europe/Rome', hour: '2-digit', minute: '2-digit' });
-                const msg = `⚠️ *ULTIMA CHIAMATA*: mancano 30 minuti alla scadenza per la partita delle ${timeStr}. Siamo ancora in ${confirmed}/${match.playersNeeded}. Se non troviamo gli altri a breve, dovrò annullare 😔`;
+                const ultCallVariants = [
+                    `Ehi! Siamo in ${confirmed} su ${match.playersNeeded} per le ${timeStr} e mancano 30 minuti alla scadenza 😬 Se non troviamo nessuno a breve dovrò liberare il campo 😔`,
+                    `⚠️ Mancano 30 minuti! La partita delle ${timeStr} è ancora in ${confirmed}/${match.playersNeeded} — sto cercando ma se entro poco non trovo nessuno dovrò annullare 😔`,
+                    `Ultima chiamata per le ${timeStr} 🎾 Siamo in ${confirmed} su ${match.playersNeeded} — sto facendo il possibile, ma senza altri giocatori dovrò cancellare 😕`,
+                ];
+                const msg = ultCallVariants[Math.floor(Math.random() * ultCallVariants.length)];
                 
                 // Notifica referenti
                 const referents = match.MatchPlayer.filter(mp => !mp.leftAt);

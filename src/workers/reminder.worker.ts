@@ -19,7 +19,14 @@ export const reminderWorker = new Worker<ReminderJobData>(
         const { matchId, groupId, timeStr } = job.data;
         logger.info(`Sending Reminder for Match ${matchId} to Group ${groupId}`);
 
-        const msg = `Promemoria: Padel alle ${timeStr}! Non fate tardi! 🏃‍♂️💨`;
+        const variants = [
+            `Ci vediamo tra un'ora! 🎾 Vi aspetto alle ${timeStr} — non fate tardi!`,
+            `Quasi ora di giocare! ⏰ Appuntamento alle ${timeStr}, portate le scarpette 😄`,
+            `Promemoria: padel alle ${timeStr}! 🏃‍♂️ Siete pronti?`,
+            `Tra un'ora si gioca! 🎾 Campo alle ${timeStr} — a presto!`,
+            `Un'ora e si inizia! Ci vediamo alle ${timeStr} 💪🎾`,
+        ];
+        const msg = variants[Math.floor(Math.random() * variants.length)];
 
         try {
             await sendMessage(groupId, msg);
