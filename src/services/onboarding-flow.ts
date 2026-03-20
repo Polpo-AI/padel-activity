@@ -264,6 +264,8 @@ async function callOnboardingBrain(
         mergedHistory.pop();
     }
 
+    const isEarlyConversation = recentMessages.length <= 4;
+
     const systemPrompt = `Sei ${botName}, l'assistente WhatsApp del circolo padel "${club?.name || 'Padel Club'}".
 Tono: ${aiTone}
 Usa SEMPRE il "tu" — mai "voi" o "lei".
@@ -276,13 +278,18 @@ OBIETTIVO: iscriverla raccogliendo nome e cognome, ma in modo completamente natu
 
 REGOLE FONDAMENTALI:
 - Rispondi SEMPRE prima a quello che dice/chiede l'utente, come farebbe un'amica del circolo
-- Presentati come ${botName} solo se non l'hai ancora fatto o se te lo chiedono
+${isEarlyConversation ? `- PRESENTATI come ${botName} in questo messaggio — è uno dei primi scambi e l'utente non sa ancora con chi parla. Fallo in modo naturale, dopo aver risposto alla domanda.` : `- Presentati come ${botName} solo se te lo chiedono o se non l'hai ancora fatto.`}
 - Chiedi nome e cognome solo DOPO aver risposto, e solo quando è naturale farlo
 - Se l'utente ha già dato nome E cognome in questo scambio → estraili
 - Se ha dato solo il nome, rispondi naturalmente e chiedi il cognome con leggerezza
 - MAI ignorare ciò che l'utente ha scritto per chiedere subito il nome
 - MAI usare formule burocratiche come "per registrarti ho bisogno di..."
 - MAX 3 frasi brevi. Caldo, umano, presente.
+
+REGOLA EMOJI:
+- Usa emoji con parsimonia: max 1-2 per risposta
+- MAI iniziare con un'emoji
+- Ogni emoji termina un pensiero: il sistema divide il testo in bolle separate su ogni emoji. Scrivi: [pensiero] 🎾 [pensiero successivo]. L'emoji chiude la bolla.
 
 Rispondi SEMPRE con JSON valido:
 { "message": "...", "extractedName": "Nome Cognome" | null }
@@ -349,7 +356,10 @@ export async function startSingleOnboarding(
     if (firstMessage) {
         // Risponde al primo messaggio in modo contestuale invece di mandare un benvenuto generico
         const { message, extractedName } = await callOnboardingBrain(senderJid, firstMessage, config);
-        await simulateTypingAndSend(senderJid, message);
+        const { splitAtEmoji } = await import('../utils/split-message');
+        for (const part of splitAtEmoji(message)) {
+            await simulateTypingAndSend(senderJid, part);
+        }
         if (extractedName && extractedName.includes(' ')) {
             await finalizeOnboarding(senderJid, { config, name: extractedName, skillLevel: -1 });
         }
@@ -371,7 +381,10 @@ export async function continueOnboarding(
 
     if (step === 'AWAITING_NAME') {
         const { message, extractedName } = await callOnboardingBrain(senderJid, messageText, config);
-        await simulateTypingAndSend(senderJid, message, messageKey);
+        const { splitAtEmoji } = await import('../utils/split-message');
+        for (const part of splitAtEmoji(message)) {
+            await simulateTypingAndSend(senderJid, part, messageKey);
+        }
 
         if (extractedName && extractedName.includes(' ')) {
             // Nome + cognome completi → finalizza

@@ -291,7 +291,10 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[], cor
         mappedContactCards.length > 0 ? mappedContactCards : undefined,
     );
 
-    await simulateTypingAndSend(jid, message, undefined);
+    const { splitAtEmoji } = await import('../utils/split-message');
+    for (const part of splitAtEmoji(message)) {
+        await simulateTypingAndSend(jid, part, undefined);
+    }
     // NON salvare qui: simulateTypingAndSend salva già il messaggio (Lesson #6)
 
     // Aggiorna dailyMessagesCount

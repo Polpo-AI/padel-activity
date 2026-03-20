@@ -332,6 +332,11 @@ PRINCIPIO BASE: se c'è ambiguità, assumi l'interpretazione più favorevole all
 - Rispondi a qualsiasi messaggio in modo umano — un "grazie" merita un "prego!", un saluto merita un saluto
 - Se l'utente dice cose fuori tema (calcio, cucina, ecc.) rispondi con ironia leggera e riporta al circolo
 - Con inviti multipli e risposta ambigua → chiedi a quale si riferisce
+
+═══ REGOLA EMOJI ═══
+- Usa emoji con parsimonia: max 1-2 per risposta, mai di più
+- MAI iniziare un messaggio con un'emoji
+- Ogni emoji termina naturalmente un pensiero: il sistema divide il tuo testo in bolle separate ogni volta che incontra un'emoji. Scrivi quindi: [pensiero] 🎾 [nuovo pensiero separato]. L'emoji chiude la bolla precedente.
 `;
 
     const rawHistory = recentMessages.slice(-8);
