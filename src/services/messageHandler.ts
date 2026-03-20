@@ -166,29 +166,16 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[], cor
     const textMessages = messages.filter(m => m.type === 'text' && m.text);
     const combinedText = textMessages.map(m => m.text).join(' ').trim();
 
-    // ─── ONBOARDING ───
-    const onboardingState = await getOnboardingState(jid);
-    if (onboardingState) {
-        const input = combinedText || contactCards.map(c => `${c.contactName || ''} ${c.contactPhone || ''}`).join(' ').trim();
-        if (input) await continueOnboarding(jid, input, onboardingState.step, { ...onboardingState.data, resolvedPhone: phoneNumber });
-        return;
-    }
-
-    // Risolvi il club: prima da clubId nel contesto (multi-tenant),
-    // poi da CLUB_ID env (legacy single-tenant), infine findFirst
+    // Risolvi il club subito — serve per il check admin prima dell'onboarding
     const resolvedClubId = clubId || process.env.CLUB_ID || undefined;
     const phoneVariants = [phoneNumber, '+' + phoneNumber, phoneNumber.replace(/^\+/, '')];
-    const player = await prisma.player.findFirst({
-        where: { phoneNumber: { in: phoneVariants }, clubId: resolvedClubId ? resolvedClubId : { not: '' } }
-    });
     let club = resolvedClubId
         ? await prisma.club.findUnique({ where: { id: resolvedClubId } })
         : await prisma.club.findFirst();
     if (!club) club = await prisma.club.findFirst();
 
-    // ── ADMIN APPROVAL COMMAND ─────────────────────────────────────
-    // Admin (club.adminPhone) può scrivere "ok" o "ok 3293256828" al bot
-    // per autorizzare un numero sconosciuto a ricevere risposte.
+    // ── ADMIN APPROVAL COMMAND (prima di tutto, anche durante onboarding) ──
+    // L'admin deve poter approvare numeri anche se è in stato onboarding.
     const adminPhone = (club?.adminPhone || '').replace(/\D/g, '');
     const isFromAdmin = adminPhone && phoneNumber === adminPhone;
     if (isFromAdmin) {
@@ -231,10 +218,24 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[], cor
         }
     }
 
+    // ─── ONBOARDING ───
+    // Dopo il check admin: così i comandi "ok X" dell'admin non vengono
+    // intercettati dal suo eventuale stato onboarding.
+    const onboardingState = await getOnboardingState(jid);
+    if (onboardingState) {
+        const input = combinedText || contactCards.map(c => `${c.contactName || ''} ${c.contactPhone || ''}`).join(' ').trim();
+        if (input) await continueOnboarding(jid, input, onboardingState.step, { ...onboardingState.data, resolvedPhone: phoneNumber });
+        return;
+    }
+
+    const player = await prisma.player.findFirst({
+        where: { phoneNumber: { in: phoneVariants }, clubId: resolvedClubId ? resolvedClubId : { not: '' } }
+    });
+
     if (!player) {
-        // Numero sconosciuto: richiede approvazione admin prima di rispondere
+        // L'admin bypassa sempre il gate — può onboardarsi senza approvazione
         const redis = getRedis();
-        const approved = await redis.get(`approval:approved:${phoneNumber}`);
+        const approved = isFromAdmin || await redis.get(`approval:approved:${phoneNumber}`);
         if (!approved) {
             const alreadyPending = await redis.get(`approval:pending:${phoneNumber}`);
             if (!alreadyPending && adminPhone) {
