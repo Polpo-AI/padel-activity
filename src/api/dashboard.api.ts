@@ -113,9 +113,42 @@ router.get('/club', authMiddleware, async (req: Request, res: Response) => {
 
 router.patch('/club', authMiddleware, async (req: Request, res: Response) => {
     const clubId = (req as any).clubId;
-    const { name, skillLevelCount, aiTone, botName, maxDailyMessages, skillTestCost, skillTestDuration } = req.body;
+    const { name, skillLevelCount, aiTone, botName, maxDailyMessages, skillTestCost, skillTestDuration,
+            openTime, closeTime, matchDuration } = req.body;
+    const confirm = req.query.confirm === 'true';
 
     try {
+        // Se cambiano gli orari, verifica partite fuori range prima di procedere
+        if ((openTime !== undefined || closeTime !== undefined) && !confirm) {
+            const club = await prisma.club.findUnique({ where: { id: clubId } });
+            const newOpen = openTime ?? club?.openTime ?? '08:00';
+            const newClose = closeTime ?? club?.closeTime ?? '23:30';
+            const { findMatchesOutsideHours } = await import('../services/match-notifications');
+            const affected = await findMatchesOutsideHours(clubId, newOpen, newClose);
+            if (affected.length > 0) {
+                return res.status(200).json({
+                    requiresConfirmation: true,
+                    message: `Ci sono ${affected.length} partite fuori dai nuovi orari (${newOpen}–${newClose}). Verranno cancellate e i giocatori notificati. Invia di nuovo con ?confirm=true per procedere.`,
+                    affectedCount: affected.length,
+                    affectedMatches: affected.map(m => ({
+                        id: m.id, startTime: m.startTime, status: m.status, players: m.MatchPlayer.length,
+                    })),
+                });
+            }
+        }
+
+        // Se confermato e ci sono orari nuovi: cancella le partite fuori range
+        if ((openTime !== undefined || closeTime !== undefined) && confirm) {
+            const club = await prisma.club.findUnique({ where: { id: clubId } });
+            const newOpen = openTime ?? club?.openTime ?? '08:00';
+            const newClose = closeTime ?? club?.closeTime ?? '23:30';
+            const { findMatchesOutsideHours, cancelMatchesWithNotification } = await import('../services/match-notifications');
+            const affected = await findMatchesOutsideHours(clubId, newOpen, newClose);
+            if (affected.length > 0) {
+                await cancelMatchesWithNotification(affected.map(m => m.id), clubId, 'Modifica orari circolo');
+            }
+        }
+
         const updated = await prisma.club.update({
             where: { id: clubId },
             data: {
@@ -126,7 +159,10 @@ router.patch('/club', authMiddleware, async (req: Request, res: Response) => {
                 maxDailyMessages: maxDailyMessages !== undefined ? parseInt(maxDailyMessages) : undefined,
                 skillTestCost: skillTestCost !== undefined ? parseFloat(skillTestCost) : undefined,
                 skillTestDuration: skillTestDuration !== undefined ? parseInt(skillTestDuration) : undefined,
-            }
+                openTime: openTime !== undefined ? openTime : undefined,
+                closeTime: closeTime !== undefined ? closeTime : undefined,
+                matchDuration: matchDuration !== undefined ? parseInt(matchDuration) : undefined,
+            },
         });
         res.json(updated);
     } catch (err) {
@@ -315,7 +351,6 @@ router.post('/matches/:id/cancel', authMiddleware, async (req: Request, res: Res
     const clubId = (req as any).clubId;
     const match = await prisma.match.findFirst({
         where: { id: req.params.id as string, clubId },
-        include: { MatchPlayer: { include: { player: true } }, club: true },
     });
 
     if (!match) return res.status(404).json({ error: 'Partita non trovata' });
@@ -326,23 +361,106 @@ router.post('/matches/:id/cancel', authMiddleware, async (req: Request, res: Res
         data: { status: 'CANCELLED', cancelledAt: new Date(), cancelledReason: 'MANUAL' },
     });
 
-    // Notifica i giocatori confermati e dirottali
-    const confirmed = match.MatchPlayer.filter(mp => !mp.leftAt);
-    if (confirmed.length > 0) {
-        const { redirectGroup } = await import('../services/redirect');
-        await redirectGroup({
-            clubId: match.clubId || '',
-            referentPhone: confirmed[0].player.phoneNumber,
-            referentJid: confirmed[0].player.phoneNumber,
-            playerPhones: confirmed.map(mp => mp.player.phoneNumber),
-            playerCount: confirmed.length,
-            originalMatchId: match.id,
-            originalStartTime: match.startTime,
-            reason: 'CANCELLED',
-        });
-    }
+    const { notifyMatchCancelled } = await import('../services/match-notifications');
+    await notifyMatchCancelled(match.id, clubId).catch(err => logger.error({ err }, 'notifyMatchCancelled failed'));
 
     res.json({ success: true });
+});
+
+// Modifica orario o campo di una partita — notifica automatica ai giocatori
+router.patch('/matches/:id', authMiddleware, async (req: Request, res: Response) => {
+    const clubId = (req as any).clubId;
+    const { startTime: newStartTimeStr, courtId: newCourtId } = req.body;
+
+    try {
+        const match = await prisma.match.findFirst({
+            where: { id: req.params.id as string, clubId },
+        });
+        if (!match) return res.status(404).json({ error: 'Partita non trovata' });
+        if (match.status === 'CANCELLED') return res.status(400).json({ error: 'Partita cancellata' });
+        if (!newStartTimeStr && !newCourtId) return res.status(400).json({ error: 'Specifica startTime o courtId' });
+
+        const oldStartTime = match.startTime;
+        const newStartTime = newStartTimeStr ? new Date(newStartTimeStr) : match.startTime;
+        const targetCourtId = newCourtId || match.courtId;
+
+        // Verifica disponibilità campo al nuovo orario
+        if (newStartTimeStr && targetCourtId) {
+            const conflict = await prisma.match.findFirst({
+                where: { courtId: targetCourtId, id: { not: match.id }, status: { in: ['OPEN', 'LOCKED'] }, startTime: newStartTime },
+            });
+            if (conflict) return res.status(409).json({ error: 'Campo già occupato a quell\'orario' });
+        }
+
+        await prisma.match.update({
+            where: { id: match.id },
+            data: {
+                startTime: newStartTimeStr ? newStartTime : undefined,
+                courtId: newCourtId ?? undefined,
+            },
+        });
+
+        const { notifyMatchRescheduled } = await import('../services/match-notifications');
+        await notifyMatchRescheduled(match.id, oldStartTime, newStartTime, clubId)
+            .catch(err => logger.error({ err }, 'notifyMatchRescheduled failed'));
+
+        res.json({ success: true });
+    } catch (err) {
+        logger.error({ err }, 'PATCH /matches/:id failed');
+        res.status(500).json({ error: 'Errore durante la modifica' });
+    }
+});
+
+// Modifica o disattiva un campo — con richiesta di conferma se ci sono partite future
+router.patch('/courts/:id', authMiddleware, async (req: Request, res: Response) => {
+    const clubId = (req as any).clubId;
+    const { name, isCovered, notes, active } = req.body;
+    const confirm = req.query.confirm === 'true';
+
+    try {
+        const court = await prisma.court.findFirst({ where: { id: req.params.id as string, clubId } });
+        if (!court) return res.status(404).json({ error: 'Campo non trovato' });
+
+        const { findMatchesOnCourt, cancelMatchesWithNotification } = await import('../services/match-notifications');
+
+        // Disattivazione: verifica partite future prima di procedere
+        if (active === false && court.active && !confirm) {
+            const affected = await findMatchesOnCourt(court.id);
+            if (affected.length > 0) {
+                return res.status(200).json({
+                    requiresConfirmation: true,
+                    message: `Ci sono ${affected.length} partite future su questo campo. Verranno cancellate e i giocatori notificati. Invia con ?confirm=true per procedere.`,
+                    affectedCount: affected.length,
+                    affectedMatches: affected.map(m => ({
+                        id: m.id, startTime: m.startTime, status: m.status, players: m.MatchPlayer.length,
+                    })),
+                });
+            }
+        }
+
+        // Se confermato: cancella partite e notifica
+        if (active === false && court.active) {
+            const affected = await findMatchesOnCourt(court.id);
+            if (affected.length > 0) {
+                await cancelMatchesWithNotification(affected.map(m => m.id), clubId, 'Campo disattivato');
+            }
+        }
+
+        await prisma.court.update({
+            where: { id: court.id },
+            data: {
+                name: name ?? undefined,
+                isCovered: isCovered ?? undefined,
+                notes: notes ?? undefined,
+                active: active ?? undefined,
+            },
+        });
+
+        res.json({ success: true });
+    } catch (err) {
+        logger.error({ err }, 'PATCH /courts/:id failed');
+        res.status(500).json({ error: 'Errore durante la modifica del campo' });
+    }
 });
 
 // ─────────────────────────────────────────────

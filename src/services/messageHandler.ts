@@ -217,8 +217,13 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[], cor
             return;
         }
 
+        // Admin: conferma azioni destructive pendenti (disattiva campo, cambia orari)
+        const { looksLikeAdminCommand, handleAdminCommand, handleAdminFaqFlow, handleAdminPendingAction } = await import('./admin-commands');
+        const pendingActionHandled = await handleAdminPendingAction(combinedText, club, jid);
+        if (pendingActionHandled) return;
+
         // Admin: gestione FAQ intelligente via AI (nessun formato hardcoded)
-        const { looksLikeAdminCommand, handleAdminCommand, handleAdminFaqFlow } = await import('./admin-commands');
+        // Admin: gestione FAQ intelligente via AI (nessun formato hardcoded)
         const faqHandled = await handleAdminFaqFlow(combinedText, club, jid);
         if (faqHandled) return;
 

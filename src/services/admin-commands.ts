@@ -23,6 +23,10 @@ const ADMIN_COMMAND_KEYWORDS = [
     'modifica orario', 'cambia orario', 'sposta la partita', 'sposta partita',
     'elimina il giocatore', 'cancella il giocatore', 'rimuovi il giocatore', 'elimina giocatore',
     'cambia livello', 'modifica il livello', 'modifica livello', 'livello di',
+    'disattiva il campo', 'disattiva campo', 'disabilita il campo', 'disabilita campo',
+    'togli il campo', 'rimuovi il campo',
+    'cambia orari', 'orari di apertura', 'orario di apertura', 'orario apertura',
+    'orario chiusura', 'modifica orari', 'nuovi orari',
 ];
 
 // ─────────────────────────────────────────────
@@ -163,7 +167,7 @@ export async function handleAdminCommand(text: string, club: any, jid: string): 
 
     const sevenDaysOut = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
 
-    const [upcomingMatches, allPlayers] = await Promise.all([
+    const [upcomingMatches, allPlayers, allCourts] = await Promise.all([
         prisma.match.findMany({
             where: {
                 clubId: club.id,
@@ -180,6 +184,11 @@ export async function handleAdminCommand(text: string, club: any, jid: string): 
         prisma.player.findMany({
             where: { clubId: club.id, active: true },
             select: { id: true, name: true, phoneNumber: true, skillLevel: true },
+            orderBy: { name: 'asc' },
+        }),
+        prisma.court.findMany({
+            where: { clubId: club.id },
+            select: { id: true, name: true, active: true, isCovered: true },
             orderBy: { name: 'asc' },
         }),
     ]);
@@ -200,6 +209,10 @@ export async function handleAdminCommand(text: string, club: any, jid: string): 
         ? allPlayers.map(p => `ID:${p.id} | ${p.name || 'N/A'} | Tel:${p.phoneNumber} | Livello:${p.skillLevel}`).join('\n')
         : 'Nessun giocatore';
 
+    const courtsStr = allCourts.length > 0
+        ? allCourts.map((c: any) => `ID:${c.id} | ${c.name} | ${c.active ? 'attivo' : 'disattivato'} | ${c.isCovered ? 'coperto' : 'scoperto'}`).join('\n')
+        : 'Nessun campo';
+
     const prompt = `Sei il parser di comandi per un admin di circolo padel.
 L'admin ha scritto: "${text}"
 
@@ -209,11 +222,16 @@ ${matchesStr}
 Giocatori del circolo:
 ${playersStr}
 
+Campi del circolo:
+${courtsStr}
+
+Orari attuali del circolo: ${club.openTime || '08:00'} – ${club.closeTime || '23:30'}
+
 Data e ora attuali: ${now}
 
 Restituisci SOLO un JSON valido con questa struttura:
 {
-  "command": "LIST_MATCHES" | "LIST_PLAYERS" | "CANCEL_MATCH" | "RESCHEDULE_MATCH" | "UPDATE_PLAYER_SKILL" | "DELETE_PLAYER" | "UNKNOWN",
+  "command": "LIST_MATCHES" | "LIST_PLAYERS" | "CANCEL_MATCH" | "RESCHEDULE_MATCH" | "UPDATE_PLAYER_SKILL" | "DELETE_PLAYER" | "DEACTIVATE_COURT" | "CHANGE_CLUB_HOURS" | "UNKNOWN",
   "params": {}
 }
 
@@ -224,6 +242,8 @@ Comandi e parametri:
 - RESCHEDULE_MATCH: params: { "matchId": "...", "newDay": "YYYY-MM-DD", "newTime": "HH:MM" }
 - UPDATE_PLAYER_SKILL: params: { "playerId": "id dalla lista giocatori", "newSkill": number }
 - DELETE_PLAYER: params: { "playerId": "id dalla lista giocatori" }
+- DEACTIVATE_COURT: params: { "courtId": "id dalla lista campi" }
+- CHANGE_CLUB_HOURS: params: { "openTime": "HH:MM"?, "closeTime": "HH:MM"? }
 - UNKNOWN: params: {}
 
 Restituisci SOLO il JSON, niente altro.`;
@@ -252,7 +272,7 @@ Restituisci SOLO il JSON, niente altro.`;
         return;
     }
 
-    await executeAdminCommand(parsed.command, parsed.params, club, jid, upcomingMatches, allPlayers);
+    await executeAdminCommand(parsed.command, parsed.params, club, jid, upcomingMatches, allPlayers, allCourts);
 }
 
 async function executeAdminCommand(
@@ -262,6 +282,7 @@ async function executeAdminCommand(
     jid: string,
     upcomingMatches: any[],
     allPlayers: any[],
+    allCourts: any[] = [],
 ): Promise<void> {
     const fmtTimeLong = (d: Date) => d.toLocaleString('it-IT', {
         timeZone: 'Europe/Rome', weekday: 'long', day: 'numeric',
@@ -321,7 +342,7 @@ async function executeAdminCommand(
     if (command === 'CANCEL_MATCH') {
         const match = upcomingMatches.find(m => m.id === params.matchId);
         if (!match) {
-            await simulateTypingAndSend(jid, 'Partita non trovata. Prova a chiedere prima "mostra partite" per vedere gli ID disponibili.');
+            await simulateTypingAndSend(jid, 'Partita non trovata. Usa "mostra partite" per vedere le partite disponibili.');
             return;
         }
 
@@ -329,39 +350,24 @@ async function executeAdminCommand(
             where: { id: match.id },
             data: { status: 'CANCELLED', cancelledAt: new Date(), cancelledReason: 'Cancellazione admin' },
         });
-        await prisma.invitation.updateMany({
-            where: { matchId: match.id, status: 'PENDING' },
-            data: { status: 'IGNORED' },
-        });
+
+        const { notifyMatchCancelled } = await import('./match-notifications');
+        await notifyMatchCancelled(match.id, club.id).catch(err => logger.error({ err }, 'notifyMatchCancelled failed'));
 
         const timeStr = fmtTimeLong(match.startTime);
-        const players = match.MatchPlayer;
-        const { simulateTypingAndSend: sendWA } = await import('./whatsapp');
-        let notified = 0;
-        for (const mp of players) {
-            try {
-                await sendWA(
-                    `${mp.player.phoneNumber}@s.whatsapp.net`,
-                    `La partita di ${timeStr} sul ${match.court?.name || 'campo'} è stata annullata. Ci scusiamo per l'inconveniente!`,
-                );
-                notified++;
-            } catch (err) {
-                logger.error({ err, playerId: mp.player.id }, 'Failed to notify player of cancellation');
-            }
-        }
-
-        await simulateTypingAndSend(jid, `Partita del ${timeStr} annullata. Ho notificato ${notified} giocatori.`);
+        const nPlayers = match.MatchPlayer.length;
+        await simulateTypingAndSend(jid, `Partita del ${timeStr} annullata. ${nPlayers > 0 ? `Ho avvisato ${nPlayers} giocatori e cercato alternative.` : 'Nessun giocatore da avvisare.'}`);
         return;
     }
 
     if (command === 'RESCHEDULE_MATCH') {
         const match = upcomingMatches.find(m => m.id === params.matchId);
         if (!match) {
-            await simulateTypingAndSend(jid, 'Partita non trovata. Prova a chiedere prima "mostra partite" per vedere gli ID disponibili.');
+            await simulateTypingAndSend(jid, 'Partita non trovata. Usa "mostra partite" per vedere le partite disponibili.');
             return;
         }
         if (!params.newDay || !params.newTime) {
-            await simulateTypingAndSend(jid, 'Specifica il nuovo giorno (YYYY-MM-DD) e orario (HH:MM) per spostare la partita.');
+            await simulateTypingAndSend(jid, 'Specifica il nuovo giorno (YYYY-MM-DD) e orario (HH:MM).');
             return;
         }
 
@@ -372,7 +378,6 @@ async function executeAdminCommand(
             return;
         }
 
-        // Conversione UTC rispettando il fuso Europe/Rome
         const noon = new Date(Date.UTC(y, mo - 1, d, 12, 0));
         const noonRomeHour = Number(noon.toLocaleString('en-US', { timeZone: 'Europe/Rome', hour: '2-digit', hour12: false }));
         const offsetH = noonRomeHour - 12;
@@ -382,26 +387,83 @@ async function executeAdminCommand(
         if (utcH >= 24) { utcH -= 24; dayOffset = 1; }
         const newStartTime = new Date(Date.UTC(y, mo - 1, d + dayOffset, utcH, m, 0));
 
-        const oldTimeStr = fmtTimeLong(match.startTime);
-        const newTimeStr = fmtTimeLong(newStartTime);
-
-        await prisma.match.update({ where: { id: match.id }, data: { startTime: newStartTime } });
-
-        const { simulateTypingAndSend: sendWA } = await import('./whatsapp');
-        let notified = 0;
-        for (const mp of match.MatchPlayer) {
-            try {
-                await sendWA(
-                    `${mp.player.phoneNumber}@s.whatsapp.net`,
-                    `La tua partita è stata spostata! Nuovo orario: ${newTimeStr} (prima era: ${oldTimeStr}). Ci vediamo lì!`,
-                );
-                notified++;
-            } catch (err) {
-                logger.error({ err, playerId: mp.player.id }, 'Failed to notify player of reschedule');
+        // Verifica disponibilità campo al nuovo orario
+        if (match.courtId) {
+            const conflict = await prisma.match.findFirst({
+                where: { courtId: match.courtId, id: { not: match.id }, status: { in: ['OPEN', 'LOCKED'] }, startTime: newStartTime },
+            });
+            if (conflict) {
+                await simulateTypingAndSend(jid, `Il campo è già occupato a quell'orario. Scegli un altro orario.`);
+                return;
             }
         }
 
-        await simulateTypingAndSend(jid, `Partita spostata da ${oldTimeStr} a ${newTimeStr}. Ho notificato ${notified} giocatori.`);
+        const oldStartTime = match.startTime;
+        await prisma.match.update({ where: { id: match.id }, data: { startTime: newStartTime } });
+
+        const { notifyMatchRescheduled } = await import('./match-notifications');
+        await notifyMatchRescheduled(match.id, oldStartTime, newStartTime, club.id)
+            .catch(err => logger.error({ err }, 'notifyMatchRescheduled failed'));
+
+        const oldStr = fmtTimeLong(oldStartTime);
+        const newStr = fmtTimeLong(newStartTime);
+        const nPlayers = match.MatchPlayer.length;
+        await simulateTypingAndSend(jid, `Partita spostata da ${oldStr} a ${newStr}. ${nPlayers > 0 ? `Ho avvisato ${nPlayers} giocatori.` : ''}`);
+        return;
+    }
+
+    if (command === 'DEACTIVATE_COURT') {
+        const court = allCourts.find((c: any) => c.id === params.courtId);
+        if (!court) {
+            await simulateTypingAndSend(jid, 'Campo non trovato. Usa "lista campi" per vedere i campi disponibili.');
+            return;
+        }
+        if (!court.active) {
+            await simulateTypingAndSend(jid, `${court.name} è già disattivato.`);
+            return;
+        }
+
+        const { findMatchesOnCourt } = await import('./match-notifications');
+        const affected = await findMatchesOnCourt(court.id);
+
+        if (affected.length > 0) {
+            const redis = getRedis();
+            await redis.set(
+                `admin:pending_action:${club.id}`,
+                JSON.stringify({ type: 'DEACTIVATE_COURT', courtId: court.id, courtName: court.name, affectedMatchIds: affected.map((m: any) => m.id) }),
+                'EX', 3600,
+            );
+            const lines = affected.map((m: any) => `${fmtTimeLong(m.startTime)} (${m.MatchPlayer.length} giocatori)`).join('\n');
+            await simulateTypingAndSend(jid, `Ci sono ${affected.length} partite future sul ${court.name}:\n\n${lines}\n\nVerranno tutte cancellate e i giocatori notificati. Confermi? Rispondi sì o no.`);
+            return;
+        }
+
+        await prisma.court.update({ where: { id: court.id }, data: { active: false } });
+        await simulateTypingAndSend(jid, `${court.name} disattivato. Nessuna partita futura era programmata.`);
+        return;
+    }
+
+    if (command === 'CHANGE_CLUB_HOURS') {
+        const newOpen = params.openTime ?? club.openTime ?? '08:00';
+        const newClose = params.closeTime ?? club.closeTime ?? '23:30';
+
+        const { findMatchesOutsideHours } = await import('./match-notifications');
+        const affected = await findMatchesOutsideHours(club.id, newOpen, newClose);
+
+        if (affected.length > 0) {
+            const redis = getRedis();
+            await redis.set(
+                `admin:pending_action:${club.id}`,
+                JSON.stringify({ type: 'CHANGE_CLUB_HOURS', openTime: newOpen, closeTime: newClose, affectedMatchIds: affected.map((m: any) => m.id) }),
+                'EX', 3600,
+            );
+            const lines = affected.map((m: any) => `${fmtTimeLong(m.startTime)} (${m.MatchPlayer.length} giocatori)`).join('\n');
+            await simulateTypingAndSend(jid, `Con i nuovi orari (${newOpen}–${newClose}) queste partite risulterebbero fuori range:\n\n${lines}\n\nVerranno cancellate e i giocatori notificati. Confermi? Rispondi sì o no.`);
+            return;
+        }
+
+        await prisma.club.update({ where: { id: club.id }, data: { openTime: newOpen, closeTime: newClose } });
+        await simulateTypingAndSend(jid, `Orari aggiornati: ${newOpen}–${newClose}. Nessuna partita esistente è stata impattata.`);
         return;
     }
 
@@ -435,6 +497,54 @@ async function executeAdminCommand(
 
     await simulateTypingAndSend(
         jid,
-        'Non ho capito il comando. Puoi usare: "mostra partite di domani", "cancella la partita di venerdì", "modifica livello di Mario Rossi a 4.5", "lista giocatori livello 3-5", "elimina giocatore".',
+        'Non ho capito il comando. Puoi usare: "mostra partite di domani", "cancella la partita di venerdì", "sposta la partita di lunedì a mercoledì alle 19", "modifica livello di Mario Rossi a 4.5", "lista giocatori livello 3-5", "disattiva il campo 2", "cambia orari apertura 9-22".',
     );
+}
+
+// ─────────────────────────────────────────────
+// PENDING ACTION CONFIRMATION (disattiva campo / cambia orari)
+// ─────────────────────────────────────────────
+
+/**
+ * Gestisce la conferma sì/no per azioni che richiedono approvazione esplicita
+ * (DEACTIVATE_COURT, CHANGE_CLUB_HOURS).
+ * Ritorna true se il messaggio è stato gestito.
+ */
+export async function handleAdminPendingAction(text: string, club: any, jid: string): Promise<boolean> {
+    if (!club?.id) return false;
+    const redis = getRedis();
+    const pendingRaw = await redis.get(`admin:pending_action:${club.id}`);
+    if (!pendingRaw) return false;
+
+    const affirmative = /^(s[iì]|yes|ok|va bene|certo|conferm|procedi|annulla le partite)/i.test(text.trim());
+    const negative = /^(no|nope|annulla|lascia perdere|stop|non fare)/i.test(text.trim());
+
+    if (!affirmative && !negative) return false; // non intercettare messaggi non pertinenti
+
+    const action = JSON.parse(pendingRaw);
+    await redis.del(`admin:pending_action:${club.id}`);
+
+    if (negative) {
+        await sendMessage(jid, `Capito, operazione annullata.`);
+        return true;
+    }
+
+    // Confermato: esegui l'azione
+    const { cancelMatchesWithNotification } = await import('./match-notifications');
+
+    if (action.type === 'DEACTIVATE_COURT') {
+        const cancelled = await cancelMatchesWithNotification(action.affectedMatchIds, club.id, 'Campo disattivato');
+        await prisma.court.update({ where: { id: action.courtId }, data: { active: false } });
+        await sendMessage(jid, `${action.courtName} disattivato. ${cancelled} partite cancellate e giocatori notificati.`);
+        return true;
+    }
+
+    if (action.type === 'CHANGE_CLUB_HOURS') {
+        const cancelled = await cancelMatchesWithNotification(action.affectedMatchIds, club.id, 'Modifica orari circolo');
+        await prisma.club.update({ where: { id: club.id }, data: { openTime: action.openTime, closeTime: action.closeTime } });
+        await sendMessage(jid, `Orari aggiornati: ${action.openTime}–${action.closeTime}. ${cancelled} partite cancellate e giocatori notificati.`);
+        return true;
+    }
+
+    return false;
 }
