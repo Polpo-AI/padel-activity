@@ -143,6 +143,23 @@ MAI dimenticare la produzione — uno schema disallineato causa crash silenziosi
 
 VPS: `root@46.225.212.159` (SSH con chiave `~/.ssh/id_ed25519`)
 
+### URL Staging (`padel-staging.polpo-ai.com`)
+| Cosa | URL |
+|------|-----|
+| Dashboard circolo | https://padel-staging.polpo-ai.com/dashboard |
+| Admin super-dashboard | https://padel-staging.polpo-ai.com/admin |
+| Setup wizard | https://padel-staging.polpo-ai.com/setup |
+| Health check | https://padel-staging.polpo-ai.com/health |
+
+### URL Produzione (`padel.polpo-ai.com`)
+| Cosa | URL |
+|------|-----|
+| Dashboard circolo | https://padel.polpo-ai.com/dashboard |
+| Admin super-dashboard | https://padel.polpo-ai.com/admin |
+| Health check | https://padel.polpo-ai.com/health |
+
+> Vedi `LINKS.md` per il quadro completo di tutti i domini sul VPS.
+
 Comandi utili sul VPS:
 ```bash
 systemctl restart padel-staging padel-worker-staging
