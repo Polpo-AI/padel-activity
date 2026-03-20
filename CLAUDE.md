@@ -128,6 +128,21 @@ grep REDIS_PASSWORD .env       # → per redis-cli -a <password>
 **Fix in place:** in `callBrain` (brain.ts), prima di costruire il payload per Anthropic: (1) fonde i messaggi con lo stesso ruolo consecutivi con `\n`; (2) rimuove l'ultimo messaggio se è `user` (il `userMessage` lo sostituisce già). In questo modo Anthropic riceve sempre alternanza corretta.
 **Regola:** MAI passare ad Anthropic una lista di messaggi senza prima verificare che i ruoli si alternino correttamente.
 
+### 24. Admin check DEVE venire prima dell'onboarding state check
+**Bug reale (doppio):** (a) admin scriveva al bot dopo DB reset → colpiva gate `!player` → bloccato silenziosamente. (b) admin inviava `ok 393…` → `getOnboardingState` lo intercettava come risposta al nome → niente sblocco.
+**Fix in place:** in `messageHandler._handleBatchInner`, l'ordine corretto è:
+1. Carica club + adminPhone
+2. Controlla comando admin `ok <numero>` → gestisci e ritorna (PRIMA di tutto il resto)
+3. `getOnboardingState` check
+4. Carica player
+5. Gate `!approved` con `isFromAdmin` bypass: `const approved = isFromAdmin || await redis.get(…)`
+**Regola:** MAI controllare onboarding state prima di aver gestito i comandi admin. L'admin deve sempre poter operare indipendentemente dal proprio stato conversazionale.
+
+### 25. Ogni emoji nel testo del bot = separatore di bolla WhatsApp
+**UX:** gli esseri umani inviano l'emoji come chiusura del pensiero, poi iniziano un nuovo messaggio. Nessuna bolla inizia con un'emoji.
+**Implementazione:** `splitAtEmoji()` in `src/utils/split-message.ts` — testo prima dell'emoji forma la bolla corrente (con l'emoji in coda), testo dopo inizia la bolla successiva. Applicato in `messageHandler` (risposta brain), `onboarding-flow` (risposta onboarding brain) e ovunque si inviino testi generati da AI.
+**Regola:** ridurre le emoji del 50% nei prompt. MAI iniziare un messaggio con un'emoji. Usare `simulateTypingAndSend` per ogni segmento restituito da `splitAtEmoji()`.
+
 ### 21. Vi.mock e module caching in Vitest: usare mockImplementation per catturare ctx
 **Problema:** `mockRunWithContext.mock.calls` è vuoto anche se il codice viene eseguito → il modulo crea il suo reference al momento dell'import, che può essere diverso dall'oggetto nella closure del test.
 **Fix:** usare `mockRunWithContext.mockImplementation((ctx, fn) => { capturedCtx.push(ctx); return fn(); })` nel `beforeEach` di ogni suite, oppure verificare il comportamento indirettamente (es. verificare che la prima query al DB sia quella corretta).
