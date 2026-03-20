@@ -22,6 +22,7 @@ import fs from 'fs';
 
 import webhooksRouter from './api/webhooks';
 import dashboardRouter from './api/dashboard.api';
+import adminRouter from './api/admin.api';
 import setupRouter from './api/setup.api';
 import { connectToWhatsApp, getConnectionStatus, getAllClubStatuses } from './services/whatsapp';
 import { maintenanceQueue, checkSilentMatches, checkRedisHealth } from './services/queue';
@@ -81,15 +82,22 @@ if (process.env.NODE_ENV === 'production') {
     const buildPath = path.join(__dirname, '../dashboard/dist');
     const indexExists = fs.existsSync(path.join(buildPath, 'index.html'));
     logger.info({ buildPath, indexExists }, 'Serving dashboard from');
-    
+
     app.use('/dashboard', express.static(buildPath));
-    app.get(/^\/dashboard($|\/.*)/, (req, res) => {
+    app.get(/^\/dashboard($|\/.*)/, (_req, res) => {
+        res.sendFile(path.join(buildPath, 'index.html'));
+    });
+
+    // Admin SPA — same built bundle, path detection in main.jsx
+    app.use('/admin', express.static(buildPath));
+    app.get(/^\/admin($|\/.*)/, (_req, res) => {
         res.sendFile(path.join(buildPath, 'index.html'));
     });
 }
 
 app.use('/api/webhooks', webhooksRouter);
 app.use('/api/dashboard', dashboardRouter);
+app.use('/api/admin', adminRouter);
 app.use('/api/setup', setupRouter);
 
 // Club setup wizard — accessibile solo con SETUP_SECRET nell'URL (?secret=...)
