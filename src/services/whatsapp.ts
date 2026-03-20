@@ -245,8 +245,11 @@ async function _doConnect(key: string, state: ClubSocketState): Promise<void> {
             state.isReconnecting = false;
             state.status = 'open';
             state.lastHeartbeatOk = Date.now();
+            // Attiva subito il flag — i messaggi `append` arrivano
+            // immediatamente dopo il connect, prima del timeout di 5s
+            state.isResyncing = true;
 
-            // Notifica admin startup
+            // Notifica admin startup (non-blocking)
             setTimeout(async () => {
                 try {
                     const { prisma } = await import('./db');
@@ -255,7 +258,6 @@ async function _doConnect(key: string, state: ClubSocketState): Promise<void> {
                         : await prisma.club.findUnique({ where: { id: key }, select: { adminPhone: true, name: true } });
 
                     if (club?.adminPhone) {
-                        state.isResyncing = true;
                         const adminJid = `${club.adminPhone.replace(/\D/g, '')}@s.whatsapp.net`;
                         await _sendRaw(state, adminJid, '🤖 *Servizio Padel Bot Riavviato!*\nRecupero messaggi offline in corso...');
                     }
