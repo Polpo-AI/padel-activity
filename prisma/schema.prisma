@@ -146,6 +146,21 @@ model Club {
   courts                     Court[]
   matches                    Match[]
   players                    Player[]
+  faqs                       Faq[]
+}
+
+model Faq {
+  id        String   @id @default(uuid())
+  clubId    String
+  question  String
+  answer    String?
+  askedBy   String?  // phoneNumber del giocatore che ha fatto la domanda
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  club      Club     @relation(fields: [clubId], references: [id])
+
+  @@index([clubId])
 }
 
 model WhatsAppMessage {

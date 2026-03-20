@@ -7,7 +7,7 @@
 
 import { prisma } from './db';
 import { anthropic } from './ai';
-import { waveQueue } from './queue';
+import { waveQueue, getRedis } from './queue';
 import pino from 'pino';
 
 const logger = pino({ level: 'info' });
@@ -23,7 +23,8 @@ export type BrainAction =
     | 'INVITE_PREFERRED'
     | 'SAVE_NOTE'
     | 'REQUEST_LESSON'
-    | 'RESCHEDULE_MATCH';
+    | 'RESCHEDULE_MATCH'
+    | 'FAQ_REQUEST';
 
 export interface BrainResponse {
     message: string;
@@ -39,6 +40,7 @@ export interface BrainContext {
     confirmedMatches: any[];
     availableMatches: any[];
     courts: any[];
+    faqs: any[];
 }
 
 // ─────────────────────────────────────────────
@@ -68,6 +70,12 @@ export async function buildBrainContext(jid: string, phoneNumber: string): Promi
         include: { prices: true },
         orderBy: { name: 'asc' },
     });
+
+    const faqs = club?.id ? await prisma.faq.findMany({
+        where: { clubId: club.id, answer: { not: null } },
+        orderBy: { createdAt: 'desc' },
+        take: 30,
+    }) : [];
 
     let pendingInvitations: any[] = [];
     let confirmedMatches: any[] = [];
@@ -116,6 +124,7 @@ export async function buildBrainContext(jid: string, phoneNumber: string): Promi
         confirmedMatches,
         availableMatches,
         courts,
+        faqs,
     };
 }
 
@@ -135,7 +144,7 @@ export async function callBrain(
     userMessage: string,
     contactCards?: { phone?: string; name?: string }[],
 ): Promise<BrainResponse> {
-    const { club, player, recentMessages, pendingInvitations, confirmedMatches, availableMatches, courts } = context;
+    const { club, player, recentMessages, pendingInvitations, confirmedMatches, availableMatches, courts, faqs } = context;
 
     const now = new Date().toLocaleString('it-IT', {
         timeZone: 'Europe/Rome', weekday: 'long', day: 'numeric',
@@ -228,7 +237,11 @@ export async function callBrain(
     const toneDescription = club?.aiTone ||
         'calda, diretta, colloquiale — come un\'amica esperta del circolo. Max 2 frasi per messaggio. Emoji padel con parsimonia (🎾🏟️)';
 
-    const systemPrompt = `Ti chiami ${botName} e sei l'assistente WhatsApp del circolo padel "${club?.name || 'Padel Club'}".
+    const faqsStr = faqs?.length > 0
+        ? faqs.map((f: any) => `D: ${f.question}\nR: ${f.answer}`).join('\n\n')
+        : null;
+
+    const systemPrompt = `Ti chiami ${botName} e sei l'assistente digitale del circolo padel "${club?.name || 'Padel Club'}".
 Tono: ${toneDescription}
 Presentati come ${botName} se qualcuno ti chiede il tuo nome o in apertura di conversazione con nuovi contatti.
 Usa SEMPRE il "tu" — mai il "voi" o il "lei". Es. "ti trovi bene", "puoi prenotare", "sei dentro" — mai "vi trovate", "potete", "siete".
@@ -262,6 +275,7 @@ ${lessonInfo ? `\n═══ LEZIONE INDIVIDUALE ═══\n${lessonInfo}\nIl mae
 
 ═══ CAMPI DEL CIRCOLO ═══
 ${courtsStr}
+${faqsStr ? `\n═══ FAQ DEL CIRCOLO ═══\nQueste domande hanno già una risposta ufficiale del circolo. Se la domanda dell'utente corrisponde a una di queste, usa la risposta memorizzata (adattando il tono ma senza cambiare il contenuto):\n\n${faqsStr}` : ''}
 
 ═══ INVITI IN ATTESA ═══
 ${invitationsStr}
@@ -290,10 +304,13 @@ Rispondi SEMPRE con JSON valido: { "message": "...", "action": "NOME", "params":
   ⚠️ ATTENZIONE: se il giocatore ha già partite confermate E chiede un nuovo slot, valuta se è una correzione o un'aggiunta (vedi regola RESCHEDULE sotto).
 - OPT_OUT — params: {} — utente non vuole più messaggi / vuole essere rimosso dalla lista
 - OPT_IN — params: {} — utente vuole rientrare nella lista (es. "voglio ricominciare", "rimettimi dentro", "voglio ricevere partite di nuovo"). Usa solo se il giocatore risulta inattivo o lo chiede esplicitamente.
-- INVITE_PREFERRED — params: { "playerName": "..." } — utente vuole che un amico specifico venga invitato
+- INVITE_PREFERRED — params: { "playerName": "Nome Cognome" } — utente vuole che una persona specifica venga coinvolta nella partita.
+  ⚠️ REGOLA CRITICA: se l'utente menziona persone per nome ("voglio giocare con Marco", "ci sono io, Luca e Sara", "posso portare Giulia?") usa SEMPRE questa azione. MAI usare BOOK_FIELD quando vengono nominati altri giocatori. Il sistema verificherà se esistono nel circolo — non puoi saperlo tu. Usa params.playerName = primo nome menzionato; se ce ne sono più, scegli il principale o aspetta che l'utente specifichi.
+  MAI creare una partita con wave quando l'utente ha già indicato persone specifiche con cui vuole giocare.
 - SAVE_NOTE — params: { "note": "..." } — utente esprime una preferenza, abitudine o richiesta speciale (es. "voglio sempre giocare al coperto", "preferisco il mattino", "non mi piace la terra rossa"). Riassumi in una frase breve e salva. Puoi combinare con NONE per rispondere anche in modo conversazionale — in quel caso usa SAVE_NOTE e metti la risposta nel campo "message".
 - REQUEST_LESSON — params: { "day": "opzionale", "time": "opzionale" } — utente chiede di prenotare una lezione con il maestro. Rispondi con conferma che hai avvisato il maestro + durata + costo. Il maestro li contatterà per l'orario esatto.
 - RESCHEDULE_MATCH — params: { "matchPlayerId": "...", "newDay": "YYYY-MM-DD o oggi/domani/lunedì/...", "newTime": "HH:MM" } — utente vuole spostare una partita confermata. Cancella quella vecchia e prenota il nuovo slot. Messaggio breve tipo "Fatto! Ho spostato la tua partita 🎾" — i dettagli arrivano subito dopo.
+- FAQ_REQUEST — params: { "question": "testo esatto della domanda" } — usa quando l'utente fa una domanda sul circolo (orari speciali, regole, tariffe particolari, eventi, qualsiasi cosa) a cui NON puoi rispondere con le informazioni disponibili sopra E la risposta non è già nelle FAQ. Il messaggio deve dire che verifichi con il circolo e che farai sapere presto. Esempio: "Ottima domanda! Verifico con il circolo e ti rispondo appena ho notizie!" NON usare NONE quando non sai rispondere a una domanda specifica — usa FAQ_REQUEST.
 
 ═══ REGOLA RESCHEDULE vs BOOK_FIELD ═══
 Quando il giocatore ha già partite confermate E chiede un nuovo slot, devi capire dal contesto se sta correggendo/spostando o aggiungendo:
@@ -332,6 +349,7 @@ PRINCIPIO BASE: se c'è ambiguità, assumi l'interpretazione più favorevole all
 - Rispondi a qualsiasi messaggio in modo umano — un "grazie" merita un "prego!", un saluto merita un saluto
 - Se l'utente dice cose fuori tema (calcio, cucina, ecc.) rispondi con ironia leggera e riporta al circolo
 - Con inviti multipli e risposta ambigua → chiedi a quale si riferisce
+- MAI usare il trattino "–" o "-" nei messaggi. Sostituisci sempre con una virgola, un punto o una nuova frase.
 
 ═══ REGOLA EMOJI ═══
 - Usa emoji con parsimonia: max 1-2 per risposta, mai di più
@@ -546,15 +564,29 @@ export async function executeAction(
         }
 
         if (action === 'INVITE_PREFERRED') {
-            // Find player by name in club and add to preferred list
-            const preferred = await prisma.player.findFirst({
-                where: {
-                    clubId: player.clubId,
-                    name: { contains: params.playerName, mode: 'insensitive' },
-                },
-            });
-            if (!preferred) return { success: false, errorMessage: `Non ho trovato "${params.playerName}" nel circolo.` };
+            const preferred = await findPlayerFuzzy(params.playerName || '', player.clubId);
+            if (!preferred) return { success: false, errorMessage: `PLAYER_NOT_FOUND:${params.playerName || ''}` };
             // Store as preferred player (no-op for now, matchmaker handles it)
+            return { success: true };
+        }
+
+        if (action === 'FAQ_REQUEST') {
+            const question = (params.question || '').trim();
+            if (question && club?.id) {
+                const redis = getRedis();
+                await redis.set(
+                    `faq:pending_question:${club.id}`,
+                    JSON.stringify({ question, askedBy: player?.phoneNumber }),
+                    'EX', 7 * 24 * 3600,
+                );
+                const { notifyAdmin } = await import('../utils/notify-admin');
+                await notifyAdmin(
+                    `❓ ${player?.name || player?.phoneNumber} ha chiesto:\n"${question}"\n\nRispondi con *faq: <risposta>* per salvarlo come FAQ.`,
+                    `faq_pending_${question.substring(0, 20)}`,
+                    club?.adminPhone,
+                    club?.name,
+                ).catch(() => {});
+            }
             return { success: true };
         }
 
@@ -580,6 +612,62 @@ export async function executeAction(
 // ─────────────────────────────────────────────
 // HELPERS
 // ─────────────────────────────────────────────
+
+function levenshtein(a: string, b: string): number {
+    const dp: number[][] = Array.from({ length: a.length + 1 }, (_, i) =>
+        Array.from({ length: b.length + 1 }, (_, j) => i === 0 ? j : j === 0 ? i : 0),
+    );
+    for (let i = 1; i <= a.length; i++) {
+        for (let j = 1; j <= b.length; j++) {
+            dp[i][j] = a[i - 1] === b[j - 1]
+                ? dp[i - 1][j - 1]
+                : 1 + Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1]);
+        }
+    }
+    return dp[a.length][b.length];
+}
+
+async function findPlayerFuzzy(name: string, clubId: string): Promise<any | null> {
+    if (!name || !clubId) return null;
+
+    // Prima prova: contains esatto (case-insensitive)
+    const exact = await prisma.player.findFirst({
+        where: { clubId, name: { contains: name, mode: 'insensitive' } },
+    });
+    if (exact) return exact;
+
+    // Seconda prova: fuzzy su tutti i giocatori attivi (Levenshtein per cognome)
+    const all = await prisma.player.findMany({
+        where: { clubId, active: true },
+        select: { id: true, name: true, phoneNumber: true },
+    });
+
+    const nameLower = name.toLowerCase().trim();
+    const targetSurname = nameLower.split(' ').pop() || nameLower;
+
+    let bestMatch: any = null;
+    let bestDistance = Infinity;
+
+    for (const p of all) {
+        if (!p.name) continue;
+        const pLower = p.name.toLowerCase();
+        const pSurname = pLower.split(' ').pop() || pLower;
+
+        const surnameDist = levenshtein(targetSurname, pSurname);
+        if (surnameDist <= 2 && surnameDist < bestDistance) {
+            bestDistance = surnameDist;
+            bestMatch = p;
+        }
+
+        const fullDist = levenshtein(nameLower, pLower);
+        if (fullDist <= 2 && fullDist < bestDistance) {
+            bestDistance = fullDist;
+            bestMatch = p;
+        }
+    }
+
+    return bestMatch;
+}
 
 async function joinExistingMatch(matchId: string, player: any): Promise<{ success: boolean; errorMessage?: string }> {
     try {

@@ -174,8 +174,8 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[], cor
         : await prisma.club.findFirst();
     if (!club) club = await prisma.club.findFirst();
 
-    // ── ADMIN APPROVAL COMMAND (prima di tutto, anche durante onboarding) ──
-    // L'admin deve poter approvare numeri anche se è in stato onboarding.
+    // ── ADMIN COMMANDS (prima di tutto, anche durante onboarding) ──
+    // Ordine: ok <numero> → faq: risposta → comandi DB → flow normale
     const adminPhone = (club?.adminPhone || '').replace(/\D/g, '');
     const isFromAdmin = adminPhone && phoneNumber === adminPhone;
     if (isFromAdmin) {
@@ -214,6 +214,31 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[], cor
             } else {
                 await sendMessage(jid, '⚠️ Nessun numero in attesa di approvazione.');
             }
+            return;
+        }
+
+        // Admin: "faq: <risposta>" → salva risposta a domanda pendente
+        if (/^faq:\s*.+/i.test(combinedText)) {
+            const redis = getRedis();
+            const answer = combinedText.replace(/^faq:\s*/i, '').trim();
+            const pendingRaw = await redis.get(`faq:pending_question:${club?.id || ''}`);
+            if (pendingRaw) {
+                const { question, askedBy } = JSON.parse(pendingRaw);
+                await prisma.faq.create({
+                    data: { clubId: club!.id, question, answer, askedBy: askedBy || null },
+                });
+                await redis.del(`faq:pending_question:${club?.id || ''}`);
+                await sendMessage(jid, `FAQ salvata! La risposta sarà disponibile agli utenti da ora.`);
+            } else {
+                await sendMessage(jid, `Nessuna domanda FAQ in attesa. La risposta non è stata salvata.`);
+            }
+            return;
+        }
+
+        // Admin: comandi DB (lista partite, modifica livello, cancella partita, ecc.)
+        const { looksLikeAdminCommand, handleAdminCommand } = await import('./admin-commands');
+        if (looksLikeAdminCommand(combinedText)) {
+            await handleAdminCommand(combinedText, club, jid);
             return;
         }
     }
@@ -311,7 +336,35 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[], cor
     if (action !== 'NONE') {
         const result = await executeAction(action, params, player, club);
         if (!result.success && result.errorMessage) {
-            await simulateTypingAndSend(jid, `Ops! ${result.errorMessage} 😕`);
+            if (result.errorMessage.startsWith('PLAYER_NOT_FOUND:')) {
+                const searchedName = result.errorMessage.split(':').slice(1).join(':').trim();
+                const redis = getRedis();
+                const nameKey = searchedName.toLowerCase();
+                const alreadyNotified = await redis.get(`invite:admin_notified:${club?.id}:${nameKey}`);
+                if (alreadyNotified) {
+                    await simulateTypingAndSend(jid, `Ho già contattato il circolo per verificare. Ti rispondo appena ho notizie!`);
+                } else {
+                    const alreadyAsked = await redis.get(`invite:not_found:${club?.id}:${nameKey}`);
+                    if (alreadyAsked) {
+                        // Seconda volta: escalation all'admin
+                        const { notifyAdmin } = await import('../utils/notify-admin');
+                        await notifyAdmin(
+                            `❓ ${player.name || phoneNumber} insiste: vuole invitare "${searchedName}" ma non risulta iscritto. Verificare?`,
+                            `invite_not_found_${nameKey.substring(0, 20)}`,
+                            club?.adminPhone ?? undefined,
+                            club?.name ?? undefined,
+                        ).catch(() => {});
+                        await redis.set(`invite:admin_notified:${club?.id}:${nameKey}`, '1', 'EX', 3600);
+                        await simulateTypingAndSend(jid, `Ho contattato il circolo per verificare. Ti rispondo appena ho notizie!`);
+                    } else {
+                        // Prima volta: informa l'utente e memorizza
+                        await redis.set(`invite:not_found:${club?.id}:${nameKey}`, '1', 'EX', 3600);
+                        await simulateTypingAndSend(jid, `Non trovo "${searchedName}" tra i giocatori iscritti al circolo. Se sei sicuro che sia registrato, scrivimi di nuovo e verifico con il campo!`);
+                    }
+                }
+            } else {
+                await simulateTypingAndSend(jid, `Ops! ${result.errorMessage} 😕`);
+            }
         }
         // BOOK_FIELD / RESCHEDULE_MATCH: invia scheda prenotazione con dettagli campo + prezzo + indirizzo
         if ((action === 'BOOK_FIELD' || action === 'RESCHEDULE_MATCH') && result.success && result.matchId) {
