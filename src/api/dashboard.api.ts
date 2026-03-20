@@ -585,7 +585,7 @@ router.get('/system/health', authMiddleware, async (req: Request, res: Response)
             redis.ping(),
             new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 2000))
         ]);
-        const info = await redis.info('server').catch(() => '');
+        const info = await redis.info('persistence').catch(() => '');
         const aof = info.includes('aof_enabled:1');
         const queueSize = await redis.llen('staging:bull:wave-queue:wait').catch(() => 0);
         health.redis = { connected: pong === 'PONG', aof, queueSize };

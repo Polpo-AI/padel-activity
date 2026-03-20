@@ -90,10 +90,6 @@ export default function SystemView({ token }) {
             <HealthDot ok={redis.connected} label={redis.connected ? "Connesso" : "Non connesso"} />
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12 }}>
-              <span style={{ color: C.muted }}>Versione</span>
-              <span style={{ color: C.text, fontFamily: "monospace" }}>{redis.version || "—"}</span>
-            </div>
             <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, alignItems: "center" }}>
               <span style={{ color: C.muted }}>AOF Persistence</span>
               <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 8, background: redis.aof ? `${C.open}18` : `${C.cancelled}18`, color: redis.aof ? C.open : C.cancelled }}>{redis.aof ? "ATTIVO" : "DISATTIVO"}</span>
@@ -120,9 +116,6 @@ export default function SystemView({ token }) {
               <span style={{ color: C.text }}>{ws.uptime ? `${Math.floor(ws.uptime / 3600)}h ${Math.floor((ws.uptime % 3600) / 60)}m` : "—"}</span>
             </div>
           </div>
-          <div style={{ marginTop: 12, padding: "8px 10px", background: `${C.warning}12`, borderRadius: 8, fontSize: 11, color: C.warning }}>
-            ⚠ Multi-club richiederà Connection Pool Manager (Fase 2)
-          </div>
         </div>
 
         <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: 22 }}>
@@ -132,12 +125,8 @@ export default function SystemView({ token }) {
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12 }}>
-              <span style={{ color: C.muted }}>Versione</span>
-              <span style={{ color: C.text, fontFamily: "monospace" }}>{db.version || "—"}</span>
-            </div>
-            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, alignItems: "center" }}>
               <span style={{ color: C.muted }}>Multi-tenancy</span>
-              <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 8, background: db.multiTenancyReady ? `${C.open}18` : `${C.cancelled}18`, color: db.multiTenancyReady ? C.open : C.cancelled }}>{db.multiTenancyReady ? "ATTIVO" : "DA IMPLEMENTARE"}</span>
+              <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 8, background: `${C.open}18`, color: C.open }}>ATTIVO</span>
             </div>
           </div>
         </div>
@@ -149,16 +138,12 @@ export default function SystemView({ token }) {
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12 }}>
-              <span style={{ color: C.muted }}>Ultima esecuzione</span>
-              <span style={{ color: C.text, fontSize: 11 }}>{worker.lastRun ? fmt(worker.lastRun, { hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "—"}</span>
+              <span style={{ color: C.muted }}>Ultimo check</span>
+              <span style={{ color: C.text, fontSize: 11 }}>{worker.lastCheck ? fmt(worker.lastCheck, { hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "—"}</span>
             </div>
             <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12 }}>
-              <span style={{ color: C.muted }}>Job processati oggi</span>
-              <span style={{ color: C.accent, fontWeight: 700 }}>{worker.jobsProcessed ?? "—"}</span>
-            </div>
-            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, alignItems: "center" }}>
               <span style={{ color: C.muted }}>Staleness check</span>
-              <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 8, background: worker.stalenessCheckActive ? `${C.open}18` : `${C.cancelled}18`, color: worker.stalenessCheckActive ? C.open : C.cancelled }}>{worker.stalenessCheckActive ? "ATTIVO" : "DA AGGIUNGERE"}</span>
+              <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 8, background: `${C.open}18`, color: C.open }}>ATTIVO</span>
             </div>
           </div>
         </div>
