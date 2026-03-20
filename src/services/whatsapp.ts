@@ -245,9 +245,6 @@ async function _doConnect(key: string, state: ClubSocketState): Promise<void> {
             state.isReconnecting = false;
             state.status = 'open';
             state.lastHeartbeatOk = Date.now();
-            // Attiva subito il flag — i messaggi `append` arrivano
-            // immediatamente dopo il connect, prima del timeout di 5s
-            state.isResyncing = true;
 
             // Notifica admin startup (non-blocking)
             setTimeout(async () => {
@@ -259,60 +256,37 @@ async function _doConnect(key: string, state: ClubSocketState): Promise<void> {
 
                     if (club?.adminPhone) {
                         const adminJid = `${club.adminPhone.replace(/\D/g, '')}@s.whatsapp.net`;
-                        await _sendRaw(state, adminJid, '🤖 *Servizio Padel Bot Riavviato!*\nRecupero messaggi offline in corso...');
+                        await _sendRaw(state, adminJid, '🤖 *Bot riavviato — connesso.*');
                     }
                 } catch (err) {
                     logger.error({ err, clubId: key }, 'Failed to send startup notification');
                 }
-                setTimeout(() => {
-                    if (state.isResyncing) {
-                        logger.info({ clubId: key }, 'isResyncing fallback timeout — clearing');
-                        state.isResyncing = false;
-                        state.syncCount = 0;
-                    }
-                }, 30000);
             }, 5000);
         }
     });
 
     sock.ev.on('messages.upsert', async (m) => {
+        // Messaggi `append` = storia offline consegnata da WA al reconnect.
+        // Raccolta sempre attiva (non dipende da isResyncing) con finestra 24h.
         if (m.type === 'append') {
-            if (state.isResyncing) {
-                const cutoff = Date.now() - OFFLINE_MSG_WINDOW_MS;
-                for (const msg of m.messages) {
-                    if (msg.key.fromMe || !msg.message || !msg.key.remoteJid) continue;
-                    if (msg.key.remoteJid.endsWith('@g.us')) continue;
-                    if (Number(msg.messageTimestamp) * 1000 < cutoff) continue;
-                    const jid = msg.key.remoteJid;
-                    if (!state.offlineMessages.has(jid)) state.offlineMessages.set(jid, []);
-                    state.offlineMessages.get(jid)!.push(msg);
-                }
+            const cutoff = Date.now() - OFFLINE_MSG_WINDOW_MS;
+            for (const msg of m.messages) {
+                if (msg.key.fromMe || !msg.message || !msg.key.remoteJid) continue;
+                if (msg.key.remoteJid.endsWith('@g.us')) continue;
+                if (Number(msg.messageTimestamp) * 1000 < cutoff) continue;
+                const jid = msg.key.remoteJid;
+                if (!state.offlineMessages.has(jid)) state.offlineMessages.set(jid, []);
+                state.offlineMessages.get(jid)!.push(msg);
             }
-            return;
-        }
 
-        if (m.type !== 'notify') return;
-
-        if (state.isResyncing) {
-            state.syncCount += m.messages.length;
-
+            // Schedula processOfflineMessages 15s dopo l'ultimo append
             if (state.syncTimer) clearTimeout(state.syncTimer);
             state.syncTimer = setTimeout(async () => {
-                try {
-                    const { prisma } = await import('./db');
-                    const club = key === DEFAULT_CLUB_KEY
-                        ? await prisma.club.findFirst({ where: { adminPhone: { not: null } } })
-                        : await prisma.club.findUnique({ where: { id: key }, select: { adminPhone: true } });
-
-                    if (club?.adminPhone && state.syncCount > 0) {
-                        const adminJid = `${club.adminPhone.replace(/\D/g, '')}@s.whatsapp.net`;
-                        await _sendRaw(state, adminJid, `✅ *Recovery Completata!*\nMessaggi sincronizzati: ${state.syncCount}.`);
-                    }
-                } catch {}
                 state.isResyncing = false;
                 state.syncCount = 0;
-
                 if (state.offlineMessages.size > 0) {
+                    const count = [...state.offlineMessages.values()].reduce((n, msgs) => n + msgs.length, 0);
+                    logger.info({ clubId: key, count }, 'Processing offline messages after append resync');
                     await processOfflineMessages(state.offlineMessages, key).catch(err =>
                         logger.error({ err, clubId: key }, 'processOfflineMessages failed')
                     );
@@ -322,9 +296,12 @@ async function _doConnect(key: string, state: ClubSocketState): Promise<void> {
             return;
         }
 
+        if (m.type !== 'notify') return;
+
+        // Messaggi `notify` = messaggi in tempo reale — processati sempre,
+        // anche durante resync (non li blocchiamo più).
         for (const msg of m.messages) {
             if (!msg.key.fromMe && msg.message) {
-                // Emette l'evento con il clubId così messageHandler sa da quale club arriva
                 wahEvents.emit('message', msg, key === DEFAULT_CLUB_KEY ? undefined : key);
             }
         }
