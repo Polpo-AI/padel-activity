@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import { PrismaClient } from '@prisma/client';
 import { Pool } from 'pg';
 import { PrismaPg } from '@prisma/adapter-pg';
@@ -21,7 +22,9 @@ async function reset() {
     // Flush Redis BullMQ queues to prevent ghost wave/maintenance jobs
     // from re-running on non-existent matchIds after a DB reset.
     // ⚠️ This deletes ALL Redis keys — do NOT run on production.
-    const redis = new Redis(process.env.REDIS_URL || 'redis://127.0.0.1:6379');
+    const redisUrl = process.env.REDIS_URL || 'redis://127.0.0.1:6379';
+    const redisPassword = process.env.REDIS_PASSWORD;
+    const redis = new Redis(redisUrl, redisPassword ? { password: redisPassword } : {});
     await redis.flushdb();
     await redis.quit();
     console.log('Redis flushed OK');
