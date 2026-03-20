@@ -217,21 +217,18 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[], cor
             return;
         }
 
-        // Admin: conferma azioni destructive pendenti (disattiva campo, cambia orari)
-        const { looksLikeAdminCommand, handleAdminCommand, handleAdminFaqFlow, handleAdminPendingAction } = await import('./admin-commands');
+        // Admin: conferma azioni destructive pendenti
+        const { handleAdminCommand, handleAdminFaqFlow, handleAdminPendingAction } = await import('./admin-commands');
         const pendingActionHandled = await handleAdminPendingAction(combinedText, club, jid);
         if (pendingActionHandled) return;
 
         // Admin: gestione FAQ intelligente via AI (nessun formato hardcoded)
-        // Admin: gestione FAQ intelligente via AI (nessun formato hardcoded)
         const faqHandled = await handleAdminFaqFlow(combinedText, club, jid);
         if (faqHandled) return;
 
-        // Admin: comandi DB (lista partite, modifica livello, cancella partita, ecc.)
-        if (looksLikeAdminCommand(combinedText)) {
-            await handleAdminCommand(combinedText, club, jid);
-            return;
-        }
+        // Admin: tenta sempre il parsing come comando DB — se non è un comando (UNKNOWN) cade al brain normale
+        const adminHandled = await handleAdminCommand(combinedText, club, jid);
+        if (adminHandled) return;
     }
 
     // ─── ONBOARDING ───
