@@ -128,6 +128,11 @@ grep REDIS_PASSWORD .env       # → per redis-cli -a <password>
 **Fix in place:** in `callBrain` (brain.ts), prima di costruire il payload per Anthropic: (1) fonde i messaggi con lo stesso ruolo consecutivi con `\n`; (2) rimuove l'ultimo messaggio se è `user` (il `userMessage` lo sostituisce già). In questo modo Anthropic riceve sempre alternanza corretta.
 **Regola:** MAI passare ad Anthropic una lista di messaggi senza prima verificare che i ruoli si alternino correttamente.
 
+### 26. Messaggi `append` persi nella finestra di 5s dopo reconnect
+**Bug reale:** al `connection: 'open'`, `isResyncing` veniva impostato a `true` solo dentro un `setTimeout` di 5s. I messaggi `append` (offline recovery da WA) arrivano immediatamente dopo il connect — in quei 5s venivano scartati silenziosamente.
+**Fix in place:** i messaggi `append` vengono ora raccolti sempre, indipendentemente da `isResyncing`. Il `syncTimer` (15s debounce) parte all'arrivo del primo `append` e processa tutto dopo l'ultimo. I messaggi `notify` (real-time) non vengono mai bloccati durante il resync.
+**Regola:** MAI condizionare la raccolta degli `append` a un flag che viene impostato con ritardo. `append` e `notify` devono avere pipeline indipendenti.
+
 ### 24. Admin check DEVE venire prima dell'onboarding state check
 **Bug reale (doppio):** (a) admin scriveva al bot dopo DB reset → colpiva gate `!player` → bloccato silenziosamente. (b) admin inviava `ok 393…` → `getOnboardingState` lo intercettava come risposta al nome → niente sblocco.
 **Fix in place:** in `messageHandler._handleBatchInner`, l'ordine corretto è:
