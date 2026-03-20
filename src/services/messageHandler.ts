@@ -217,26 +217,12 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[], cor
             return;
         }
 
-        // Admin: "faq: <risposta>" → salva risposta a domanda pendente
-        if (/^faq:\s*.+/i.test(combinedText)) {
-            const redis = getRedis();
-            const answer = combinedText.replace(/^faq:\s*/i, '').trim();
-            const pendingRaw = await redis.get(`faq:pending_question:${club?.id || ''}`);
-            if (pendingRaw) {
-                const { question, askedBy } = JSON.parse(pendingRaw);
-                await prisma.faq.create({
-                    data: { clubId: club!.id, question, answer, askedBy: askedBy || null },
-                });
-                await redis.del(`faq:pending_question:${club?.id || ''}`);
-                await sendMessage(jid, `FAQ salvata! La risposta sarà disponibile agli utenti da ora.`);
-            } else {
-                await sendMessage(jid, `Nessuna domanda FAQ in attesa. La risposta non è stata salvata.`);
-            }
-            return;
-        }
+        // Admin: gestione FAQ intelligente via AI (nessun formato hardcoded)
+        const { looksLikeAdminCommand, handleAdminCommand, handleAdminFaqFlow } = await import('./admin-commands');
+        const faqHandled = await handleAdminFaqFlow(combinedText, club, jid);
+        if (faqHandled) return;
 
         // Admin: comandi DB (lista partite, modifica livello, cancella partita, ecc.)
-        const { looksLikeAdminCommand, handleAdminCommand } = await import('./admin-commands');
         if (looksLikeAdminCommand(combinedText)) {
             await handleAdminCommand(combinedText, club, jid);
             return;

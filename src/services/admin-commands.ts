@@ -9,8 +9,8 @@
 
 import { prisma } from './db';
 import { anthropic } from './ai';
-import { simulateTypingAndSend } from './whatsapp';
-import { waveQueue } from './queue';
+import { simulateTypingAndSend, sendMessage } from './whatsapp';
+import { waveQueue, getRedis } from './queue';
 import pino from 'pino';
 
 const logger = pino({ level: 'info' });
@@ -24,6 +24,131 @@ const ADMIN_COMMAND_KEYWORDS = [
     'elimina il giocatore', 'cancella il giocatore', 'rimuovi il giocatore', 'elimina giocatore',
     'cambia livello', 'modifica il livello', 'modifica livello', 'livello di',
 ];
+
+// ─────────────────────────────────────────────
+// FAQ FLOW (intelligente, senza formato hardcoded)
+// ─────────────────────────────────────────────
+
+/**
+ * Gestisce il flusso FAQ lato admin via ragionamento AI.
+ * Ritorna true se il messaggio è stato gestito dal flusso FAQ (e il caller deve fare return),
+ * false se il messaggio deve proseguire nel flusso normale.
+ */
+export async function handleAdminFaqFlow(text: string, club: any, jid: string): Promise<boolean> {
+    if (!club?.id || !text.trim()) return false;
+    const redis = getRedis();
+    const clubId = club.id;
+
+    // ── Stato 1: admin ha già visto la proposta di salvataggio e deve confermare sì/no
+    const confirmRaw = await redis.get(`faq:awaiting_save_confirm:${clubId}`);
+    if (confirmRaw) {
+        const { question, answer, askedBy } = JSON.parse(confirmRaw);
+        const affirmative = /^(s[iì]|yes|ok|va bene|certo|giusto|esatto|salvala?|conferm)/i.test(text.trim());
+        const negative = /^(no|nope|non salvare|non va bene|sbagliato|lascia perdere|skip)/i.test(text.trim());
+
+        if (affirmative) {
+            await prisma.faq.create({ data: { clubId, question, answer, askedBy: askedBy || null } });
+            await redis.del(`faq:awaiting_save_confirm:${clubId}`);
+            await redis.del(`faq:pending_question:${clubId}`);
+            await sendMessage(jid, `Salvato! La risposta sarà disponibile agli utenti da ora.`);
+            return true;
+        }
+
+        if (negative) {
+            await redis.del(`faq:awaiting_save_confirm:${clubId}`);
+            await sendMessage(jid, `Ok, non salvo. La domanda resta in sospeso se vuoi rispondere diversamente.`);
+            return true;
+        }
+
+        // Non è un sì/no: potrebbe essere una risposta aggiornata → ri-classifica come nuova risposta
+        await redis.del(`faq:awaiting_save_confirm:${clubId}`);
+        // cade nel check pending_question qui sotto
+    }
+
+    // ── Stato 2: c'è una domanda pending → classifica se il messaggio è una risposta
+    const pendingRaw = await redis.get(`faq:pending_question:${clubId}`);
+    if (!pendingRaw) return false;
+
+    const { question, askedBy } = JSON.parse(pendingRaw);
+
+    const classification = await classifyAdminFaqResponse(question, text);
+
+    if (!classification.isFaqAnswer) {
+        // Non sembra una risposta alla domanda → lascia passare al flusso normale
+        return false;
+    }
+
+    if (classification.isFaqAnswer && classification.confidence === 'high' && classification.faqWorthy) {
+        // Alta confidenza: salva direttamente
+        await prisma.faq.create({ data: { clubId, question, answer: text.trim(), askedBy: askedBy || null } });
+        await redis.del(`faq:pending_question:${clubId}`);
+        await sendMessage(jid, `Ho salvato la risposta come FAQ. Gli utenti la riceveranno direttamente la prossima volta che chiedono qualcosa di simile.`);
+        return true;
+    }
+
+    // Bassa confidenza o risposta non abbastanza completa per essere FAQ: chiedi conferma
+    await redis.set(
+        `faq:awaiting_save_confirm:${clubId}`,
+        JSON.stringify({ question, answer: text.trim(), askedBy }),
+        'EX', 24 * 3600,
+    );
+    await sendMessage(
+        jid,
+        `Vuoi che salvi questa risposta come FAQ per le prossime domande simili?\n\nD: ${question}\nR: ${text.trim()}\n\nRispondi sì o no.`,
+    );
+    return true;
+}
+
+async function classifyAdminFaqResponse(
+    pendingQuestion: string,
+    adminMessage: string,
+): Promise<{ isFaqAnswer: boolean; confidence: 'high' | 'low'; faqWorthy: boolean }> {
+    const prompt = `L'admin di un circolo padel ha ricevuto questa notifica: un utente ha chiesto "${pendingQuestion}".
+
+L'admin ha scritto: "${adminMessage}"
+
+Analizza se il messaggio dell'admin è una risposta alla domanda dell'utente.
+
+Restituisci SOLO un JSON valido:
+{
+  "isFaqAnswer": true/false,
+  "confidence": "high"/"low",
+  "faqWorthy": true/false
+}
+
+Criteri:
+- isFaqAnswer: true se il messaggio risponde (anche parzialmente) alla domanda
+- confidence: "high" se è chiaramente una risposta, "low" se hai dubbi
+- faqWorthy: true se la risposta è sufficientemente completa e utile da salvare per utenti futuri
+
+Esempi:
+- Domanda "Quali sono gli orari?" / Risposta "Siamo aperti dalle 8 alle 23" → isFaqAnswer:true, confidence:high, faqWorthy:true
+- Domanda "Ci sono tornei?" / Risposta "sì" → isFaqAnswer:true, confidence:high, faqWorthy:false
+- Domanda "Quanto costa il campo?" / Risposta "ma di cosa parla?" → isFaqAnswer:false, confidence:high, faqWorthy:false`;
+
+    try {
+        const resp = await anthropic.messages.create({
+            model: 'claude-haiku-4-5-20251001',
+            max_tokens: 100,
+            temperature: 0,
+            messages: [{ role: 'user', content: prompt }],
+        });
+        const content = resp.content[0];
+        if (content.type === 'text') {
+            const raw = content.text.trim();
+            const start = raw.indexOf('{');
+            const end = raw.lastIndexOf('}');
+            if (start !== -1 && end !== -1) {
+                return JSON.parse(raw.substring(start, end + 1));
+            }
+        }
+    } catch (err) {
+        logger.error({ err }, 'classifyAdminFaqResponse failed');
+    }
+
+    // Fallback conservativo: non intercettare
+    return { isFaqAnswer: false, confidence: 'low', faqWorthy: false };
+}
 
 export function looksLikeAdminCommand(text: string): boolean {
     const lower = text.toLowerCase();

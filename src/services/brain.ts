@@ -581,7 +581,7 @@ export async function executeAction(
                 );
                 const { notifyAdmin } = await import('../utils/notify-admin');
                 await notifyAdmin(
-                    `❓ ${player?.name || player?.phoneNumber} ha chiesto:\n"${question}"\n\nRispondi con *faq: <risposta>* per salvarlo come FAQ.`,
+                    `❓ ${player?.name || player?.phoneNumber} ha chiesto:\n"${question}"\n\nRispondi qui per salvare la tua risposta come FAQ.`,
                     `faq_pending_${question.substring(0, 20)}`,
                     club?.adminPhone,
                     club?.name,
