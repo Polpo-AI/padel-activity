@@ -24,6 +24,7 @@ export interface NormalizedMessage {
     contactPhone?: string;
     contactName?: string;
     raw: proto.IWebMessageInfo;
+    clubId?: string; // quale circolo ha ricevuto questo messaggio
 }
 
 type BatchHandler = (jid: string, messages: NormalizedMessage[]) => Promise<void>;
@@ -61,7 +62,7 @@ export function registerBatchHandler(handler: BatchHandler) {
 // ENQUEUE
 // ─────────────────────────────────────────────
 
-export function enqueue(raw: proto.IWebMessageInfo): void {
+export function enqueue(raw: proto.IWebMessageInfo, clubId?: string): void {
     const jid = raw.key?.remoteJid;
     if (!jid || jid.endsWith('@g.us')) return;
 
@@ -76,7 +77,7 @@ export function enqueue(raw: proto.IWebMessageInfo): void {
         setTimeout(() => recentMsgIds.delete(msgId), DEDUP_WINDOW_MS);
     }
 
-    const msg = normalize(raw);
+    const msg = normalize(raw, clubId);
     if (!msg) return;
 
     // Deduplication secondaria: catch Baileys replays con messageId null/diverso
@@ -133,7 +134,7 @@ async function flush(jid: string): Promise<void> {
 // NORMALIZZA
 // ─────────────────────────────────────────────
 
-function normalize(raw: proto.IWebMessageInfo): NormalizedMessage | null {
+function normalize(raw: proto.IWebMessageInfo, clubId?: string): NormalizedMessage | null {
     const msg = raw.message;
     if (!msg) return null;
 
@@ -141,9 +142,9 @@ function normalize(raw: proto.IWebMessageInfo): NormalizedMessage | null {
         msg.conversation ||
         msg.extendedTextMessage?.text ||
         msg.ephemeralMessage?.message?.extendedTextMessage?.text;
-    if (text) return { type: 'text', text, raw };
+    if (text) return { type: 'text', text, raw, clubId };
 
-    if (msg.audioMessage) return { type: 'audio', raw };
+    if (msg.audioMessage) return { type: 'audio', raw, clubId };
 
     if (msg.contactMessage) {
         const vcard = msg.contactMessage.vcard || '';
@@ -154,6 +155,7 @@ function normalize(raw: proto.IWebMessageInfo): NormalizedMessage | null {
             contactPhone: phoneMatch?.[1]?.replace(/\s/g, '') || undefined,
             contactName: nameMatch?.[1]?.trim() || msg.contactMessage.displayName || undefined,
             raw,
+            clubId,
         };
     }
 
@@ -167,10 +169,11 @@ function normalize(raw: proto.IWebMessageInfo): NormalizedMessage | null {
             contactPhone: phoneMatch?.[1]?.replace(/\s/g, '') || undefined,
             contactName: nameMatch?.[1]?.trim() || first.displayName || undefined,
             raw,
+            clubId,
         };
     }
 
-    return { type: 'other', raw };
+    return { type: 'other', raw, clubId };
 }
 
 // ─────────────────────────────────────────────
@@ -185,6 +188,7 @@ async function persistToRedis(jid: string, messages: NormalizedMessage[]): Promi
             text: m.text,
             contactPhone: m.contactPhone,
             contactName: m.contactName,
+            clubId: m.clubId,
             rawKey: m.raw.key,
             rawMessage: m.raw.message,
         }));
@@ -215,6 +219,7 @@ async function recoverPendingBatches(): Promise<void> {
             try {
                 const messages: NormalizedMessage[] = JSON.parse(data).map((m: any) => ({
                     ...m,
+                    clubId: m.clubId,
                     raw: { key: m.rawKey, message: m.rawMessage },
                 }));
                 await redis.del(key);

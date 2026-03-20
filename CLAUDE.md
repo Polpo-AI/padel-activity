@@ -100,6 +100,20 @@ MAI dimenticare la produzione — uno schema disallineato causa crash silenziosi
 **Bug reale:** `connectionStatus` è una variabile module-level in `whatsapp.ts`. Se importata dinamicamente da un route handler, il modulo è una istanza separata → il valore è sempre quello iniziale (`'connecting'`), mai aggiornato dall'event loop principale.
 **Fix:** usare solo import statici per `whatsapp.ts`. Per verificare lo stato WA dall'esterno usare l'endpoint `/health` che usa l'import statico di `index.ts`.
 
+### 19. Multi-tenant: AsyncLocalStorage per propagare clubId senza cambiare firme
+**Architettura:** ogni circolo ha il proprio socket Baileys in `Map<clubId, ClubSocketState>` in `whatsapp.ts`. Il `clubId` viene propagato automaticamente a tutti i `sendMessage`/`simulateTypingAndSend` tramite `AsyncLocalStorage` (request-context).
+**Come funziona:** `messageHandler._handleBatchInner` setta il `clubId` nel context tramite `runWithContext(ctx, fn)`. `processWave` in matchmaker fa lo stesso. Tutte le funzioni downstream (onboarding, redirect, scoring, brain) usano automaticamente il socket corretto senza cambiamenti alle loro firme.
+**Regola:** NON passare `clubId` come parametro esplicito a ogni funzione — usare `runWithContext` al punto di ingresso e leggere con `getClubId()` dove necessario.
+
+### 20. Multi-tenant deploy: botPhoneNumber nel DB, fallback su env vars
+**Regola:** all'avvio, `index.ts` cerca i club con `botPhoneNumber != null` e li connette. Se nessun club ha `botPhoneNumber`, usa `BOT_PHONE_NUMBER` env var (legacy single-tenant). Per attivare multi-tenant su un circolo: aggiungere `botPhoneNumber` al record Club nel DB.
+**Schema:** `Club.botPhoneNumber String?` + `WhatsAppMessage.clubId String?` (nullable per record legacy).
+**Auth folder Baileys:** `baileys_auth_info_{clubId}` per ogni club, `baileys_auth_info` per default/legacy.
+
+### 21. Vi.mock e module caching in Vitest: usare mockImplementation per catturare ctx
+**Problema:** `mockRunWithContext.mock.calls` è vuoto anche se il codice viene eseguito → il modulo crea il suo reference al momento dell'import, che può essere diverso dall'oggetto nella closure del test.
+**Fix:** usare `mockRunWithContext.mockImplementation((ctx, fn) => { capturedCtx.push(ctx); return fn(); })` nel `beforeEach` di ogni suite, oppure verificare il comportamento indirettamente (es. verificare che la prima query al DB sia quella corretta).
+
 ---
 
 ---
@@ -151,10 +165,32 @@ Due processi separati per ambiente:
 - **`src/index.ts`** — API HTTP (Express) + WhatsApp bot (Baileys)
   - Gestisce messaggi in entrata, booking, onboarding, inviti
   - Espone `/api/webhooks`, `/api/dashboard`, `/api/setup`, `/health`, `/dashboard`, `/setup`
+  - **Multi-tenant:** connette N socket Baileys (uno per club con `botPhoneNumber` configurato), evento `wahEvents.emit('message', msg, clubId)`, enqueue con clubId
 
 - **`src/worker.ts`** — Worker BullMQ
   - Consuma code: `wave`, `maintenance`, `recovery`, `reminder`
   - Non ha connessione WhatsApp diretta — manda messaggi via `simulateTypingAndSend`
+
+### Multi-tenant: architettura socket
+
+```
+Club.botPhoneNumber != null → connectToWhatsApp(clubId, botPhone)
+    → Map<clubId, ClubSocketState> in whatsapp.ts
+    → auth folder: baileys_auth_info_<clubId>
+
+Messaggio in entrata da socket del club X:
+    wahEvents.emit('message', msg, clubId=X)
+    → enqueue(msg, clubId=X)
+    → NormalizedMessage.clubId = X
+    → handleBatch(jid, msgs)
+    → runWithContext({ clubId: X }, fn)
+    → sendMessage/simulateTypingAndSend usa socket X via getClubId()
+
+Wave per match di club X:
+    processWave(matchId) → findUnique(matchId).clubId = X
+    → runWithContext({ clubId: X }, fn)
+    → tutti i simulateTypingAndSend nel pipeline usano socket X
+```
 
 ---
 

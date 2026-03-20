@@ -15,6 +15,7 @@ import { selectPlayersForWave, computeNextWaveDelayMs, getPlayersForRecovery } f
 import { generateInvitation } from './ai';
 import { simulateTypingAndSend } from './whatsapp';
 import { waveQueue, getRedis } from './queue';
+import { runWithContext } from '../utils/request-context';
 import pino from 'pino';
 
 const logger = pino({ level: 'info' });
@@ -53,6 +54,16 @@ async function withMatchLock<T>(matchId: string, fn: () => Promise<T>): Promise<
 // ─────────────────────────────────────────────
 
 export async function processWave(matchId: string, waveNumber: number, urgencyMultiplier: number = 1): Promise<void> {
+    // Risolvi il clubId dal match per impostare il contesto corretto (socket WA corretto)
+    const matchClub = await prisma.match.findUnique({ where: { id: matchId }, select: { clubId: true } });
+    const clubId = matchClub?.clubId ?? undefined;
+
+    await runWithContext({ correlationId: `wave-${matchId}-${waveNumber}`, clubId }, async () => {
+    await _processWaveInner(matchId, waveNumber, urgencyMultiplier);
+    });
+}
+
+async function _processWaveInner(matchId: string, waveNumber: number, urgencyMultiplier: number): Promise<void> {
     // ── FASE 1: Selezione e creazione invitation atomica ──────────────────
     const context = await withMatchLock(matchId, async () => {
         const match = await prisma.match.findUnique({

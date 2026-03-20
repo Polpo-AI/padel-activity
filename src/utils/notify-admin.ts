@@ -12,6 +12,7 @@
  */
 
 import pino from 'pino';
+import { runWithContext, getClubId } from './request-context';
 const logger = pino({ level: 'info' });
 
 const notificationCooldowns = new Map<string, number>();
@@ -62,9 +63,11 @@ export async function notifyAdmin(
 
     try {
         const { sendMessage, getConnectionStatus } = await import('../services/whatsapp');
-        
-        if (getConnectionStatus() !== 'open') {
-            logger.warn({ key }, 'Cannot send admin notification: WhatsApp not connected');
+
+        // Usa il clubId dal context (se disponibile) per selezionare il socket corretto
+        const contextClubId = getClubId();
+        if (getConnectionStatus(contextClubId) !== 'open') {
+            logger.warn({ key, contextClubId }, 'Cannot send admin notification: WhatsApp not connected');
             return;
         }
 

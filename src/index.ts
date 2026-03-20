@@ -23,7 +23,7 @@ import fs from 'fs';
 import webhooksRouter from './api/webhooks';
 import dashboardRouter from './api/dashboard.api';
 import setupRouter from './api/setup.api';
-import { connectToWhatsApp, getConnectionStatus } from './services/whatsapp';
+import { connectToWhatsApp, getConnectionStatus, getAllClubStatuses } from './services/whatsapp';
 import { maintenanceQueue, checkSilentMatches, checkRedisHealth } from './services/queue';
 import { checkDbHealth } from './services/db';
 import { notifyAdminCritical } from './utils/notify-admin';
@@ -37,7 +37,8 @@ import './workers/maintenance.worker';
 import './services/messageHandler';
 import { wahEvents } from './services/whatsapp';
 import { enqueue } from './services/inbound-queue';
-wahEvents.on('message', (msg) => enqueue(msg));
+// L'evento 'message' ora porta anche il clubId (quale circolo ha ricevuto il messaggio)
+wahEvents.on('message', (msg, clubId?: string) => enqueue(msg, clubId));
 
 const logger = pino({
     level: process.env.LOG_LEVEL || 'info',
@@ -108,13 +109,15 @@ app.get('/health', async (req, res) => {
         checkRedisHealth(),
     ]);
 
-    const waStatus = getConnectionStatus(); // 'open' | 'connecting' | 'closed'
+    const waStatus = getConnectionStatus(); // 'open' se almeno un club è connesso
     const waOk = waStatus === 'open';
+    const clubStatuses = getAllClubStatuses(); // stato per-club
 
     const status = {
         db: dbOk ? 'ok' : 'down',
         redis: redisOk ? 'ok' : 'down',
         whatsapp: waOk ? 'ok' : waStatus,
+        clubs: clubStatuses,
         ts: new Date().toISOString(),
     };
 
@@ -211,9 +214,30 @@ async function main() {
         notifyAdminCritical('Bot avviato ma Database non raggiungibile. Funzionalità limitata.').catch(() => {});
     }
 
-    // WhatsApp First (so we can notify about errors later)
+    // WhatsApp: connetti tutti i club con botPhoneNumber configurato (multi-tenant)
+    // Fallback: legacy single-tenant via CLUB_ID + BOT_PHONE_NUMBER env vars
     try {
-        await connectToWhatsApp();
+        const { prisma: db } = await import('./services/db');
+        const clubsWithPhone = await db.club.findMany({
+            where: { botPhoneNumber: { not: null } },
+            select: { id: true, name: true, botPhoneNumber: true },
+        });
+
+        if (clubsWithPhone.length > 0) {
+            logger.info({ count: clubsWithPhone.length }, 'Multi-tenant: connecting clubs with botPhoneNumber');
+            for (const club of clubsWithPhone) {
+                try {
+                    await connectToWhatsApp(club.id, club.botPhoneNumber!);
+                    logger.info({ clubId: club.id, name: club.name }, 'Club WA connection started');
+                } catch (err) {
+                    logger.error({ err, clubId: club.id }, 'Failed to start WA connection for club');
+                }
+            }
+        } else {
+            // Legacy single-tenant: usa env vars
+            logger.info('Single-tenant mode: connecting via BOT_PHONE_NUMBER env var');
+            await connectToWhatsApp(process.env.CLUB_ID, process.env.BOT_PHONE_NUMBER);
+        }
         logger.info('WhatsApp connection sequence started');
     } catch (err) {
         logger.error({ err }, 'WhatsApp initial socket creation failed');

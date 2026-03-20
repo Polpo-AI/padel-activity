@@ -20,6 +20,7 @@ import { Router, Request, Response, NextFunction } from 'express';
 import { prisma } from '../services/db';
 import { waveQueue } from '../services/queue';
 import { sendMessage } from '../services/whatsapp';
+import { runWithContext } from '../utils/request-context';
 import * as jwt from 'jsonwebtoken';
 import * as bcrypt from 'bcrypt';
 import pino from 'pino';
@@ -658,7 +659,10 @@ router.post('/test-notification', authMiddleware, async (req: Request, res: Resp
         if (!club?.adminPhone) return res.status(400).json({ error: 'adminPhone non configurato' });
 
         const jid = `${club.adminPhone.replace(/\D/g, '')}@s.whatsapp.net`;
-        await sendMessage(jid, `🎾 *Test notifica Francesca*\nConnessione attiva. JID utilizzato: ${jid}`);
+        // Imposta il clubId nel context così sendMessage usa il socket corretto
+        await runWithContext({ correlationId: `test-notif-${clubId}`, clubId }, async () => {
+            await sendMessage(jid, `🎾 *Test notifica Francesca*\nConnessione attiva. JID utilizzato: ${jid}`);
+        });
         res.json({ ok: true, jid });
     } catch (err: any) {
         logger.error({ err }, 'test-notification failed');

@@ -1,18 +1,23 @@
 /**
- * WhatsApp Service - Hyper-Human Simulation Edition
+ * WhatsApp Service — Multi-Tenant Edition
  *
- * This service wraps Baileys to make every interaction indistinguishable
- * from a real person using WhatsApp on their phone.
+ * Ogni circolo ha il proprio socket Baileys separato.
+ * Il routing usa clubId dal request-context (AsyncLocalStorage):
+ *   – messageHandler setta il clubId quando riceve un messaggio
+ *   – processWave setta il clubId dal match.clubId
+ *   – Tutte le chiamate a sendMessage/simulateTypingAndSend all'interno
+ *     del pipeline usano automaticamente il socket corretto
  *
- * Human Simulation Layers implemented:
- * 1. READ RECEIPT: Before replying, we mark the incoming message as "read" (blue ticks).
- * 2. READ DELAY: A natural pause after reading, before starting to type (1.5 - 3.5s).
- * 3. COMPOSING BURST: We don't just type once. We start, pause, then start again —
- *    just like a human who writes, deletes, and rewrites.
- * 4. PROPORTIONAL TYPING TIME: Composing duration scales with message length.
- * 5. MESSAGE CHUNKING: Long messages are optionally split and sent as 2 separate
- *    "bubbles" with a brief pause between them (like a human afterthought).
- * 6. RANDOM MICRO-PAUSES: Small jitter added to every sleep to avoid any clock regularity.
+ * Fallback: se clubId non è nel context, usa il primo socket 'open' disponibile
+ * (backward-compat per codice non ancora multi-tenant-aware).
+ *
+ * Human Simulation Layers:
+ * 1. Read receipt (blue ticks)
+ * 2. Read delay (1.5–3.5s)
+ * 3. Composing burst with mid-pause
+ * 4. Proportional typing time
+ * 5. Message chunking (two bubbles for long messages)
+ * 6. Random micro-pauses
  */
 
 import makeWASocket, {
@@ -27,37 +32,73 @@ import makeWASocket, {
 import { Boom } from '@hapi/boom';
 import pino from 'pino';
 import * as qrcode from 'qrcode-terminal';
-// import { handleIncomingMessage } from './messageHandler'; // Circular dependency removed
 import EventEmitter from 'events';
 
 export const wahEvents = new EventEmitter();
 
 const logger = pino({ level: 'info' });
 
-let sock: ReturnType<typeof makeWASocket> | null = null;
-let connectionStatus: 'open' | 'connecting' | 'closed' = 'connecting';
-let syncTimer: NodeJS.Timeout | null = null;
-let syncCount = 0;
-let isResyncing = false;
+// ─────────────────────────────────────────────
+// STATO PER CLUB
+// ─────────────────────────────────────────────
 
-// Messaggi ricevuti offline (type='append') durante la fase di resync
-const offlineMessages = new Map<string, proto.IWebMessageInfo[]>();
-const OFFLINE_MSG_WINDOW_MS = 24 * 60 * 60 * 1000; // solo ultimi 24h
+interface ClubSocketState {
+    sock: ReturnType<typeof makeWASocket> | null;
+    status: 'open' | 'connecting' | 'closed';
+    reconnectAttempts: number;
+    isReconnecting: boolean;
+    syncTimer: NodeJS.Timeout | null;
+    syncCount: number;
+    isResyncing: boolean;
+    offlineMessages: Map<string, proto.IWebMessageInfo[]>;
+    botPhoneNumber?: string;
+}
 
-// ✅ FIX I: backoff esponenziale per reconnect — evita loop infinito e accelerazione ban
-let reconnectAttempts = 0;
-const MAX_RECONNECT_DELAY_MS = 64000; // cap a 64s
-let isReconnecting = false; // guard: un solo reconnect in volo alla volta
+// Map<clubId, stato> — supporta N club contemporaneamente
+const clubSockets = new Map<string, ClubSocketState>();
 
-// ------------------------------------------------------------------
-// UTILITY HELPERS
-// ------------------------------------------------------------------
+// Chiave usata per club senza ID esplicito (legacy single-tenant)
+const DEFAULT_CLUB_KEY = 'default';
 
-/** Inclusive random integer */
+const MAX_RECONNECT_DELAY_MS = 64000;
+const OFFLINE_MSG_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+// ─────────────────────────────────────────────
+// ROUTING: socket corretto per il club corrente
+// ─────────────────────────────────────────────
+
+function getSocketForClub(clubId?: string): ClubSocketState | null {
+    // 1. Club esplicito dal context
+    if (clubId && clubSockets.has(clubId)) return clubSockets.get(clubId)!;
+
+    // 2. Fallback: primo socket 'open' disponibile
+    for (const [, cs] of clubSockets) {
+        if (cs.status === 'open') return cs;
+    }
+
+    // 3. Fallback: qualsiasi socket inizializzato
+    if (clubSockets.size > 0) return clubSockets.values().next().value!;
+
+    return null;
+}
+
+/** Restituisce il clubId corrente dal request-context */
+function currentClubId(): string | undefined {
+    try {
+        const { getClubId } = require('../utils/request-context');
+        return getClubId();
+    } catch {
+        return undefined;
+    }
+}
+
+// ─────────────────────────────────────────────
+// UTILITY
+// ─────────────────────────────────────────────
+
 const randomInt = (min: number, max: number) =>
     Math.floor(Math.random() * (max - min + 1)) + min;
 
-/** Sleep with optional jitter (±jitterMs) so timing is never perfectly regular */
 const jitteredSleep = (ms: number, jitterMs = 500) => {
     const jitter = randomInt(-jitterMs, jitterMs);
     const total = Math.max(200, ms + jitter);
@@ -65,32 +106,21 @@ const jitteredSleep = (ms: number, jitterMs = 500) => {
 };
 
 const formatJid = (jid: string) => {
-    // ✅ FIX LID: i LID (@lid) sono identificatori interni Meta, non numeri di telefono.
-    // Se riceviamo un @lid non possiamo convertirlo in @s.whatsapp.net — lo lasciamo invariato
-    // e Baileys lo gestirà correttamente internamente.
     if (jid.includes('@lid')) return jid;
     if (jid.includes('@s.whatsapp.net')) return jid;
     return `${jid.replace(/\D/g, '')}@s.whatsapp.net`;
 };
 
-/**
- * Splits a long text at a sentence boundary into two parts.
- * Returns [part1, part2] or [full, null] if not worth splitting.
- */
 function maybeSplitMessage(text: string): [string, string | null] {
-    // Never split structured messages (numbered lists, multi-line, etc.)
     if (text.includes('\n')) return [text, null];
-    // Raise threshold — only split genuinely long conversational messages
     if (text.length < 120) return [text, null];
 
-    // Only split at strong sentence boundaries (not commas — too aggressive)
     const splitChars = ['. ', '! ', '? '];
     const mid = Math.floor(text.length * 0.55);
 
     for (const ch of splitChars) {
         const idx = text.indexOf(ch, mid - 20);
         if (idx > 0 && idx < text.length - 10) {
-            // Don't split inside parentheses
             const before = text.slice(0, idx);
             const openParens = (before.match(/\(/g) || []).length;
             const closeParens = (before.match(/\)/g) || []).length;
@@ -102,120 +132,149 @@ function maybeSplitMessage(text: string): [string, string | null] {
     return [text, null];
 }
 
-// ------------------------------------------------------------------
-// CONNECTION
-// ------------------------------------------------------------------
+// ─────────────────────────────────────────────
+// CONNESSIONE — una per club
+// ─────────────────────────────────────────────
 
-export async function connectToWhatsApp() {
-    const { state, saveCreds } = await useMultiFileAuthState('baileys_auth_info');
+/**
+ * Connette un club a WhatsApp.
+ * @param clubId - ID del circolo (opzionale: usa 'default' per legacy single-tenant)
+ * @param botPhoneNumber - Numero WA del bot per pairing code (opzionale, sovrascrive BOT_PHONE_NUMBER env)
+ */
+export async function connectToWhatsApp(clubId?: string, botPhoneNumber?: string): Promise<void> {
+    const key = clubId || DEFAULT_CLUB_KEY;
+    const botPhone = botPhoneNumber || process.env.BOT_PHONE_NUMBER;
+
+    // Crea stato iniziale per questo club
+    const state: ClubSocketState = {
+        sock: null,
+        status: 'connecting',
+        reconnectAttempts: 0,
+        isReconnecting: false,
+        syncTimer: null,
+        syncCount: 0,
+        isResyncing: false,
+        offlineMessages: new Map(),
+        botPhoneNumber: botPhone,
+    };
+    clubSockets.set(key, state);
+
+    logger.info({ clubId: key, botPhone }, 'Connecting club to WhatsApp...');
+    await _doConnect(key, state);
+}
+
+async function _doConnect(key: string, state: ClubSocketState): Promise<void> {
+    const authFolder = `baileys_auth_info${key !== DEFAULT_CLUB_KEY ? `_${key}` : ''}`;
+    const { state: authState, saveCreds } = await useMultiFileAuthState(authFolder);
     const { version, isLatest } = await fetchLatestBaileysVersion();
-    logger.info(`Using WA version: ${version.join('.')} (isLatest: ${isLatest})`);
+    logger.info({ clubId: key }, `Using WA version: ${version.join('.')} (isLatest: ${isLatest})`);
 
-    sock = makeWASocket({
+    const sock = makeWASocket({
         version,
-        auth: state,
+        auth: authState,
         printQRInTerminal: true,
         logger: pino({ level: 'silent' }) as any,
-        // Using a more standard browser fingerprint
         browser: ['Ubuntu', 'Chrome', '120.0.6099.129'],
     });
+
+    state.sock = sock;
 
     sock.ev.on('creds.update', saveCreds);
 
     let isPairingCodeRequested = false;
+
     sock.ev.on('connection.update', async (update) => {
         const { connection, lastDisconnect, qr } = update;
 
         if (qr) {
             const forceQr = process.env.FORCE_QR === 'true';
-            if (process.env.BOT_PHONE_NUMBER && !sock!.authState.creds.registered && !isPairingCodeRequested && !forceQr) {
+            const botPhone = state.botPhoneNumber;
+            if (botPhone && !sock.authState.creds.registered && !isPairingCodeRequested && !forceQr) {
                 isPairingCodeRequested = true;
                 try {
-                    const cleanNumber = process.env.BOT_PHONE_NUMBER.replace(/\D/g, '');
-                    console.log(`[AUTH] Requesting pairing code for: ${cleanNumber}`);
-                    const code = await sock!.requestPairingCode(cleanNumber);
+                    const cleanNumber = botPhone.replace(/\D/g, '');
+                    console.log(`[AUTH:${key}] Requesting pairing code for: ${cleanNumber}`);
+                    const code = await sock.requestPairingCode(cleanNumber);
                     console.log(`\n======================================================`);
-                    console.log(`🔢 CODICE DI ABBINAMENTO WHATSAPP: ${code}`);
-                    console.log(`👉 Apri WA Business > Dispositivi Collegati > Collega > "Collega con il numero di telefono" (in basso)`);
+                    console.log(`🔢 [${key}] CODICE DI ABBINAMENTO: ${code}`);
+                    console.log(`👉 Apri WA Business > Dispositivi Collegati > Collega con numero`);
                     console.log(`======================================================\n`);
                 } catch (err) {
-                    logger.error({ err }, 'Errore durante la generazione del pairing code');
+                    logger.error({ err, clubId: key }, 'Errore pairing code');
                 }
             } else {
-                logger.info('📱 Scan this QR Code to authenticate WhatsApp:');
+                logger.info({ clubId: key }, '📱 Scan QR Code:');
                 qrcode.generate(qr, { small: true });
             }
         }
 
         if (connection === 'close') {
             const statusCode = (lastDisconnect?.error as Boom)?.output?.statusCode;
-            const errorMsg = lastDisconnect?.error?.message || 'Unknown error';
-            connectionStatus = 'closed';
+            state.status = 'closed';
             const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
-            
-            logger.error({ 
-                statusCode, 
-                error: lastDisconnect?.error,
-                message: errorMsg 
-            }, `WhatsApp connection closed. Reconnecting: ${shouldReconnect}`);
-            
-            if (shouldReconnect && !isReconnecting) {
-                isReconnecting = true;
-                const delayMs = Math.min(1000 * Math.pow(2, reconnectAttempts), MAX_RECONNECT_DELAY_MS);
-                reconnectAttempts++;
-                logger.warn({ attempt: reconnectAttempts, delayMs }, `Reconnecting in ${delayMs}ms...`);
-                setTimeout(() => {
-                    isReconnecting = false;
-                    connectToWhatsApp();
-                }, delayMs);
-            } else if (shouldReconnect && isReconnecting) {
-                logger.warn({ attempt: reconnectAttempts }, 'Reconnect already scheduled — skipping duplicate');
-            }
-        } else if (connection === 'open') {
-            logger.info('✅ WhatsApp Connected Successfully!');
-            reconnectAttempts = 0; // ✅ reset counter su connessione riuscita
-            isReconnecting = false;
-            connectionStatus = 'open';
 
-            // ✅ Notifica Startup alla Segreteria
+            logger.error({ statusCode, clubId: key, error: lastDisconnect?.error?.message },
+                `WA connection closed for club ${key}. Reconnecting: ${shouldReconnect}`);
+
+            if (shouldReconnect && !state.isReconnecting) {
+                state.isReconnecting = true;
+                const delayMs = Math.min(1000 * Math.pow(2, state.reconnectAttempts), MAX_RECONNECT_DELAY_MS);
+                state.reconnectAttempts++;
+                logger.warn({ attempt: state.reconnectAttempts, delayMs, clubId: key }, 'Reconnecting...');
+                setTimeout(() => {
+                    state.isReconnecting = false;
+                    _doConnect(key, state).catch(err =>
+                        logger.error({ err, clubId: key }, 'Reconnect failed')
+                    );
+                }, delayMs);
+            } else if (shouldReconnect && state.isReconnecting) {
+                logger.warn({ clubId: key }, 'Reconnect already scheduled — skipping duplicate');
+            }
+
+        } else if (connection === 'open') {
+            logger.info({ clubId: key }, '✅ WhatsApp Connected!');
+            state.reconnectAttempts = 0;
+            state.isReconnecting = false;
+            state.status = 'open';
+
+            // Notifica admin startup
             setTimeout(async () => {
                 try {
                     const { prisma } = await import('./db');
-                    const club = await prisma.club.findFirst({
-                        where: { adminPhone: { not: null } },
-                    });
+                    const club = key === DEFAULT_CLUB_KEY
+                        ? await prisma.club.findFirst({ where: { adminPhone: { not: null } } })
+                        : await prisma.club.findUnique({ where: { id: key }, select: { adminPhone: true, name: true } });
+
                     if (club?.adminPhone) {
-                        isResyncing = true;
-                        logger.info({ adminPhone: club.adminPhone }, 'Sending startup notification to admin');
-                        await sendMessage(club.adminPhone, "🤖 *Servizio Padel Bot Riavviato!*\nRecupero messaggi offline in corso...");
+                        state.isResyncing = true;
+                        const adminJid = `${club.adminPhone.replace(/\D/g, '')}@s.whatsapp.net`;
+                        await _sendRaw(state, adminJid, '🤖 *Servizio Padel Bot Riavviato!*\nRecupero messaggi offline in corso...');
                     }
                 } catch (err) {
-                    logger.error({ err }, 'Failed to send startup notification');
+                    logger.error({ err, clubId: key }, 'Failed to send startup notification');
                 }
-                // Fallback: se non arrivano messaggi notify entro 30s, abbassa isResyncing comunque
                 setTimeout(() => {
-                    if (isResyncing) {
-                        logger.info('isResyncing fallback timeout — no notify messages received, clearing resync flag');
-                        isResyncing = false;
-                        syncCount = 0;
+                    if (state.isResyncing) {
+                        logger.info({ clubId: key }, 'isResyncing fallback timeout — clearing');
+                        state.isResyncing = false;
+                        state.syncCount = 0;
                     }
                 }, 30000);
-            }, 5000); // 5s di respiro dopo la connessione
+            }, 5000);
         }
     });
 
     sock.ev.on('messages.upsert', async (m) => {
-        // Durante il resync, raccogli i messaggi offline (append) senza processarli subito
         if (m.type === 'append') {
-            if (isResyncing) {
+            if (state.isResyncing) {
                 const cutoff = Date.now() - OFFLINE_MSG_WINDOW_MS;
                 for (const msg of m.messages) {
                     if (msg.key.fromMe || !msg.message || !msg.key.remoteJid) continue;
                     if (msg.key.remoteJid.endsWith('@g.us')) continue;
                     if (Number(msg.messageTimestamp) * 1000 < cutoff) continue;
                     const jid = msg.key.remoteJid;
-                    if (!offlineMessages.has(jid)) offlineMessages.set(jid, []);
-                    offlineMessages.get(jid)!.push(msg);
+                    if (!state.offlineMessages.has(jid)) state.offlineMessages.set(jid, []);
+                    state.offlineMessages.get(jid)!.push(msg);
                 }
             }
             return;
@@ -223,56 +282,58 @@ export async function connectToWhatsApp() {
 
         if (m.type !== 'notify') return;
 
-        if (isResyncing) {
-             syncCount += m.messages.length;
+        if (state.isResyncing) {
+            state.syncCount += m.messages.length;
 
-             if (syncTimer) clearTimeout(syncTimer);
-             syncTimer = setTimeout(async () => {
-                 try {
-                     const { prisma } = await import('./db');
-                     const club = await prisma.club.findFirst({
-                         where: { adminPhone: { not: null } }
-                     });
-                     if (club?.adminPhone && syncCount > 0) {
-                         await sendMessage(club.adminPhone, `✅ *Recovery Completata!*\nMessaggi sincronizzati: ${syncCount}. Tutti i processi sono stati riallineati.`);
-                     }
-                 } catch (err) {}
-                 isResyncing = false;
-                 syncCount = 0;
-                 // Processa messaggi offline raccolti durante il resync
-                 if (offlineMessages.size > 0) {
-                     await processOfflineMessages(offlineMessages).catch(err =>
-                         logger.error({ err }, 'processOfflineMessages failed')
-                     );
-                     offlineMessages.clear();
-                 }
-             }, 15000); // 15 secondi di silenzio = sync finito
-             return; // Don't process messages during active resync
+            if (state.syncTimer) clearTimeout(state.syncTimer);
+            state.syncTimer = setTimeout(async () => {
+                try {
+                    const { prisma } = await import('./db');
+                    const club = key === DEFAULT_CLUB_KEY
+                        ? await prisma.club.findFirst({ where: { adminPhone: { not: null } } })
+                        : await prisma.club.findUnique({ where: { id: key }, select: { adminPhone: true } });
+
+                    if (club?.adminPhone && state.syncCount > 0) {
+                        const adminJid = `${club.adminPhone.replace(/\D/g, '')}@s.whatsapp.net`;
+                        await _sendRaw(state, adminJid, `✅ *Recovery Completata!*\nMessaggi sincronizzati: ${state.syncCount}.`);
+                    }
+                } catch {}
+                state.isResyncing = false;
+                state.syncCount = 0;
+
+                if (state.offlineMessages.size > 0) {
+                    await processOfflineMessages(state.offlineMessages, key).catch(err =>
+                        logger.error({ err, clubId: key }, 'processOfflineMessages failed')
+                    );
+                    state.offlineMessages.clear();
+                }
+            }, 15000);
+            return;
         }
 
         for (const msg of m.messages) {
             if (!msg.key.fromMe && msg.message) {
-                wahEvents.emit('message', msg);
+                // Emette l'evento con il clubId così messageHandler sa da quale club arriva
+                wahEvents.emit('message', msg, key === DEFAULT_CLUB_KEY ? undefined : key);
             }
         }
     });
 }
 
-// ------------------------------------------------------------------
+// ─────────────────────────────────────────────
 // OFFLINE MESSAGE RECOVERY
-// Processa i messaggi ricevuti mentre il bot era offline/in resync.
-// Per ogni JID: trova l'ultimo messaggio senza risposta bot e lo ri-accoda.
-// ------------------------------------------------------------------
+// ─────────────────────────────────────────────
 
-async function processOfflineMessages(collected: Map<string, proto.IWebMessageInfo[]>): Promise<void> {
+async function processOfflineMessages(
+    collected: Map<string, proto.IWebMessageInfo[]>,
+    clubId: string
+): Promise<void> {
     const { prisma } = await import('./db');
     const { enqueue } = await import('./inbound-queue');
 
     for (const [jid, messages] of collected) {
-        // Ordina per timestamp crescente
         const sorted = [...messages].sort((a, b) => Number(a.messageTimestamp) - Number(b.messageTimestamp));
 
-        // Trova l'ultimo bot response per questo JID
         let lastBotTs = 0;
         try {
             const lastBotMsg = await prisma.whatsAppMessage.findFirst({
@@ -282,11 +343,9 @@ async function processOfflineMessages(collected: Map<string, proto.IWebMessageIn
             if (lastBotMsg) lastBotTs = lastBotMsg.timestamp.getTime();
         } catch {}
 
-        // Tieni solo i messaggi DOPO l'ultima risposta del bot
         const unanswered = sorted.filter(m => Number(m.messageTimestamp) * 1000 > lastBotTs);
         if (unanswered.length === 0) continue;
 
-        // Filtra con AI: salta messaggi che non richiedono risposta (grazie, ok, emoji...)
         const { requiresResponse } = await import('./ai');
         const actionable: proto.IWebMessageInfo[] = [];
         for (const msg of unanswered) {
@@ -301,30 +360,42 @@ async function processOfflineMessages(collected: Map<string, proto.IWebMessageIn
 
         if (actionable.length === 0) continue;
 
-        logger.info({ jid, count: actionable.length, lastBotTs: new Date(lastBotTs).toISOString() },
+        logger.info({ jid, count: actionable.length, clubId },
             'Re-enqueuing offline messages after resync');
 
         for (const msg of actionable) {
-            enqueue(msg);
+            enqueue(msg, clubId === DEFAULT_CLUB_KEY ? undefined : clubId);
         }
     }
 }
 
-// ------------------------------------------------------------------
-// CORE SENDING LOGIC
-// ------------------------------------------------------------------
+// ─────────────────────────────────────────────
+// INVIO RAW (interno, usa stato esplicito)
+// ─────────────────────────────────────────────
 
-/** Raw send with no simulation (used for group messages) */
-export async function sendMessage(jid: string, text: string) {
+async function _sendRaw(state: ClubSocketState, formattedJid: string, text: string): Promise<void> {
+    if (!state.sock) throw new Error('WhatsApp socket not initialized');
+    await state.sock.sendMessage(formattedJid, { text });
+}
+
+// ─────────────────────────────────────────────
+// PUBLIC API
+// ─────────────────────────────────────────────
+
+/** Raw send senza simulazione (usato per messaggi di gruppo e admin) */
+export async function sendMessage(jid: string, text: string): Promise<void> {
     if (process.env.DRY_RUN === 'true') {
         logger.info(`[DRY RUN] Would send raw message to ${jid}: ${text}`);
         return;
     }
-    if (!sock) throw new Error('WhatsApp socket not initialized');
-    const formattedJid = formatJid(jid);
-    await sock.sendMessage(formattedJid, { text });
 
-    // Persist to DB
+    const clubId = currentClubId();
+    const cs = getSocketForClub(clubId);
+    if (!cs?.sock) throw new Error(`WhatsApp socket not initialized${clubId ? ` for club ${clubId}` : ''}`);
+
+    const formattedJid = formatJid(jid);
+    await cs.sock.sendMessage(formattedJid, { text });
+
     try {
         const { prisma } = await import('./db');
         await prisma.whatsAppMessage.create({
@@ -333,6 +404,7 @@ export async function sendMessage(jid: string, text: string) {
                 sender: 'BOT',
                 role: 'BOT',
                 content: text,
+                clubId: clubId || null,
             },
         });
     } catch (err) {
@@ -341,69 +413,53 @@ export async function sendMessage(jid: string, text: string) {
 }
 
 /**
- * HYPER-HUMAN SEND — for 1-on-1 conversations.
- *
- * The full chain:
- * 1. Mark the incoming message as READ (blue ticks) if provided
- * 2. Short "reading" pause (simulates human looking at screen)
- * 3. Start composing (burst 1)
- * 4. Optional mid-typing pause (simulates human re-thinking)
- * 5. Resume composing (burst 2)
- * 6. Stop composing briefly
- * 7. If message is splittable → send part 1, organic pause, send part 2
- *    Otherwise → send full message
+ * HYPER-HUMAN SEND — per conversazioni 1-on-1.
+ * Usa automaticamente il socket del club dal request-context.
  */
 export async function humanSend(
     jid: string,
     text: string,
     incomingMsgKey?: proto.IMessageKey
 ): Promise<void> {
-    if (!sock) throw new Error('WhatsApp socket not initialized');
+    const clubId = currentClubId();
+    const cs = getSocketForClub(clubId);
+    if (!cs?.sock) throw new Error(`WhatsApp socket not initialized${clubId ? ` for club ${clubId}` : ''}`);
+
+    const sock = cs.sock;
     const formattedJid = formatJid(jid);
 
-    // ✅ PREVENT DUPLICATES: Se il messaggio è identico all'ultimo inviato al bot, aggiungiamo una variazione
+    // Dedup: evita messaggi identici consecutivi
     try {
         const { prisma } = await import('./db');
         const lastMsg = await prisma.whatsAppMessage.findFirst({
             where: { chatId: formattedJid, role: 'BOT' },
             orderBy: { timestamp: 'desc' },
         });
-
         if (lastMsg && lastMsg.content.trim() === text.trim()) {
             logger.warn({ jid: formattedJid }, 'Duplicate message detected — adding variation');
-            text = text + " ."; // Aggiunge un punto e spazio invisibile per variare
+            text = text + ' .';
         }
     } catch (err) {
         logger.error({ err }, 'Duplicate check failed');
     }
 
-    // ── LAYER 1: Read receipt (blue ticks) ──────────────────────────
+    // ── Read receipt ──────────────────────────────────────────────
     if (incomingMsgKey) {
         try {
             await sock.readMessages([incomingMsgKey]);
-            logger.info(`[HUMAN] Marked message from ${jid} as read`);
-            // Small pause after "reading" — human takes a second to process
             await jitteredSleep(randomInt(1500, 3500), 400);
-        } catch {
-            // Non-critical — continue even if read-receipt fails
-        }
+        } catch {}
     }
 
-    // ── LAYER 2: Pre-typing "thinking" pause ───────────────────────
-    // Already done in messageHandler (5-25s reaction delay), but if we're
-    // triggered directly (like from wave.worker), add a short one here.
+    // ── Pre-typing pause ──────────────────────────────────────────
     await jitteredSleep(randomInt(800, 2000), 300);
 
-    // ── LAYER 3: Calculate realistic typing speed ───────────────────
-    // Average human: ~200 WPM → ~3.3 chars/sec
-    // We add variance: slow typer = 2.8 chars/s, fast = 4.2 chars/s
-    const charsPerSec = (Math.random() * 1.4) + 2.8; // 2.8 to 4.2
+    // ── Typing speed ──────────────────────────────────────────────
+    const charsPerSec = (Math.random() * 1.4) + 2.8;
     let totalTypingMs = (text.length / charsPerSec) * 1000;
     totalTypingMs = Math.max(2000, Math.min(12000, totalTypingMs));
 
-    // ── LAYER 4: Composing burst with mid-pause ─────────────────────
-    // 70% chance: type continuously
-    // 30% chance: type, pause briefly (as if re-reading what was written), then resume
+    // ── Composing burst ───────────────────────────────────────────
     const hasMidPause = Math.random() < 0.3;
 
     if (hasMidPause) {
@@ -412,10 +468,8 @@ export async function humanSend(
 
         await sock.sendPresenceUpdate('composing', formattedJid);
         await jitteredSleep(burst1Ms, 200);
-
         await sock.sendPresenceUpdate('paused', formattedJid);
-        await jitteredSleep(randomInt(600, 1800), 200); // Re-thinking pause
-
+        await jitteredSleep(randomInt(600, 1800), 200);
         await sock.sendPresenceUpdate('composing', formattedJid);
         await jitteredSleep(burst2Ms, 200);
     } else {
@@ -424,50 +478,36 @@ export async function humanSend(
     }
 
     await sock.sendPresenceUpdate('paused', formattedJid);
-    await jitteredSleep(200, 100); // Brief pause before sending
+    await jitteredSleep(200, 100);
 
-    // ── LAYER 5: Message chunking ───────────────────────────────────
-    // Split long messages into two separate bubbles (like human after-thoughts)
+    // ── Message chunking ──────────────────────────────────────────
     const [part1, part2] = maybeSplitMessage(text);
 
     await sock.sendMessage(formattedJid, { text: part1 });
-    logger.info(`[HUMAN SEND] → ${jid}: "${part1}"`);
+    logger.info({ jid, clubId }, `[HUMAN SEND] → "${part1}"`);
 
-    // Persist part 1 to DB
     try {
         const { prisma } = await import('./db');
         await prisma.whatsAppMessage.create({
-            data: {
-                chatId: formattedJid,
-                sender: 'BOT',
-                role: 'BOT',
-                content: part1,
-            },
+            data: { chatId: formattedJid, sender: 'BOT', role: 'BOT', content: part1, clubId: clubId || null },
         });
     } catch (err) {
         logger.error({ err }, 'Failed to persist outgoing human message (part 1)');
     }
 
     if (part2) {
-        // Brief "afterthought" delay before second bubble
         await jitteredSleep(randomInt(1200, 3000), 400);
         await sock.sendPresenceUpdate('composing', formattedJid);
         await jitteredSleep(randomInt(1500, 3500), 300);
         await sock.sendPresenceUpdate('paused', formattedJid);
         await jitteredSleep(200, 100);
         await sock.sendMessage(formattedJid, { text: part2 });
-        logger.info(`[HUMAN SEND] → ${jid}: "${part2}" (chunk 2)`);
+        logger.info({ jid, clubId }, `[HUMAN SEND] → "${part2}" (chunk 2)`);
 
-        // Persist part 2 to DB
         try {
             const { prisma } = await import('./db');
             await prisma.whatsAppMessage.create({
-                data: {
-                    chatId: formattedJid,
-                    sender: 'BOT',
-                    role: 'BOT',
-                    content: part2,
-                },
+                data: { chatId: formattedJid, sender: 'BOT', role: 'BOT', content: part2, clubId: clubId || null },
             });
         } catch (err) {
             logger.error({ err }, 'Failed to persist outgoing human message (part 2)');
@@ -475,12 +515,11 @@ export async function humanSend(
     }
 }
 
-// Keep the old name as an alias so we don't break wave.worker imports
 export { humanSend as simulateTypingAndSend };
 
-// ------------------------------------------------------------------
+// ─────────────────────────────────────────────
 // GROUP CREATION
-// ------------------------------------------------------------------
+// ─────────────────────────────────────────────
 
 export async function createGroupAndAddPlayers(
     groupName: string,
@@ -488,43 +527,70 @@ export async function createGroupAndAddPlayers(
     confirmationMessage: string
 ): Promise<string> {
     if (process.env.DRY_RUN === 'true') {
-        logger.info(`[DRY RUN] Would create group "${groupName}" with players: ${playerJids.join(', ')}`);
+        logger.info(`[DRY RUN] Would create group "${groupName}"`);
         return 'dry-run-group-id';
     }
-    if (!sock) throw new Error('WhatsApp socket not initialized');
 
-    // Filter out JIDs that don't look like WhatsApp IDs (e.g. guests/placeholders)
+    const clubId = currentClubId();
+    const cs = getSocketForClub(clubId);
+    if (!cs?.sock) throw new Error('WhatsApp socket not initialized');
+    const sock = cs.sock;
+
     const validJids = playerJids
         .map(formatJid)
         .filter(jid => jid.includes('@s.whatsapp.net') || jid.includes('@lid'));
 
     try {
         const group = await sock.groupCreate(groupName, validJids);
-        logger.info(`Group ${group.id} created successfully with ${validJids.length} participants.`);
+        logger.info({ groupId: group.id, clubId }, `Group created with ${validJids.length} participants`);
 
-        // Organic delay before typing the first group message
         await jitteredSleep(randomInt(3000, 6000), 500);
         await sock.sendPresenceUpdate('composing', group.id);
         await jitteredSleep(randomInt(2000, 4500), 300);
         await sock.sendPresenceUpdate('paused', group.id);
         await jitteredSleep(300, 100);
-        
         await sock.sendMessage(group.id, { text: confirmationMessage });
 
         return group.id;
     } catch (error) {
-        logger.error({ error }, 'Failed to create group');
+        logger.error({ error, clubId }, 'Failed to create group');
         throw error;
     }
 }
 
-export function getSock() {
-    return sock;
+// ─────────────────────────────────────────────
+// EXPORTED GETTERS
+// ─────────────────────────────────────────────
+
+/** Restituisce il socket per il club dal context (o il primo disponibile) */
+export function getSock(): ReturnType<typeof makeWASocket> | null {
+    const cs = getSocketForClub(currentClubId());
+    return cs?.sock ?? null;
 }
 
-// ✅ FIX I: stato connessione leggibile dall'health check endpoint
-export function getConnectionStatus(): 'open' | 'connecting' | 'closed' {
-    return connectionStatus;
+/**
+ * Stato connessione:
+ * - con clubId: stato di quel club
+ * - senza clubId: 'open' se almeno uno è connesso, altrimenti 'connecting'/'closed'
+ */
+export function getConnectionStatus(clubId?: string): 'open' | 'connecting' | 'closed' {
+    if (clubId && clubSockets.has(clubId)) {
+        return clubSockets.get(clubId)!.status;
+    }
+    for (const [, cs] of clubSockets) {
+        if (cs.status === 'open') return 'open';
+    }
+    if (clubSockets.size > 0) return 'connecting';
+    return 'closed';
+}
+
+/** Restituisce lo stato di tutti i club connessi (per health check) */
+export function getAllClubStatuses(): Record<string, 'open' | 'connecting' | 'closed'> {
+    const result: Record<string, 'open' | 'connecting' | 'closed'> = {};
+    for (const [key, cs] of clubSockets) {
+        result[key] = cs.status;
+    }
+    return result;
 }
 
 export { downloadMediaMessage };

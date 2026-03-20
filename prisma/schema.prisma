@@ -141,6 +141,7 @@ model Club {
   dashboardUsername          String?  @unique
   dashboardPasswordHash      String?
   botName                    String?  @default("Francesca")
+  botPhoneNumber             String?  // numero WA del bot per questo circolo (es. 393457991255)
   groupJids                  String[] @default([])
   courts                     Court[]
   matches                    Match[]
@@ -154,12 +155,14 @@ model WhatsAppMessage {
   role      String
   content   String
   messageId String?
+  clubId    String?  // quale circolo — null per record legacy
   timestamp DateTime @default(now())
 
   @@index([chatId])
   @@index([chatId, role])
   @@index([timestamp])
   @@index([messageId])
+  @@index([clubId])
 }
 
 enum MatchStatus {

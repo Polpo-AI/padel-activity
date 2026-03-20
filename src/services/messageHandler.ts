@@ -43,12 +43,14 @@ registerBatchHandler(handleBatch);
 
 export async function handleBatch(jid: string, messages: NormalizedMessage[]): Promise<void> {
     const correlationId = `${jid.split('@')[0]}-${Date.now()}`;
-    await runWithContext({ correlationId, jid }, async () => {
+    // Estrai il clubId dal primo messaggio del batch (tutti appartengono allo stesso socket/club)
+    const clubId = messages[0]?.clubId;
+    await runWithContext({ correlationId, jid, clubId }, async () => {
         try {
-            await _handleBatchInner(jid, messages, correlationId);
+            await _handleBatchInner(jid, messages, correlationId, clubId);
             conversationalPhase.delete(correlationId);
         } catch (err) {
-            logger.error({ err, correlationId }, `Unhandled error in handleBatch for ${jid}`);
+            logger.error({ err, correlationId, clubId }, `Unhandled error in handleBatch for ${jid}`);
             // Point 6: only notify user if routing already started (user expects a reply)
             if (conversationalPhase.get(correlationId)) {
                 try {
@@ -60,7 +62,7 @@ export async function handleBatch(jid: string, messages: NormalizedMessage[]): P
     });
 }
 
-async function _handleBatchInner(jid: string, messages: NormalizedMessage[], correlationId: string): Promise<void> {
+async function _handleBatchInner(jid: string, messages: NormalizedMessage[], correlationId: string, clubId?: string): Promise<void> {
     // ── Risoluzione Numero di Telefono ──────────────────────────
     // Se il JID è un @lid, cerchiamo il numero reale (@s.whatsapp.net) nei metadata Baileys
     let phoneNumber = jid.split('@')[0];
@@ -172,13 +174,15 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[], cor
         return;
     }
 
-    const currentClubId = process.env.CLUB_ID;
+    // Risolvi il club: prima da clubId nel contesto (multi-tenant),
+    // poi da CLUB_ID env (legacy single-tenant), infine findFirst
+    const resolvedClubId = clubId || process.env.CLUB_ID || undefined;
     const phoneVariants = [phoneNumber, '+' + phoneNumber, phoneNumber.replace(/^\+/, '')];
     const player = await prisma.player.findFirst({
-        where: { phoneNumber: { in: phoneVariants }, clubId: currentClubId ? currentClubId : { not: '' } }
+        where: { phoneNumber: { in: phoneVariants }, clubId: resolvedClubId ? resolvedClubId : { not: '' } }
     });
-    let club = currentClubId
-        ? await prisma.club.findUnique({ where: { id: currentClubId } })
+    let club = resolvedClubId
+        ? await prisma.club.findUnique({ where: { id: resolvedClubId } })
         : await prisma.club.findFirst();
     if (!club) club = await prisma.club.findFirst();
 

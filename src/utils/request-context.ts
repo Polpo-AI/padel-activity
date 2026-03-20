@@ -16,9 +16,10 @@
 
 import { AsyncLocalStorage } from 'async_hooks';
 
-interface RequestContext {
+export interface RequestContext {
     correlationId: string;
     jid?: string;
+    clubId?: string; // quale club sta processando questo messaggio/job
 }
 
 export const requestContext = new AsyncLocalStorage<RequestContext>();
@@ -33,4 +34,8 @@ export function getCorrelationId(): string | undefined {
 
 export function getContextStore(): RequestContext | undefined {
     return requestContext.getStore();
+}
+
+export function getClubId(): string | undefined {
+    return requestContext.getStore()?.clubId;
 }
