@@ -142,6 +142,7 @@ model Club {
   dashboardPasswordHash      String?
   botName                    String?  @default("Francesca")
   botPhoneNumber             String?  // numero WA del bot per questo circolo (es. 393457991255)
+  racketPrice                Float?   // prezzo noleggio racchetta (€)
   groupJids                  String[] @default([])
   courts                     Court[]
   matches                    Match[]

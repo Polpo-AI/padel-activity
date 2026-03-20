@@ -367,7 +367,8 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[], cor
                 });
                 if (match && match.court) {
                     const totalCost = await calculateSlotCost(match.court.id, match.startTime);
-                    const pricePerPerson = totalCost > 0 ? (totalCost / 4).toFixed(2) : null;
+                    const pricePerPerson = totalCost > 0 ? (totalCost / 4).toFixed(0) : null;
+                    const racketPrice = (club as any)?.racketPrice != null ? `${(club as any).racketPrice}€` : null;
                     const timeStr = match.startTime.toLocaleString('it-IT', {
                         timeZone: 'Europe/Rome', weekday: 'long', day: 'numeric',
                         month: 'long', hour: '2-digit', minute: '2-digit',
@@ -379,6 +380,7 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[], cor
                         `📅 ${timeStr}`,
                         `🎾 ${match.court.name} (${courtType})`,
                         pricePerPerson ? `💶 ${pricePerPerson}€ a persona` : null,
+                        racketPrice ? `🎾 Noleggio racchetta: ${racketPrice}/persona` : null,
                         clubLocation ? `📍 ${clubLocation}` : null,
                     ].filter(Boolean);
                     await simulateTypingAndSend(jid, lines.join('\n'));

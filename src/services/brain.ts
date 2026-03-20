@@ -35,6 +35,7 @@ export interface BrainResponse {
 export interface BrainContext {
     club: any;
     player: any | null;
+    isAdmin: boolean;
     recentMessages: { role: string; content: string }[];
     pendingInvitations: any[];
     confirmedMatches: any[];
@@ -76,6 +77,9 @@ export async function buildBrainContext(jid: string, phoneNumber: string): Promi
         orderBy: { createdAt: 'desc' },
         take: 30,
     }) : [];
+
+    const isAdmin = !!(player && club?.adminPhone &&
+        player.phoneNumber.replace(/\D/g, '') === club.adminPhone.replace(/\D/g, ''));
 
     let pendingInvitations: any[] = [];
     let confirmedMatches: any[] = [];
@@ -119,6 +123,7 @@ export async function buildBrainContext(jid: string, phoneNumber: string): Promi
     return {
         club,
         player,
+        isAdmin,
         recentMessages: recentMessages.slice().reverse().map(m => ({ role: m.role as string, content: m.content })),
         pendingInvitations,
         confirmedMatches,
@@ -144,7 +149,7 @@ export async function callBrain(
     userMessage: string,
     contactCards?: { phone?: string; name?: string }[],
 ): Promise<BrainResponse> {
-    const { club, player, recentMessages, pendingInvitations, confirmedMatches, availableMatches, courts, faqs } = context;
+    const { club, player, isAdmin, recentMessages, pendingInvitations, confirmedMatches, availableMatches, courts, faqs } = context;
 
     const now = new Date().toLocaleString('it-IT', {
         timeZone: 'Europe/Rome', weekday: 'long', day: 'numeric',
@@ -241,16 +246,29 @@ export async function callBrain(
         ? faqs.map((f: any) => `D: ${f.question}\nR: ${f.answer}`).join('\n\n')
         : null;
 
+    const racketPriceStr = (club as any)?.racketPrice != null
+        ? `Noleggio racchetta: €${(club as any).racketPrice}/persona`
+        : null;
+
     const systemPrompt = `Ti chiami ${botName} e sei l'assistente digitale del circolo padel "${club?.name || 'Padel Club'}".
 Tono: ${toneDescription}
 Presentati come ${botName} se qualcuno ti chiede il tuo nome o in apertura di conversazione con nuovi contatti.
 Usa SEMPRE il "tu" — mai il "voi" o il "lei". Es. "ti trovi bene", "puoi prenotare", "sei dentro" — mai "vi trovate", "potete", "siete".
 Oggi è: ${now}
-
+${isAdmin ? `
+═══ MODALITÀ ADMIN ═══
+Stai parlando con l'amministratore del circolo. Rispondi in modo diretto e operativo, senza le presentazioni e le formalità che useresti con un giocatore normale.
+L'admin può:
+- Ricevere notifiche e aggiornamenti sugli eventi del circolo
+- Rispondere alle domande degli utenti (le tue risposte vengono salvate come FAQ dal sistema)
+- Gestire il circolo via WhatsApp con comandi come "lista partite", "cancella partita", "lista giocatori", ecc.
+Non proporgli di prenotare campi o partecipare a partite — è il gestore, non un giocatore.
+` : ''}
 ═══ INFO CIRCOLO ═══
 Nome: ${club?.name || 'Padel Club'}
 ${clubLocation ? `Indirizzo: ${clubLocation}` : ''}
 ${clubOpenClose ? `Orari: ${clubOpenClose}` : ''}
+${racketPriceStr ? racketPriceStr : ''}
 Se qualcuno chiede "siete voi in [via]?" o "qual è il vostro indirizzo?" rispondi con le info sopra in modo naturale.
 
 ═══ CHI SEI E COSA SAI FARE ═══
