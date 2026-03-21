@@ -251,19 +251,27 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[], cor
         const approved = isFromAdmin || await redis.get(`approval:approved:${phoneNumber}`);
         if (!approved) {
             const alreadyPending = await redis.get(`approval:pending:${phoneNumber}`);
-            if (!alreadyPending && adminPhone) {
-                // Prima volta che scrive: notifica admin e metti in attesa
+            if (!alreadyPending) {
+                // Prima volta che scrive: risposta immediata all'utente + notifica admin
                 const preview = combinedText.substring(0, 200) || '(nessun testo)';
                 await redis.set(`approval:pending:${phoneNumber}`, '1', 'EX', 86400);
                 await redis.set(`approval:text:${phoneNumber}`, combinedText || '', 'EX', 86400);
                 await redis.set(`approval:last_pending:${club?.id || ''}`, phoneNumber, 'EX', 86400);
-                const adminJid = `${adminPhone}@s.whatsapp.net`;
-                await sendMessage(adminJid,
-                    `🔔 Numero sconosciuto: +${phoneNumber}\n📩 "${preview}"\n\nRispondi *ok ${phoneNumber}* per autorizzare.`
+
+                const botName = (club as any)?.botName || 'Francesca';
+                await simulateTypingAndSend(jid,
+                    `Ciao! Sono ${botName} del ${club?.name || 'circolo'}. Il tuo numero non è ancora registrato — avviserò lo staff e ti risponderemo il prima possibile!`
                 );
+
+                if (adminPhone) {
+                    const adminJid = `${adminPhone}@s.whatsapp.net`;
+                    await sendMessage(adminJid,
+                        `🔔 Numero sconosciuto: +${phoneNumber}\n📩 "${preview}"\n\nRispondi *ok ${phoneNumber}* per autorizzare.`
+                    );
+                }
                 logger.info({ phoneNumber }, 'Unknown number — waiting for admin approval');
             }
-            return; // Nessuna risposta al numero non autorizzato
+            return; // Nessuna risposta ulteriore finché non approvato
         }
         // Numero approvato: procedi con l'onboarding
         const onboardingConfig = {

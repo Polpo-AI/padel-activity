@@ -295,7 +295,8 @@ REGOLA EMOJI:
 Rispondi SEMPRE con JSON valido:
 { "message": "...", "extractedName": "Nome Cognome" | null }
 
-"extractedName": inserisci nome + cognome SOLO se entrambi sono stati forniti esplicitamente (anche in messaggi precedenti visibili nello storico). Se hai solo il nome, metti null e chiedi il cognome.`;
+"extractedName": inserisci nome + cognome se entrambi forniti. Se hai solo il nome di battesimo (es. "sono Manuel", "mi chiamo Luca"), inseriscilo comunque e chiedi il cognome con leggerezza nel messaggio — non aspettare il cognome per estrarre il nome.
+CASO SPECIALE: se il messaggio contiene sia il nome ("sono Manuel") sia altre domande o reazioni ("Perché?", "davvero?"), rispondi a tutto ma estrai comunque il nome. Non sacrificare l'estrazione per rispondere alla domanda.`;
 
     const { anthropic } = await import('./ai');
     try {

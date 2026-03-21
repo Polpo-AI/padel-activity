@@ -1,7 +1,7 @@
 /**
  * INBOUND QUEUE
  *
- * Debounce 5s per JID: accumula messaggi in arrivo e li processa in batch.
+ * Debounce 20s per JID: accumula messaggi in arrivo e li processa in batch.
  * Persistenza su Redis: se il processo cade i batch pendenti sopravvivono
  * e vengono recuperati al restart dopo 30s.
  */
@@ -12,7 +12,7 @@ import { getRedis } from './queue';
 
 const logger = pino({ level: 'info' });
 
-const DEBOUNCE_MS = 10000;
+const DEBOUNCE_MS = 20000;
 const REDIS_TTL_S = 600;         // 10 minuti
 const RECOVERY_DELAY_MS = 30000; // 30s dopo startup
 
