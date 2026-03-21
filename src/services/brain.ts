@@ -397,7 +397,7 @@ PRINCIPIO BASE: se c'è ambiguità, assumi l'interpretazione più favorevole all
     try {
         const response = await anthropic.messages.create({
             model: 'claude-sonnet-4-6',
-            max_tokens: 500,
+            max_tokens: 800,
             temperature: 0.7,
             system: systemPrompt,
             messages: [
