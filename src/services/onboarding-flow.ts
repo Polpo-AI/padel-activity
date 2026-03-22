@@ -311,11 +311,14 @@ CASO SPECIALE: se il messaggio contiene sia il nome ("sono Manuel") sia altre do
                     content: m.content,
                 })),
                 { role: 'user', content: userMessage },
+                // Prefill: forza il modello a iniziare la risposta con '{' → JSON garantito
+                // anche quando la history mostra messaggi BOT in plain text
+                { role: 'assistant', content: '{' },
             ],
         });
 
         if (response.content[0].type === 'text') {
-            const text = response.content[0].text.trim();
+            const text = ('{' + response.content[0].text).trim();
             const start = text.indexOf('{');
             const end = text.lastIndexOf('}');
             if (start !== -1 && end !== -1) {
