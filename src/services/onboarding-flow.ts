@@ -337,8 +337,21 @@ CASO SPECIALE: se il messaggio contiene sia il nome ("sono Manuel") sia altre do
         logger.error({ err }, 'Onboarding brain call failed');
     }
 
-    // Fallback minimale
-    return { message: `Ciao! Sono ${botName} del circolo 🎾 Come ti chiami?`, extractedName: null };
+    // Fallback minimale — variato per non sembrare un loop identico al benvenuto
+    const fallbacks = [
+        `Scusa, ho avuto un piccolo intoppo! Come ti chiami?`,
+        `Ops, mi sono persa per un secondo. Dimmi pure il tuo nome!`,
+        `Mi dispiace, non ho capito bene. Come posso chiamarti?`,
+        `Ah, ho avuto un momento di confusione. Puoi dirmi il tuo nome?`,
+        `Scusami! Ho bisogno del tuo nome per procedere — come ti chiami?`,
+        `Ho avuto un problema tecnico momentaneo. Puoi ripetere il tuo nome?`,
+        `Perdonami, non sono riuscita a elaborare la risposta. Come ti chiami?`,
+        `Piccolo intoppo da parte mia! Puoi dirmi come ti chiami?`,
+        `Mi sfugge qualcosa — puoi presentarti di nuovo?`,
+        `Scusa il disguido! Dimmi il tuo nome e cognome per registrarti.`,
+    ];
+    const fallback = fallbacks[Math.floor(Math.random() * fallbacks.length)];
+    return { message: fallback, extractedName: null };
 }
 
 export async function startSingleOnboarding(
@@ -366,9 +379,22 @@ export async function startSingleOnboarding(
             await finalizeOnboarding(senderJid, { config, name: extractedName, skillLevel: -1 });
         }
     } else {
-        // Fallback: nessun messaggio iniziale (es. avvio manuale) → benvenuto generico
+        // Fallback: nessun messaggio iniziale (es. avvio manuale) → benvenuto generico variato
         const botName = config.botName || 'Francesca';
-        await simulateTypingAndSend(senderJid, `Ciao! Sono ${botName} del circolo 🎾 Come ti chiami?`);
+        const welcomes = [
+            `Ciao! Sono ${botName}, l'assistente virtuale del circolo. Come ti chiami?`,
+            `Benvenuto! Mi chiamo ${botName} e gestisco le prenotazioni qui. Con chi ho il piacere?`,
+            `Ciao! Sono ${botName} del circolo. Prima di tutto, come ti chiami?`,
+            `Salve! Sono ${botName}, posso aiutarti con le prenotazioni. Come ti presenti?`,
+            `Ciao! Piacere, sono ${botName}. Non ti conosco ancora — come ti chiami?`,
+            `Benvenuto/a! Sono ${botName}, l'assistente virtuale del circolo. Dimmi pure il tuo nome!`,
+            `Ciao! Sono ${botName} 🎾 Per registrarti ho bisogno del tuo nome — come ti chiami?`,
+            `Salve! Sono ${botName}, qui per aiutarti con il padel. Come posso chiamarti?`,
+            `Ciao! Mi chiamo ${botName} e sono l'assistente del circolo. Con chi ho il piacere di parlare?`,
+            `Benvenuto/a! Sono ${botName} del circolo — non ci siamo ancora presentati. Come ti chiami?`,
+        ];
+        const welcome = welcomes[Math.floor(Math.random() * welcomes.length)];
+        await simulateTypingAndSend(senderJid, welcome);
     }
 }
 
