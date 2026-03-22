@@ -332,6 +332,8 @@ CASO SPECIALE: se il messaggio contiene sia il nome ("sono Manuel") sia altre do
                 }
                 return { message: String(parsed.message || ''), extractedName };
             }
+            // Risposta AI senza JSON valido — logga per debug
+            logger.warn({ rawText: text.slice(0, 200) }, 'Onboarding brain: no JSON in response — using fallback');
         }
     } catch (err) {
         logger.error({ err }, 'Onboarding brain call failed');

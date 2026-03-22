@@ -328,8 +328,9 @@ Rispondi SEMPRE con JSON valido: { "message": "...", "action": "NOME", "params":
   ⚠️ ATTENZIONE: se il giocatore ha già partite confermate E chiede un nuovo slot, valuta se è una correzione o un'aggiunta (vedi regola RESCHEDULE sotto).
 - OPT_OUT — params: {} — utente non vuole più messaggi / vuole essere rimosso dalla lista
 - OPT_IN — params: {} — utente vuole rientrare nella lista (es. "voglio ricominciare", "rimettimi dentro", "voglio ricevere partite di nuovo"). Usa solo se il giocatore risulta inattivo o lo chiede esplicitamente.
-- INVITE_PREFERRED — params: { "playerName": "Nome Cognome" } — utente vuole che una persona specifica venga coinvolta nella partita.
-  ⚠️ REGOLA CRITICA: se l'utente menziona persone per nome ("voglio giocare con Marco", "ci sono io, Luca e Sara", "posso portare Giulia?") usa SEMPRE questa azione. MAI usare BOOK_FIELD quando vengono nominati altri giocatori. Il sistema verificherà se esistono nel circolo — non puoi saperlo tu. Usa params.playerName = primo nome menzionato; se ce ne sono più, scegli il principale o aspetta che l'utente specifichi.
+- INVITE_PREFERRED — params: { "playerName": "Nome Cognome" } — utente vuole che una persona specifica venga coinvolta nella partita tramite matchmaking.
+  ⚠️ REGOLA CRITICA: se l'utente menziona persone per nome DURANTE la fase di prenotazione ("voglio giocare con Marco", "ci sono io, Luca e Sara") usa SEMPRE questa azione INVECE di BOOK_FIELD. Il sistema verificherà se esistono nel circolo — non puoi saperlo tu.
+  ⛔ ECCEZIONE: se il giocatore ha GIÀ una partita confermata e menziona un amico/compagno che "viene con lui" o chiede "hai segnato il mio compagno?" — NON usare INVITE_PREFERRED. Il campo è già prenotato, chi portano è affar loro. Rispondi semplicemente che il campo è prenotato e possono venire in quanti vogliono (fino a 4 giocatori totali).
   MAI creare una partita con wave quando l'utente ha già indicato persone specifiche con cui vuole giocare.
 - SAVE_NOTE — params: { "note": "..." } — utente esprime una preferenza, abitudine o richiesta speciale (es. "voglio sempre giocare al coperto", "preferisco il mattino", "non mi piace la terra rossa"). Riassumi in una frase breve e salva. Puoi combinare con NONE per rispondere anche in modo conversazionale — in quel caso usa SAVE_NOTE e metti la risposta nel campo "message".
 - REQUEST_LESSON — params: { "day": "opzionale", "time": "opzionale" } — utente chiede di prenotare una lezione con il maestro. Rispondi con conferma che hai avvisato il maestro + durata + costo. Il maestro li contatterà per l'orario esatto.
@@ -430,6 +431,8 @@ PRINCIPIO BASE: se c'è ambiguità, assumi l'interpretazione più favorevole all
                     params: parsed.params || {},
                 };
             }
+            // Risposta AI senza JSON valido — logga per debug
+            logger.warn({ rawText: text.slice(0, 300) }, 'Brain: no JSON in response — using fallback');
         }
     } catch (err: any) {
         logger.error({ err: { message: err?.message, stack: err?.stack?.split('\n').slice(0,3).join(' | ') } }, 'Brain call failed');
