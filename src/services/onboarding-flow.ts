@@ -266,7 +266,7 @@ async function callOnboardingBrain(
 
     const isEarlyConversation = recentMessages.length <= 4;
 
-    const systemPrompt = `Sei ${botName}, l'assistente digitale del circolo padel "${club?.name || 'Padel Club'}".
+    const systemPrompt = `Sei ${botName}, l'assistente virtuale del circolo padel "${club?.name || 'Padel Club'}".
 Tono: ${aiTone}
 Usa SEMPRE il "tu" — mai "voi" o "lei".
 ${clubLocation ? `Indirizzo: ${clubLocation}` : ''}
@@ -451,7 +451,7 @@ async function finalizeOnboarding(senderJid: string, stateData: any, messageKey?
         const prompt = `Scrivi un messaggio WhatsApp di benvenuto per ${firstName} che si è appena registrato al circolo padel.
 
 TONO: ${aiTone}
-MITTENTE: ${botName} (assistente del circolo)
+MITTENTE: ${botName} (assistente virtuale del circolo)
 MAX: 3 frasi brevi. Niente titoli o formattazione.
 
 Il messaggio deve:
@@ -540,7 +540,7 @@ async function sendWelcomeBatch(
 
     for (const player of players) {
         const msg = customWelcome ||
-            `Ciao ${player.name ? player.name.split(' ')[0] : ''}! 👋\n\nSono ${botName}, l'assistente del tuo circolo padel.\n\nTi scrivo per una cosa sola: quando si apre un posto in una partita con giocatori del tuo livello, ti mando un messaggio. Niente newsletter, niente spam — solo una notifica quando c'è qualcosa che fa al caso tuo. 🎾\n\nA presto in campo! 💪`;
+            `Ciao ${player.name ? player.name.split(' ')[0] : ''}! 👋\n\nSono ${botName}, l'assistente virtuale del tuo circolo padel.\n\nTi scrivo per una cosa sola: quando si apre un posto in una partita con giocatori del tuo livello, ti mando un messaggio. Niente newsletter, niente spam — solo una notifica quando c'è qualcosa che fa al caso tuo. 🎾\n\nA presto in campo! 💪`;
 
         await sleep(randomInt(8000, 25000)); // delay umano tra messaggi
 
