@@ -178,10 +178,10 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[], cor
     const adminPhone = (club?.adminPhone || '').replace(/\D/g, '');
     const isFromAdmin = adminPhone && phoneNumber === adminPhone;
     if (isFromAdmin) {
-        const okMatch = combinedText.match(/^ok\s*(\d{7,15})?$/i);
+        const okMatch = combinedText.match(/^ok\s*([+]?\d{7,15})?$/i);
         if (okMatch) {
             const redis = getRedis();
-            let targetPhone = okMatch[1];
+            let targetPhone = okMatch[1]?.replace(/\D/g, '');
             if (!targetPhone) {
                 // "ok" senza numero: approva l'unico pending o mostra lista
                 const pendingRaw = await redis.get(`approval:last_pending:${club?.id || ''}`);
