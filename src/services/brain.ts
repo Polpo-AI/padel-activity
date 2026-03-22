@@ -94,7 +94,7 @@ export async function buildBrainContext(jid: string, phoneNumber: string): Promi
 
         confirmedMatches = await prisma.matchPlayer.findMany({
             where: { playerId: player.id, leftAt: null, noShow: false, match: { status: { in: ['OPEN', 'LOCKED'] } } },
-            include: { match: { include: { court: true } } },
+            include: { match: { include: { court: true, MatchPlayer: { where: { leftAt: null } } } } },
         });
 
         if (player.skillLevel > 0) {
@@ -164,9 +164,15 @@ export async function callBrain(
         : '  nessuno';
 
     const confirmedStr = confirmedMatches.length > 0
-        ? confirmedMatches.map(mp =>
-            `  - ${mp.match.court?.name || 'Campo'} – ${fmtDatetime(mp.match.startTime)} [matchPlayerId:${mp.id}]`
-        ).join('\n')
+        ? confirmedMatches.map(mp => {
+            const confirmed = mp.match.MatchPlayer?.length ?? 0;
+            const needed = mp.match.playersNeeded ?? 4;
+            const free = needed - confirmed;
+            const statusLabel = mp.match.status === 'LOCKED'
+                ? `campo pieno (${confirmed}/${needed})`
+                : `${confirmed}/${needed} confermati, mancano ${free}`;
+            return `  - ${mp.match.court?.name || 'Campo'} – ${fmtDatetime(mp.match.startTime)} – ${statusLabel} [matchPlayerId:${mp.id}]`;
+        }).join('\n')
         : '  nessuno';
 
     const availableStr = availableMatches.length > 0
@@ -328,7 +334,9 @@ Rispondi SEMPRE con JSON valido: { "message": "...", "action": "NOME", "params":
 - SAVE_NOTE — params: { "note": "..." } — utente esprime una preferenza, abitudine o richiesta speciale (es. "voglio sempre giocare al coperto", "preferisco il mattino", "non mi piace la terra rossa"). Riassumi in una frase breve e salva. Puoi combinare con NONE per rispondere anche in modo conversazionale — in quel caso usa SAVE_NOTE e metti la risposta nel campo "message".
 - REQUEST_LESSON — params: { "day": "opzionale", "time": "opzionale" } — utente chiede di prenotare una lezione con il maestro. Rispondi con conferma che hai avvisato il maestro + durata + costo. Il maestro li contatterà per l'orario esatto.
 - RESCHEDULE_MATCH — params: { "matchPlayerId": "...", "newDay": "YYYY-MM-DD o oggi/domani/lunedì/...", "newTime": "HH:MM" } — utente vuole spostare una partita confermata. Cancella quella vecchia e prenota il nuovo slot. Messaggio breve tipo "Fatto! Ho spostato la tua partita 🎾" — i dettagli arrivano subito dopo.
-- FAQ_REQUEST — params: { "question": "testo esatto della domanda" } — usa quando l'utente fa una domanda sul circolo (orari speciali, regole, tariffe particolari, eventi, qualsiasi cosa) a cui NON puoi rispondere con le informazioni disponibili sopra E la risposta non è già nelle FAQ. Il messaggio deve dire che verifichi con il circolo e che farai sapere presto. Esempio: "Ottima domanda! Verifico con il circolo e ti rispondo appena ho notizie!" NON usare NONE quando non sai rispondere a una domanda specifica — usa FAQ_REQUEST.
+- FAQ_REQUEST — params: { "question": "testo esatto della domanda" } — usa SOLO quando l'utente fa una domanda sul circolo (orari speciali, regole particolari, eventi, iniziative) a cui NON puoi rispondere con le informazioni disponibili E la risposta non è già nelle FAQ.
+  ⛔ NON usare FAQ_REQUEST per: stato della partita, quante persone mancano, chi è già confermato — queste info sono nella sezione PARTITE CONFERMATE sopra, rispondi direttamente.
+  Il messaggio deve dire che verifichi con il circolo e che farai sapere presto. NON usare NONE quando non sai rispondere a una domanda specifica — usa FAQ_REQUEST.
 
 ═══ REGOLA RESCHEDULE vs BOOK_FIELD ═══
 Quando il giocatore ha già partite confermate E chiede un nuovo slot, devi capire dal contesto se sta correggendo/spostando o aggiungendo:
