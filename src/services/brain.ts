@@ -24,7 +24,8 @@ export type BrainAction =
     | 'SAVE_NOTE'
     | 'REQUEST_LESSON'
     | 'RESCHEDULE_MATCH'
-    | 'FAQ_REQUEST';
+    | 'FAQ_REQUEST'
+    | 'REGISTER_PLAYER';
 
 export interface BrainResponse {
     message: string;
@@ -290,28 +291,41 @@ NON devi mai dire "errore tecnico" o cose simili — se non puoi fare qualcosa, 
 - Gli inviti arrivano via WhatsApp — basta rispondere sì o no
 - Il sistema cerca automaticamente altri giocatori dello stesso livello per completare la partita
 
-═══ STATO GIOCATORE ═══
-Nome: ${player?.name || 'non registrato'}
-Livello: ${player && player.skillLevel > 0 ? player.skillLevel + ' (scala 1-7, dove 1=principiante, 7=agonista)' : 'da assegnare — Skill Test in attesa'}
-${skillTestPending ? 'NOTA: questo giocatore non ha ancora il livello. Può prenotare campi, ma non riceverà inviti automatici finché non completa lo Skill Test.' : ''}
-${player?.notes ? `Note/preferenze giocatore: ${player.notes}` : ''}
-${lessonInfo ? `\n═══ LEZIONE INDIVIDUALE ═══\n${lessonInfo}\nIl maestro contatterà il giocatore per l'orario — il sistema invia solo la notifica.` : ''}
+${!player ? `═══ UTENTE NON REGISTRATO ═══
+Questa persona non è ancora iscritta al circolo.
+Raccogliere nome e cognome è la tua priorità, ma in modo completamente naturale.
+- Rispondi PRIMA a qualsiasi cosa chieda (prezzi, campi, orari, come funziona — tutto)
+- Presentati come ${botName} se è uno dei primi scambi della conversazione
+- Chiedi nome e cognome solo quando è naturale, MAI in modo burocratico
+- Quando hai ENTRAMBI nome E cognome certi → usa REGISTER_PLAYER
+- Se hai solo il nome → rispondi e chiedi il cognome con leggerezza
+- MAI usare REGISTER_PLAYER senza avere sia nome che cognome certi` : `═══ STATO GIOCATORE ═══
+Nome: ${player.name || 'non registrato'}
+Livello: ${player.skillLevel > 0 ? player.skillLevel + ' (scala 1-7, dove 1=principiante, 7=agonista)' : 'da assegnare — Skill Test in attesa'}
+${player.skillLevel <= 0 ? 'NOTA: questo giocatore non ha ancora il livello. Può prenotare campi, ma non riceverà inviti automatici finché non completa lo Skill Test.' : ''}
+${player.notes ? `Note/preferenze giocatore: ${player.notes}` : ''}
+${lessonInfo ? `\n═══ LEZIONE INDIVIDUALE ═══\n${lessonInfo}\nIl maestro contatterà il giocatore per l'orario — il sistema invia solo la notifica.` : ''}`}
 
 ═══ CAMPI DEL CIRCOLO ═══
 ${courtsStr}
 ${faqsStr ? `\n═══ FAQ DEL CIRCOLO ═══\nQueste domande hanno già una risposta ufficiale del circolo. Se la domanda dell'utente corrisponde a una di queste, usa la risposta memorizzata (adattando il tono ma senza cambiare il contenuto):\n\n${faqsStr}` : ''}
 
-═══ INVITI IN ATTESA ═══
+${player ? `═══ INVITI IN ATTESA ═══
 ${invitationsStr}
 
 ═══ PARTITE CONFERMATE ═══
 ${confirmedStr}
 
 ═══ PARTITE APERTE DISPONIBILI ═══
-${availableStr}
+${availableStr}` : ''}
 ${cardsStr ? `\n═══ CONTATTI RICEVUTI ═══\n${cardsStr}` : ''}
 
-═══ AZIONI DISPONIBILI ═══
+${!player ? `═══ AZIONI DISPONIBILI ═══
+Rispondi SEMPRE con JSON valido: { "message": "...", "action": "NOME", "params": {...} }
+
+- NONE — risposta conversazionale: info sul circolo, prezzi, come funziona, qualsiasi cosa che non richieda registrazione
+- REGISTER_PLAYER — params: { "name": "Nome Cognome" } — registra il nuovo giocatore. Usa SOLO quando hai nome E cognome certi. Il messaggio deve essere un breve benvenuto caldo nel circolo e spiegare che può già prenotare campi e che verranno contattati per lo Skill Test.
+- FAQ_REQUEST — params: { "question": "..." } — per domande specifiche sul circolo a cui non puoi rispondere` : `═══ AZIONI DISPONIBILI ═══
 Rispondi SEMPRE con JSON valido: { "message": "...", "action": "NOME", "params": {...} }
 
 - NONE — risposta conversazionale, nessuna operazione DB. Usa per saluti, domande, info, ringraziamenti, qualsiasi cosa non richieda un'azione specifica
@@ -337,7 +351,7 @@ Rispondi SEMPRE con JSON valido: { "message": "...", "action": "NOME", "params":
 - RESCHEDULE_MATCH — params: { "matchPlayerId": "...", "newDay": "YYYY-MM-DD o oggi/domani/lunedì/...", "newTime": "HH:MM" } — utente vuole spostare una partita confermata. Cancella quella vecchia e prenota il nuovo slot. Messaggio breve tipo "Fatto! Ho spostato la tua partita 🎾" — i dettagli arrivano subito dopo.
 - FAQ_REQUEST — params: { "question": "testo esatto della domanda" } — usa SOLO quando l'utente fa una domanda sul circolo (orari speciali, regole particolari, eventi, iniziative) a cui NON puoi rispondere con le informazioni disponibili E la risposta non è già nelle FAQ.
   ⛔ NON usare FAQ_REQUEST per: stato della partita, quante persone mancano, chi è già confermato — queste info sono nella sezione PARTITE CONFERMATE sopra, rispondi direttamente.
-  Il messaggio deve dire che verifichi con il circolo e che farai sapere presto. NON usare NONE quando non sai rispondere a una domanda specifica — usa FAQ_REQUEST.
+  Il messaggio deve dire che verifichi con il circolo e che farai sapere presto. NON usare NONE quando non sai rispondere a una domanda specifica — usa FAQ_REQUEST.`}
 
 ═══ REGOLA RESCHEDULE vs BOOK_FIELD ═══
 Quando il giocatore ha già partite confermate E chiede un nuovo slot, devi capire dal contesto se sta correggendo/spostando o aggiungendo:
@@ -457,8 +471,29 @@ export async function executeAction(
     params: any,
     player: any,
     club: any,
+    phoneNumber?: string,
 ): Promise<{ success: boolean; errorMessage?: string; matchId?: string }> {
     if (action === 'NONE') return { success: true };
+
+    if (action === 'REGISTER_PLAYER') {
+        const name = (params.name || '').trim();
+        if (!name || !name.includes(' ')) return { success: true }; // nome incompleto, continua conversazione
+        if (!club?.id || !phoneNumber) return { success: true };
+        await prisma.player.create({
+            data: {
+                phoneNumber: phoneNumber.replace(/\D/g, ''),
+                name,
+                clubId: club.id,
+                skillLevel: 0,
+                active: true,
+            },
+        });
+        if (club.adminPhone) {
+            const { notifyAdmin } = await import('../utils/notify-admin');
+            notifyAdmin(`🆕 Nuovo giocatore registrato: ${name} (${phoneNumber})`).catch(() => {});
+        }
+        return { success: true };
+    }
 
     try {
         if (action === 'ACCEPT_INVITATION') {

@@ -16,7 +16,6 @@ import { getRedis } from './queue';
 import { transcribeAudio } from './ai';
 import { increaseReliability } from './scoring';
 import { registerBatchHandler, NormalizedMessage } from './inbound-queue';
-import { getOnboardingState, continueOnboarding, startSingleOnboarding } from './onboarding-flow';
 import { confirmRedirectChoice } from './redirect';
 import pino from 'pino';
 import { simulateTypingAndSend, sendMessage, createGroupAndAddPlayers, downloadMediaMessage } from './whatsapp';
@@ -231,16 +230,6 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[], cor
         if (adminHandled) return;
     }
 
-    // ─── ONBOARDING ───
-    // Dopo il check admin: così i comandi "ok X" dell'admin non vengono
-    // intercettati dal suo eventuale stato onboarding.
-    const onboardingState = await getOnboardingState(jid);
-    if (onboardingState) {
-        const input = combinedText || contactCards.map(c => `${c.contactName || ''} ${c.contactPhone || ''}`).join(' ').trim();
-        if (input) await continueOnboarding(jid, input, onboardingState.step, { ...onboardingState.data, resolvedPhone: phoneNumber });
-        return;
-    }
-
     const player = await prisma.player.findFirst({
         where: { phoneNumber: { in: phoneVariants }, clubId: resolvedClubId ? resolvedClubId : { not: '' } }
     });
@@ -265,24 +254,7 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[], cor
             }
             return; // Nessuna risposta al numero non autorizzato
         }
-        // Numero approvato: procedi con l'onboarding
-        const onboardingConfig = {
-            clubId: club?.id || '',
-            botName: (club as any)?.botName || 'Francesca',
-            aiTone: club?.aiTone || undefined,
-            askAvailability: false,
-            askTimePreference: false,
-            skipLevel: true,
-            notifyAdminOnNewPlayer: true,
-            allowMixedLevels: club?.allowMixedLevels ?? false,
-            maxDailyMessages: club?.maxDailyMessages ?? 2,
-        };
-        if (combinedText) {
-            const { setState } = await import('./conversation-state');
-            await setState(`state:pending-intent:${jid}`, { intent: 'PENDING', combinedText }, 600);
-        }
-        await startSingleOnboarding(jid, onboardingConfig, combinedText || undefined);
-        return;
+        // Numero approvato: il brain gestisce la conversazione anche senza player
     }
 
     // ─── REDIRECT CHOICE ───
@@ -312,17 +284,19 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[], cor
     // NON salvare qui: simulateTypingAndSend salva già il messaggio (Lesson #6)
 
     // Aggiorna dailyMessagesCount
-    try {
-        await prisma.player.update({
-            where: { id: player.id },
-            data: { dailyMessagesCount: { increment: 1 } },
-        });
-    } catch (err) {
-        logger.error({ err }, 'Failed to update dailyMessagesCount');
+    if (player) {
+        try {
+            await prisma.player.update({
+                where: { id: player.id },
+                data: { dailyMessagesCount: { increment: 1 } },
+            });
+        } catch (err) {
+            logger.error({ err }, 'Failed to update dailyMessagesCount');
+        }
     }
 
     if (action !== 'NONE') {
-        const result = await executeAction(action, params, player, club);
+        const result = await executeAction(action, params, player, club, phoneNumber);
         if (!result.success && result.errorMessage) {
             if (result.errorMessage.startsWith('PLAYER_NOT_FOUND:')) {
                 const searchedName = result.errorMessage.split(':').slice(1).join(':').trim();
@@ -337,7 +311,7 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[], cor
                         // Seconda volta: escalation all'admin
                         const { notifyAdmin } = await import('../utils/notify-admin');
                         await notifyAdmin(
-                            `❓ ${player.name || phoneNumber} insiste: vuole invitare "${searchedName}" ma non risulta iscritto. Verificare?`,
+                            `❓ ${player?.name || phoneNumber} insiste: vuole invitare "${searchedName}" ma non risulta iscritto. Verificare?`,
                             `invite_not_found_${nameKey.substring(0, 20)}`,
                             club?.adminPhone ?? undefined,
                             club?.name ?? undefined,
@@ -387,7 +361,7 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[], cor
             }
         }
         // OPT_OUT: notifica admin
-        if (action === 'OPT_OUT') {
+        if (action === 'OPT_OUT' && player) {
             const { notifyAdmin } = await import('../utils/notify-admin');
             notifyAdmin(`⚠️ OPT_OUT: ${player.name || phoneNumber} (${phoneNumber}) ha disattivato i messaggi.`).catch(() => {});
         }
