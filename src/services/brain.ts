@@ -429,12 +429,13 @@ PRINCIPIO BASE: se c'è ambiguità, assumi l'interpretazione più favorevole all
                     content: m.content,
                 })),
                 { role: 'user', content: userMessage },
+                { role: 'assistant', content: '{' },
             ],
         });
 
         const content = response.content[0];
         if (content.type === 'text') {
-            const text = content.text.trim();
+            const text = ('{' + content.text).trim();
             const start = text.indexOf('{');
             const end = text.lastIndexOf('}');
             if (start !== -1 && end !== -1) {
