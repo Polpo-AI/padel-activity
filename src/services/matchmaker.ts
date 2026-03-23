@@ -353,7 +353,7 @@ export async function buildMatchSocialContext(
             where: {
                 playerId: { in: confirmedPlayerIds },
                 leftAt: null,
-                match: { startTime: { gte: since30 }, status: { in: ['OPEN', 'LOCKED', 'COMPLETED'] } },
+                match: { startTime: { gte: since30 }, status: { in: ['OPEN', 'LOCKED', 'ARCHIVED'] } },
             },
             _count: { playerId: true },
         }),
