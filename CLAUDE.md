@@ -8,26 +8,32 @@ Questo file è la mappa operativa del progetto. Leggilo prima di toccare qualsia
 
 Questi errori sono già stati commessi. Non ripeterli.
 
-### 1. Locale e VPS devono essere sempre allineati
-**Regola:** ogni modifica va committata + pushata su `main` + pullata sul VPS. MAI modificare file direttamente sul VPS senza poi aggiornare il locale (o viceversa). Verificare sempre con `git log --oneline -3` su entrambi prima di iniziare.
+### 1. Workflow deploy — staging prima, poi produzione
+**Regola:** lavorare SEMPRE prima su staging. Le modifiche vanno fatte direttamente sul VPS staging, poi pushate su `preview` e pullate in locale. `main` viene toccato SOLO quando si vuole deployare in produzione, esplicitamente.
 **Workflow corretto:**
 ```bash
-# Locale
-git add <files> && git commit && git push origin main
-# VPS
-cd /root/padel-staging && git pull origin main
-systemctl restart padel-staging padel-worker-staging
-git push origin HEAD:preview
-```
+# Sul VPS staging (modifiche dirette o git pull)
+cd /root/padel-staging
+# ... edit files ...
+git add src/services/file.ts && git commit -m "..."
+git push origin HEAD:preview      # → GitHub preview branch
 
-### 2. Lock Redis NX in `startSingleOnboarding` — non rimuoverlo mai
-**Bug reale (doppio):** (a) stato impostato DOPO il messaggio → race condition col debounce. (b) due `_handleBatchInner` concorrenti trovano entrambi "no state + no player" prima che il primo scriva Redis → doppio messaggio.
-**Fix in place:** `redis.set(lockKey, '1', 'EX', 60, 'NX')` all'inizio di `startSingleOnboarding` — atomico, garantisce un solo avvio per JID. NON rimuovere questo lock.
-**Regola aggiuntiva:** non hardcodiare `welcomeMessage` nelle config che chiamano `startSingleOnboarding` — usare il default della funzione.
+# In locale (sync)
+git fetch origin && git merge origin/preview --no-edit
+
+# Deploy produzione (solo quando esplicitamente richiesto)
+cd /root/padel-prod && git pull origin main
+systemctl restart padel-prod padel-worker-prod
+```
+MAI pushare su `main` durante sviluppo — solo `preview`.
+
+### 2. Il brain gestisce anche gli utenti non registrati (REGISTER_PLAYER)
+**Architettura attuale:** non esiste più una state machine di onboarding. Tutti i messaggi — da utenti registrati E non — passano dal brain (`callBrain`). Quando player è null, il system prompt mostra `═══ UTENTE NON REGISTRATO ═══` con istruzioni per raccogliere nome+cognome naturalmente. Quando il brain raccoglie entrambi → action `REGISTER_PLAYER` → `executeAction` crea il player nel DB.
+**Cosa NON fare:** non re-introdurre `startSingleOnboarding`, `continueOnboarding`, `getOnboardingState` o stati Redis `state:onboarding:*`. Sono stati rimossi deliberatamente.
 
 ### 3. Il nome del giocatore NON va mai estratto con fallback al testo grezzo
 **Bug reale:** `let name = messageText.trim()` come fallback → il messaggio intero ("voglio prenotare domani alle 18") diventava il nome del giocatore.
-**Regola:** il prompt AI deve restituire esplicitamente `"NULL"` se il nome non è trovato. Se è NULL, ri-chiedere — MAI usare il testo del messaggio come nome.
+**Regola:** il brain usa `REGISTER_PLAYER` solo quando ha nome+cognome certi. Se `params.name` non contiene uno spazio, `executeAction` ritorna `success: true` senza creare il player (brain riprova al prossimo turno).
 
 ### 4. Nessun gruppo, nessun playerCount
 **Bug reale:** il brain estraeva `playerCount` dal testo ("siamo in 3", "campo da 7") e creava partite con 3 o 7 giocatori.
@@ -206,10 +212,10 @@ journalctl -u padel-staging --since "10 min ago" --no-pager
 ```
 
 **Workflow deploy staging:**
-1. Commit + push locale → `main`
-2. Sul VPS: `cd /root/padel-staging && git pull origin main`
+1. Modifica direttamente sul VPS staging (o git pull da `preview`)
+2. `git add <files> && git commit && git push origin HEAD:preview`
 3. `systemctl restart padel-staging padel-worker-staging`
-4. Push da VPS a `preview`: `git push origin HEAD:preview`
+4. In locale: `git fetch origin && git merge origin/preview --no-edit`
 
 ---
 
@@ -269,7 +275,7 @@ Wave per match di club X:
 | File | Cosa fa |
 |------|---------|
 | `src/services/whatsapp.ts` | Connessione Baileys, invio messaggi, gestione reconnect, recovery messaggi offline |
-| `src/services/messageHandler.ts` | Routing messaggi: onboarding attivo → brain. Dopo BOOK_FIELD invia scheda prenotazione dettagliata |
+| `src/services/messageHandler.ts` | Routing messaggi: brain per tutti (registrati e non). Dopo BOOK_FIELD invia scheda prenotazione dettagliata |
 | `src/services/brain.ts` | **Cervello AI del bot** — unica chiamata Claude Sonnet con contesto completo → `{ message, action, params }`. Nessuna frase hardcodata |
 | `src/services/inbound-queue.ts` | Debouncing messaggi in entrata (10s per JID), batch processing, recovery dopo crash |
 | `src/services/ai.ts` | Wrapper AI: generazione testi inviti, requiresResponse(), inferGender() |
@@ -286,10 +292,11 @@ Wave per match di club X:
 | `src/services/pricing.ts` | Calcolo prezzo per slot, copertura economica partita |
 
 ### Onboarding
+⚠️ Il flusso onboarding è stato eliminato. Il brain gestisce direttamente la registrazione tramite `REGISTER_PLAYER`.
 | File | Cosa fa |
 |------|---------|
-| `src/services/onboarding-flow.ts` | Flusso onboarding step-by-step (nome → telefono → finalizza) |
-| `src/services/onboarding.ts` | Gestione stati AWAITING_* su Redis, bring friend/group, setAwaitingState/getAwaitingState |
+| `src/services/onboarding-flow.ts` | ⚠️ LEGACY — usato solo da `group-handler.ts`. Non più nel path principale |
+| `src/services/onboarding.ts` | Gestione stati AWAITING_* su Redis (invitation choice, friend phone, ecc.) |
 
 ### Stato Conversazionale
 | File | Cosa fa |
@@ -344,10 +351,8 @@ Tutti in `src/prompts/*.md` — modificabili senza toccare codice TypeScript.
 |-------------|-----|-------|
 | `state:awaiting:{jid}` | 24h | Stati AWAITING_* (invitation choice, friend phone, ecc.) |
 | `state:booking:{jid}` | 24h | Flusso prenotazione step-by-step |
-| `state:onboarding:{jid}` | 24h | Flusso onboarding step-by-step |
 | `state:unclear:{jid}` | 24h | Retry classificazione intent |
 | `state:role:{jid}:*` | 1h | AWAITING_REDIRECT_CHOICE |
-| `state:pending-intent:{jid}` | 10min | Intent pendente durante onboarding |
 | `wave_lock:{matchId}` | 15s | Mutex distributed lock per wave |
 | `feedback_requested:{matchId}:{playerId}` | 24h | Dedup feedback request |
 | `warning:timeout:{matchId}` | 1h | Dedup warning "ultima chiamata" |
@@ -365,20 +370,17 @@ inbound-queue.ts (debounce 10s, raggruppa batch per JID)
 messageHandler._handleBatchInner()
     ├── De-LID: risolve @lid → numero italiano reale
     ├── Deduplication check (WhatsAppMessage.messageId)
+    ├── Carica club + adminPhone
+    ├── [COMANDO ADMIN?] — "ok <numero>" → approva giocatore e ritorna (PRIMA di tutto)
     ├── Player lookup (by phoneNumber + clubId)
     │
-    ├── [ONBOARDING ATTIVO?] — controlla Redis:
-    │   └── onboarding state → continueOnboarding()
-    │       (nome → finalizzazione → pending-intent replay)
-    │
-    ├── [PLAYER NON TROVATO] → startSingleOnboarding() con pending-intent
-    │   ⚠️ setState PRIMA di simulateTypingAndSend (evita race condition)
-    │
-    └── [PLAYER TROVATO, NESSUN ONBOARDING] → brain.ts
+    └── → brain.ts (SEMPRE — registrato o no)
         ├── buildBrainContext() — carica inviti, partite, messaggi recenti
+        │   (se player=null: contesto semplificato, solo REGISTER_PLAYER/NONE/FAQ_REQUEST)
         ├── callBrain() → Claude Sonnet → { message, action, params }
         ├── simulateTypingAndSend(message)
-        └── executeAction(action, params)
+        └── executeAction(action, params, player, club, phoneNumber)
+            ├── REGISTER_PLAYER — crea Player nel DB + notifica admin
             ├── NONE — solo risposta conversazionale
             ├── ACCEPT_INVITATION — transazione con SELECT FOR UPDATE
             ├── REJECT_INVITATION
@@ -389,7 +391,7 @@ messageHandler._handleBatchInner()
             └── INVITE_PREFERRED — cerca player per nome nel club
 ```
 
-**BrainAction types:** `NONE | ACCEPT_INVITATION | REJECT_INVITATION | CANCEL_MATCH | BOOK_FIELD | OPT_OUT | INVITE_PREFERRED`
+**BrainAction types:** `NONE | ACCEPT_INVITATION | REJECT_INVITATION | CANCEL_MATCH | BOOK_FIELD | OPT_OUT | OPT_IN | INVITE_PREFERRED | SAVE_NOTE | REQUEST_LESSON | RESCHEDULE_MATCH | FAQ_REQUEST | REGISTER_PLAYER`
 
 ---
 
