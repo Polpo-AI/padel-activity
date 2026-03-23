@@ -43,7 +43,7 @@ export interface BrainContext {
     availableMatches: any[];
     courts: any[];
     faqs: any[];
-    slotsAvailability: { fullSlots: string[]; onlyCoveredSlots: string[] };
+    slotsAvailability: { fullSlots: string[]; onlyCoveredSlots: string[]; freeScopertoSlots: string[] };
 }
 
 // ─────────────────────────────────────────────
@@ -122,27 +122,40 @@ export async function buildBrainContext(jid: string, phoneNumber: string): Promi
         }
     }
 
-    // Slot availability: compute full slots and only-covered slots for next 10 days
+    // Slot availability: compute full/only-covered slots (next 10 days) + free scoperto slots (next 7 days)
     const now_ = new Date();
     const in10Days_ = new Date(now_.getTime() + 10 * 24 * 60 * 60 * 1000);
+    const scopertoCourtIds = courts.filter((c: any) => !c.isCovered).map((c: any) => c.id) as string[];
+
+    // Query: all matches next 10 days (for full/only-covered) + occupied scoperto (for free scoperto)
     const upcomingForAvail = await prisma.match.findMany({
         where: {
             clubId: club?.id,
             status: { in: ['OPEN', 'LOCKED'] },
             startTime: { gte: now_, lte: in10Days_ },
         },
-        select: { startTime: true, court: { select: { isCovered: true } } },
+        select: { startTime: true, courtId: true, court: { select: { isCovered: true } } },
     });
+
     const totalCourts = courts.length;
-    const totalScoperto = courts.filter((c: any) => !c.isCovered).length;
+    const totalScoperto = scopertoCourtIds.length;
     const slotMap = new Map<number, { matchCount: number; coveredMatchCount: number }>();
+    // Map: timestamp → set of occupied scoperto courtIds
+    const occupiedScopertoMap = new Map<number, Set<string>>();
+
     for (const m of upcomingForAvail) {
         const t = m.startTime.getTime();
         const s = slotMap.get(t) ?? { matchCount: 0, coveredMatchCount: 0 };
         s.matchCount++;
         if ((m as any).court?.isCovered) s.coveredMatchCount++;
         slotMap.set(t, s);
+        // Track occupied scoperto courts per slot
+        if (m.courtId && scopertoCourtIds.includes(m.courtId)) {
+            if (!occupiedScopertoMap.has(t)) occupiedScopertoMap.set(t, new Set());
+            occupiedScopertoMap.get(t)!.add(m.courtId);
+        }
     }
+
     const fullSlots: string[] = [];
     const onlyCoveredSlots: string[] = [];
     for (const [t, s] of slotMap) {
@@ -159,6 +172,18 @@ export async function buildBrainContext(jid: string, phoneNumber: string): Promi
         }
     }
 
+    // Free scoperto slots for next 7 days: compute synthetic 90-min slots within club hours
+    const freeScopertoSlots = await computeFreeScopertoSlots(
+        club?.id ?? '',
+        scopertoCourtIds,
+        club?.openTime || '08:00',
+        club?.closeTime || '23:30',
+        now_,
+        7,
+        10,
+        occupiedScopertoMap,
+    );
+
     return {
         club,
         player,
@@ -169,8 +194,95 @@ export async function buildBrainContext(jid: string, phoneNumber: string): Promi
         availableMatches,
         courts,
         faqs,
-        slotsAvailability: { fullSlots, onlyCoveredSlots },
+        slotsAvailability: { fullSlots, onlyCoveredSlots, freeScopertoSlots },
     };
+}
+
+// ─────────────────────────────────────────────
+// FREE SCOPERTO SLOTS — helpers (used in context + ONLY_COVERED_AVAILABLE redirect)
+// ─────────────────────────────────────────────
+
+/**
+ * Computes free scoperto slots within open hours for the next N days.
+ * Accepts a pre-computed occupiedMap (timestamp → Set<courtId>) to avoid extra DB queries
+ * when called from buildBrainContext (which already fetched the matches).
+ * When called standalone (findNearbyFreeScopertoSlots), it fetches from DB directly.
+ */
+async function computeFreeScopertoSlots(
+    clubId: string,
+    scopertoCourtIds: string[],
+    openTime: string,
+    closeTime: string,
+    from: Date,
+    days: number = 7,
+    maxSlots: number = 10,
+    precomputedOccupied?: Map<number, Set<string>>,
+): Promise<string[]> {
+    if (scopertoCourtIds.length === 0) return [];
+
+    let occupiedMap: Map<number, Set<string>>;
+    if (precomputedOccupied) {
+        occupiedMap = precomputedOccupied;
+    } else {
+        const to = new Date(from.getTime() + days * 24 * 60 * 60 * 1000);
+        const occupied = await prisma.match.findMany({
+            where: { clubId, status: { in: ['OPEN', 'LOCKED'] }, startTime: { gte: from, lte: to }, courtId: { in: scopertoCourtIds } },
+            select: { startTime: true, courtId: true },
+        });
+        occupiedMap = new Map();
+        for (const m of occupied) {
+            const t = m.startTime.getTime();
+            if (!occupiedMap.has(t)) occupiedMap.set(t, new Set());
+            if (m.courtId) occupiedMap.get(t)!.add(m.courtId);
+        }
+    }
+
+    const [openH, openM] = (openTime || '08:00').split(':').map(Number);
+    const [closeH, closeM] = (closeTime || '23:30').split(':').map(Number);
+    const lastSlotMinutes = closeH * 60 + closeM - 90; // last valid start
+    const freeSlots: string[] = [];
+
+    for (let d = 0; d < days && freeSlots.length < maxSlots; d++) {
+        const baseDate = new Date(Date.UTC(from.getUTCFullYear(), from.getUTCMonth(), from.getUTCDate() + d));
+        let slotH = openH, slotM = openM;
+
+        while (slotH * 60 + slotM <= lastSlotMinutes && freeSlots.length < maxSlots) {
+            const slotTime = buildRomeTime(baseDate, slotH, slotM);
+            if (slotTime > from) {
+                const t = slotTime.getTime();
+                const occupiedCourts = occupiedMap.get(t) ?? new Set<string>();
+                const hasFree = scopertoCourtIds.some(id => !occupiedCourts.has(id));
+                if (hasFree) {
+                    freeSlots.push(slotTime.toLocaleString('it-IT', {
+                        timeZone: 'Europe/Rome', weekday: 'short', day: 'numeric',
+                        month: 'numeric', hour: '2-digit', minute: '2-digit',
+                    }));
+                }
+            }
+            const totalM = slotH * 60 + slotM + 90;
+            slotH = Math.floor(totalM / 60);
+            slotM = totalM % 60;
+        }
+    }
+    return freeSlots;
+}
+
+/**
+ * Exported: finds free scoperto slots near a reference time (±4 days).
+ * Used by messageHandler when ONLY_COVERED_AVAILABLE to suggest alternatives.
+ */
+export async function findNearbyFreeScopertoSlots(
+    clubId: string,
+    referenceTime: Date,
+    openTime: string,
+    closeTime: string,
+    limit: number = 3,
+): Promise<string[]> {
+    const courts = await prisma.court.findMany({
+        where: { clubId, active: true, isCovered: false },
+        select: { id: true },
+    });
+    return computeFreeScopertoSlots(clubId, courts.map(c => c.id), openTime, closeTime, referenceTime, 4, limit);
 }
 
 // ─────────────────────────────────────────────
@@ -361,12 +473,15 @@ ${lessonInfo ? `\n═══ LEZIONE INDIVIDUALE ═══\n${lessonInfo}\nIl mae
 ${courtsStr}
 ${faqsStr ? `\n═══ FAQ DEL CIRCOLO ═══\nQueste domande hanno già una risposta ufficiale del circolo. Se la domanda dell'utente corrisponde a una di queste, usa la risposta memorizzata (adattando il tono ma senza cambiare il contenuto):\n\n${faqsStr}` : ''}
 
-${slotsAvailability.fullSlots.length > 0 || slotsAvailability.onlyCoveredSlots.length > 0 ? `
-═══ DISPONIBILITÀ CAMPI (prossimi 10 giorni) ═══
-${slotsAvailability.fullSlots.length > 0 ? `Slot completamente occupati (nessun campo libero):\n${slotsAvailability.fullSlots.map(s => `  - ${s}`).join('\n')}` : ''}
-${slotsAvailability.onlyCoveredSlots.length > 0 ? `Solo campo coperto disponibile (scoperti esauriti):\n${slotsAvailability.onlyCoveredSlots.map(s => `  - ${s}`).join('\n')}` : ''}
-Se l'utente chiede uno slot completamente occupato → NONE con messaggio che informa e propone orari alternativi.
-Se l'utente chiede uno slot con solo coperto disponibile e non ha specificato la preferenza → chiedi conferma prima di procedere (NON eseguire BOOK_FIELD direttamente).` : ''}
+
+═══ DISPONIBILITÀ CAMPI (prossimi 7-10 giorni) ═══
+${slotsAvailability.freeScopertoSlots.length > 0
+    ? `Prossimi slot con campo SCOPERTO libero:\n${slotsAvailability.freeScopertoSlots.map(s => `  - ${s}`).join('\n')}\nQuando l'utente chiede "quando hai disponibilità?" o "quando c'è posto?", proponi 3-4 di questi orari in modo naturale e conversazionale.`
+    : 'Nessun campo scoperto libero nei prossimi 7 giorni (solo coperto disponibile).'}
+${slotsAvailability.fullSlots.length > 0 ? `\nSlot completamente occupati (nessun campo libero):\n${slotsAvailability.fullSlots.map(s => `  - ${s}`).join('\n')}` : ''}
+${slotsAvailability.onlyCoveredSlots.length > 0 ? `\nSolo campo coperto disponibile a questi orari (scoperti esauriti):\n${slotsAvailability.onlyCoveredSlots.map(s => `  - ${s}`).join('\n')}` : ''}
+Se l'utente chiede uno slot completamente occupato → NONE con messaggio che informa e propone alternative dalla lista sopra.
+Se l'utente chiede uno slot con solo coperto disponibile e non ha specificato la preferenza → chiedi conferma prima di procedere (NON eseguire BOOK_FIELD direttamente).
 ${player ? `═══ INVITI IN ATTESA ═══
 ${invitationsStr}
 
@@ -537,7 +652,7 @@ export async function executeAction(
     player: any,
     club: any,
     phoneNumber?: string,
-): Promise<{ success: boolean; errorMessage?: string; matchId?: string }> {
+): Promise<{ success: boolean; errorMessage?: string; matchId?: string; requestedTime?: Date }> {
     if (action === 'NONE') return { success: true };
 
     if (action === 'REGISTER_PLAYER') {
@@ -900,7 +1015,7 @@ async function createNewMatchAction(
     club: any,
     preferCovered: boolean = false,
     preferMixed: boolean | null = null,
-): Promise<{ success: boolean; errorMessage?: string; matchId?: string }> {
+): Promise<{ success: boolean; errorMessage?: string; matchId?: string; requestedTime?: Date }> {
     const occupied = await prisma.match.findMany({
         where: { clubId: player.clubId, status: { in: ['OPEN', 'LOCKED'] }, startTime },
         select: { courtId: true },
@@ -922,7 +1037,7 @@ async function createNewMatchAction(
         });
         if (scopertoCount > 0) {
             // Ci sono campi scoperti nel circolo, ma sono tutti occupati a quell'orario
-            return { success: false, errorMessage: 'ONLY_COVERED_AVAILABLE' };
+            return { success: false, errorMessage: 'ONLY_COVERED_AVAILABLE', requestedTime: startTime };
         }
     }
 

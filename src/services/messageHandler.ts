@@ -362,16 +362,34 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[], cor
     if (action !== 'NONE') {
         const result = await executeAction(action, params, player, club, phoneNumber);
         if (!result.success && result.errorMessage) {
-            // Fix #4: solo campo coperto disponibile — chiedi conferma prima di prenotare
+            // Solo campo coperto disponibile — chiedi conferma + proponi alternative scoperto
             if (result.errorMessage === 'ONLY_COVERED_AVAILABLE') {
                 const redis = getRedis();
-                // Salva i params in Redis per il prossimo turno (l'utente risponde sì/no)
                 await redis.set(
                     `state:pending_covered:${jid}`,
                     JSON.stringify({ action, params: { ...params, preferCovered: true } }),
-                    'EX', 300, // 5 minuti
+                    'EX', 300,
                 );
-                await simulateTypingAndSend(jid, 'A quell\'orario gli scoperti sono tutti occupati. Posso prenotarti il campo coperto? 🏟️');
+                // Cerca slot scoperto alternativi vicini
+                let altMsg = '';
+                try {
+                    const { findNearbyFreeScopertoSlots } = await import('./brain');
+                    const refTime = result.requestedTime ?? new Date();
+                    const altSlots = await findNearbyFreeScopertoSlots(
+                        club?.id ?? '',
+                        refTime,
+                        (club as any)?.openTime || '08:00',
+                        (club as any)?.closeTime || '23:30',
+                        3,
+                    );
+                    if (altSlots.length > 0) {
+                        altMsg = `\n\nOppure ho questi orari con scoperto libero:\n${altSlots.map(s => `  📅 ${s}`).join('\n')}\n\nDimmi "coperto" per andare avanti al chiuso, o scegli un orario alternativo!`;
+                    }
+                } catch { /* non bloccare */ }
+                const baseMsg = altMsg
+                    ? 'A quell\'orario gli scoperti sono tutti occupati. Posso prenotarti il campo coperto 🏟️'
+                    : 'A quell\'orario gli scoperti sono tutti occupati. Posso prenotarti il campo coperto? 🏟️';
+                await simulateTypingAndSend(jid, baseMsg + altMsg);
                 return;
             }
             if (result.errorMessage.startsWith('PLAYER_NOT_FOUND:')) {
