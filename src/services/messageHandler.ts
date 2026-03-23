@@ -404,33 +404,45 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[], cor
                 await simulateTypingAndSend(jid, `Ops! ${result.errorMessage} 😕`);
             }
         }
-        // BOOK_FIELD / RESCHEDULE_MATCH: invia scheda prenotazione con dettagli campo + prezzo + indirizzo
+        // BOOK_FIELD / RESCHEDULE_MATCH: se wave partirà → messaggio "in cerca di giocatori"
+        // Se no wave (skill <= 0) → scheda completa subito (non arriverà il gruppo WA)
         if ((action === 'BOOK_FIELD' || action === 'RESCHEDULE_MATCH') && result.success && result.matchId) {
             try {
-                const { calculateSlotCost } = await import('./pricing');
                 const match = await prisma.match.findUnique({
                     where: { id: result.matchId },
                     include: { court: true },
                 });
-                if (match && match.court) {
-                    const totalCost = await calculateSlotCost(match.court.id, match.startTime);
-                    const pricePerPerson = totalCost > 0 ? (totalCost / 4).toFixed(2) : null;
-                    const racketPrice = (club as any)?.racketPrice != null ? `${(club as any).racketPrice}€` : null;
+                if (match) {
                     const timeStr = match.startTime.toLocaleString('it-IT', {
                         timeZone: 'Europe/Rome', weekday: 'long', day: 'numeric',
                         month: 'long', hour: '2-digit', minute: '2-digit',
                     });
-                    const courtType = match.court.isCovered ? '🏟️ coperto' : '☀️ all\'aperto';
-                    const clubLocation = [club?.address, club?.city].filter(Boolean).join(' — ');
-                    const lines = [
-                        `📋 *Dettagli prenotazione*`,
-                        `📅 ${timeStr}`,
-                        `🎾 ${match.court.name} (${courtType})`,
-                        pricePerPerson ? `💶 ${pricePerPerson}€ a persona` : null,
-                        racketPrice ? `🎾 Noleggio racchetta: ${racketPrice}/persona` : null,
-                        clubLocation ? `📍 ${clubLocation}` : null,
-                    ].filter(Boolean);
-                    await simulateTypingAndSend(jid, lines.join('\n'));
+                    const waveWillStart = player && player.skillLevel > 0;
+                    if (waveWillStart) {
+                        // Il bot cercherà gli altri giocatori — i dettagli arrivano col gruppo WA
+                        await simulateTypingAndSend(jid,
+                            `Prenotazione confermata per ${timeStr}. Sto cercando gli altri giocatori — ti avviso appena siamo in 4 con tutti i dettagli. 🎾`
+                        );
+                    } else {
+                        // Nessuna wave (skill test pendente o skill <= 0): scheda completa subito
+                        if (match.court) {
+                            const { calculateSlotCost } = await import('./pricing');
+                            const totalCost = await calculateSlotCost(match.court.id, match.startTime);
+                            const pricePerPerson = totalCost > 0 ? (totalCost / 4).toFixed(2) : null;
+                            const racketPrice = (club as any)?.racketPrice != null ? `${(club as any).racketPrice}€` : null;
+                            const courtType = match.court.isCovered ? '🏟️ coperto' : '☀️ all\'aperto';
+                            const clubLocation = [club?.address, club?.city].filter(Boolean).join(' — ');
+                            const lines = [
+                                `📋 *Prenotazione confermata*`,
+                                `📅 ${timeStr}`,
+                                `🎾 ${match.court.name} (${courtType})`,
+                                pricePerPerson ? `💶 ${pricePerPerson}€ a persona` : null,
+                                racketPrice ? `🎾 Noleggio racchetta: ${racketPrice}/persona` : null,
+                                clubLocation ? `📍 ${clubLocation}` : null,
+                            ].filter(Boolean);
+                            await simulateTypingAndSend(jid, lines.join('\n'));
+                        }
+                    }
                 }
             } catch (err) {
                 logger.error({ err }, 'Failed to send booking detail card');
@@ -492,6 +504,26 @@ Scrivi solo il messaggio.`;
         if (resp.content[0].type === 'text') confirmationMsg = resp.content[0].text.trim();
     } catch { /* usa fallback */ }
 
+    // Scheda dettagli: campo, prezzo, indirizzo — accodata dopo il messaggio AI nel gruppo
+    let detailCard: string | null = null;
+    try {
+        const { calculateSlotCost } = await import('./pricing');
+        const totalCost = await calculateSlotCost(match.court!.id, startTime);
+        const pricePerPerson = totalCost > 0 ? (totalCost / 4).toFixed(2) : null;
+        const racketPrice = (match.club as any)?.racketPrice != null ? `${(match.club as any).racketPrice}€` : null;
+        const courtType = match.court?.isCovered ? '🏟️ coperto' : '☀️ all\'aperto';
+        const clubLocation = [(match.club as any)?.address, (match.club as any)?.city].filter(Boolean).join(' — ');
+        const lines = [
+            `📋 *Dettagli partita*`,
+            `📅 ${dateStr} alle ${timeStr}`,
+            `🎾 ${match.court?.name || 'Campo'} (${courtType})`,
+            pricePerPerson ? `💶 ${pricePerPerson}€ a persona` : null,
+            racketPrice ? `🎾 Noleggio racchetta: ${racketPrice}/persona` : null,
+            clubLocation ? `📍 ${clubLocation}` : null,
+        ].filter(Boolean);
+        detailCard = lines.join('\n');
+    } catch { /* non bloccare la creazione del gruppo */ }
+
     // Filter players that have a valid JID/Phone for the WhatsApp group
     // Guests or placeholder players (with fake identifiers) won't be added to the physical group
     const playerPhones = confirmed
@@ -501,6 +533,12 @@ Scrivi solo il messaggio.`;
     try {
         const groupId = await createGroupAndAddPlayers(groupName, playerPhones, confirmationMsg);
         await prisma.match.update({ where: { id: matchId }, data: { groupId } });
+
+        // Invia scheda dettagli nel gruppo dopo il messaggio di benvenuto
+        if (detailCard && groupId) {
+            const { simulateTypingAndSend } = await import('./whatsapp');
+            await simulateTypingAndSend(groupId, detailCard).catch(() => {});
+        }
 
         // Notifica i PENDING rimasti e dirottali
         const pendingInvs = await prisma.invitation.findMany({

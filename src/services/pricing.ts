@@ -73,7 +73,7 @@ export function calculateCostFromPrices(startTime: Date, prices: any[]): number 
         maxPrice = Math.max(...itemsToProcess.map((p: any) => p.price));
     }
 
-    return maxPrice * 1.5;
+    return maxPrice;
 }
 
 /**

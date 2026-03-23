@@ -252,7 +252,7 @@ export async function callBrain(
                 const vals = standardPrices.map((p: any) => p.price);
                 const minP = Math.min(...vals);
                 const maxP = Math.max(...vals);
-                const perPerson = (v: number) => (v * 1.5 / 4).toFixed(0);
+                const perPerson = (v: number) => (v / 4).toFixed(0);
                 priceStr = minP === maxP
                     ? `€${perPerson(minP)}/persona`
                     : `€${perPerson(minP)}-${perPerson(maxP)}/persona a seconda dell'orario`;
@@ -271,7 +271,7 @@ export async function callBrain(
             if (activeExceptions.length > 0) {
                 const vals = activeExceptions.map((p: any) => p.price);
                 const maxSpecial = Math.max(...vals);
-                const perPerson = (maxSpecial * 1.5 / 4).toFixed(0);
+                const perPerson = (maxSpecial / 4).toFixed(0);
                 const from = activeExceptions[0].startDate ? new Date(activeExceptions[0].startDate).toLocaleDateString('it-IT') : null;
                 const to = activeExceptions[0].endDate ? new Date(activeExceptions[0].endDate).toLocaleDateString('it-IT') : null;
                 const period = from && to ? ` (dal ${from} al ${to})` : from ? ` (dal ${from})` : to ? ` (fino al ${to})` : '';
