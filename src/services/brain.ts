@@ -257,7 +257,7 @@ export async function callBrain(
         ? `Noleggio racchetta: €${(club as any).racketPrice}/persona`
         : null;
 
-    const next7days = Array.from({ length: 7 }, (_, i) => {
+    const next7days = Array.from({ length: 10 }, (_, i) => {
         const d = new Date(nowDate.getTime() + i * 24 * 60 * 60 * 1000);
         return d.toLocaleDateString('it-IT', { timeZone: 'Europe/Rome', weekday: 'short', day: 'numeric', month: 'numeric' });
     }).join(', ');
@@ -267,7 +267,7 @@ Tono: ${toneDescription}
 Presentati come ${botName}, assistente virtuale del circolo, se qualcuno ti chiede il tuo nome o in apertura di conversazione con nuovi contatti. Sei trasparente sul fatto di essere un assistente virtuale — se te lo chiedono esplicitamente, confermalo senza esitazione.
 Usa SEMPRE il "tu" — mai il "voi" o il "lei". Es. "ti trovi bene", "puoi prenotare", "sei dentro" — mai "vi trovate", "potete", "siete".
 Oggi è: ${now}
-Prossimi 7 giorni: ${next7days}
+Prossimi 10 giorni: ${next7days}
 ${isAdmin ? `
 ═══ MODALITÀ ADMIN ═══
 Stai parlando con l'amministratore del circolo. Rispondi in modo diretto e operativo, senza le presentazioni e le formalità che useresti con un giocatore normale.
