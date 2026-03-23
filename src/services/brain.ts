@@ -310,7 +310,11 @@ Raccogliere nome e cognome è la tua priorità, ma in modo completamente natural
 - MAI usare REGISTER_PLAYER senza avere sia nome che cognome certi` : `═══ STATO GIOCATORE ═══
 Nome: ${player.name || 'non registrato'}
 Livello: ${player.skillLevel > 0 ? player.skillLevel + ' (scala 1-7, dove 1=principiante, 7=agonista)' : 'da assegnare — Skill Test in attesa'}
-${player.skillLevel <= 0 ? 'NOTA: questo giocatore non ha ancora il livello. Può prenotare campi, ma non riceverà inviti automatici finché non completa lo Skill Test.' : ''}
+${player.skillLevel <= 0 ? `NOTA SKILL TEST: questo giocatore NON ha ancora completato lo Skill Test.
+- PUÒ prenotare un campo per sé e i suoi amici (fino a 4 persone totali)
+- NON può essere abbinato automaticamente con altri giocatori — il sistema non lo cerca e non lo propone
+- Se chiede di giocare "con altri" o "con persone del suo livello": spiegagli PRIMA DI PRENOTARE che per quello serve lo Skill Test, che il circolo organizzerà appena possibile. Poi chiedi se vuole comunque prenotare il campo.
+- Se vuole prenotare solo il campo (anche con amici propri) → procedi con BOOK_FIELD normalmente.` : ''}
 ${player.notes ? `Note/preferenze giocatore: ${player.notes}` : ''}
 ${lessonInfo ? `\n═══ LEZIONE INDIVIDUALE ═══\n${lessonInfo}\nIl maestro contatterà il giocatore per l'orario — il sistema invia solo la notifica.` : ''}`}
 
@@ -332,7 +336,8 @@ ${!player ? `═══ AZIONI DISPONIBILI ═══
 Rispondi SEMPRE con JSON valido: { "message": "...", "action": "NOME", "params": {...} }
 
 - NONE — risposta conversazionale: info sul circolo, prezzi, come funziona, qualsiasi cosa che non richieda registrazione
-- REGISTER_PLAYER — params: { "name": "Nome Cognome" } — registra il nuovo giocatore. Usa SOLO quando hai nome E cognome certi. Il messaggio deve essere un breve benvenuto caldo nel circolo e spiegare che può già prenotare campi e che verranno contattati per lo Skill Test.` : `═══ AZIONI DISPONIBILI ═══
+- REGISTER_PLAYER — params: { "name": "Nome Cognome" } — registra il nuovo giocatore. Usa SOLO quando hai nome E cognome certi. Il messaggio deve essere un breve benvenuto caldo nel circolo, spiegare che può già prenotare campi e che verranno contattati per lo Skill Test.
+  Quando hai solo il nome e chiedi il cognome, spiega brevemente il motivo: "per salvare il tuo contatto e proporti partite future ho bisogno anche del cognome".` : `═══ AZIONI DISPONIBILI ═══
 Rispondi SEMPRE con JSON valido: { "message": "...", "action": "NOME", "params": {...} }
 
 - NONE — risposta conversazionale, nessuna operazione DB. Usa per saluti, domande, info, ringraziamenti, qualsiasi cosa non richieda un'azione specifica
@@ -345,7 +350,7 @@ Rispondi SEMPRE con JSON valido: { "message": "...", "action": "NOME", "params":
   Se manca l'orario → NONE e chiedi solo quello.
   Se c'è una partita aperta compatibile → metti joinMatchId.
   Messaggio di conferma: breve e caldo, es. "Perfetto, sei dentro! 🎾" — i dettagli (campo, prezzo, indirizzo) li manda il sistema subito dopo.
-  ${skillTestPending ? 'Skill Test pendente: conferma la prenotazione ma NON promettere abbinamento altri giocatori.' : ''}
+  ${skillTestPending ? 'Skill Test pendente: puoi confermare la prenotazione del campo, ma PRIMA spiega che il sistema non abbinerà altri giocatori finché non completa lo Skill Test.' : ''}
   ⚠️ ATTENZIONE: se il giocatore ha già partite confermate E chiede un nuovo slot, valuta se è una correzione o un'aggiunta (vedi regola RESCHEDULE sotto).
 - OPT_OUT — params: {} — utente non vuole più messaggi / vuole essere rimosso dalla lista
 - OPT_IN — params: {} — utente vuole rientrare nella lista (es. "voglio ricominciare", "rimettimi dentro", "voglio ricevere partite di nuovo"). Usa solo se il giocatore risulta inattivo o lo chiede esplicitamente.
@@ -490,12 +495,16 @@ export async function executeAction(
         const name = (params.name || '').trim();
         if (!name || !name.includes(' ')) return { success: true }; // nome incompleto, continua conversazione
         if (!club?.id || !phoneNumber) return { success: true };
+        const { inferGender } = await import('./ai');
+        const firstName = name.split(' ')[0];
+        const gender = await inferGender(firstName).catch(() => 'UNKNOWN' as const);
         await prisma.player.create({
             data: {
                 phoneNumber: phoneNumber.replace(/\D/g, ''),
                 name,
                 clubId: club.id,
-                skillLevel: 0,
+                skillLevel: -1,
+                gender,
                 active: true,
             },
         });
