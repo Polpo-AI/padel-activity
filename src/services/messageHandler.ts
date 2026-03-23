@@ -418,6 +418,22 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[], cor
                         await simulateTypingAndSend(jid, `Non trovo "${searchedName}" tra i giocatori iscritti al circolo. Se sei sicuro che sia registrato, scrivimi di nuovo e verifico con il campo!`);
                     }
                 }
+            } else if (result.errorMessage === 'ALL_COURTS_TAKEN') {
+                // Tutti i campi occupati a quell'orario (skill incompatibile con le partite esistenti)
+                // Cerca partite pending quasi complete da proporre come alternativa
+                let redirectMsg = '';
+                try {
+                    const { findRedirectOptions } = await import('./redirect');
+                    const refTime = result.requestedTime ?? new Date();
+                    const opts = await findRedirectOptions(1, refTime, 'none', club?.id ?? '');
+                    const nearComplete = opts.filter(o => o.spotsLeft !== undefined && o.spotsLeft <= 2).slice(0, 3);
+                    if (nearComplete.length > 0) {
+                        const list = nearComplete.map((o, i) => `  ${i + 1}. ${o.description}`).join('\n');
+                        redirectMsg = `\n\nHo però queste partite in corso che cercano ancora giocatori:\n${list}\n\nVuoi unirti a una? Dimmi il numero oppure dimmi un altro orario!`;
+                    }
+                } catch { /* non bloccare */ }
+                const baseMsg = `Tutti i campi sono occupati a quell'orario${redirectMsg ? '' : ' — prova un orario diverso tra quelli liberi che ti ho indicato!'}.`;
+                await simulateTypingAndSend(jid, baseMsg + redirectMsg);
             } else {
                 await simulateTypingAndSend(jid, `Ops! ${result.errorMessage} 😕`);
             }
