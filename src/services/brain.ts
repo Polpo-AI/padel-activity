@@ -389,12 +389,15 @@ Rispondi SEMPRE con JSON valido: { "message": "...", "action": "NOME", "params":
 - ACCEPT_INVITATION — params: { "invitationId": "..." } — utente conferma presenza a partita
 - REJECT_INVITATION — params: { "invitationId": "..." } — utente declina partita
 - CANCEL_MATCH — params: { "matchPlayerId": "..." } — utente vuole annullare partecipazione confermata
-- BOOK_FIELD — params: { "day": "YYYY-MM-DD o oggi/domani/lunedì/martedì/...", "time": "HH:MM", "joinMatchId": "id o null", "preferCovered": false }
+- BOOK_FIELD — params: { "day": "YYYY-MM-DD o oggi/domani/lunedì/martedì/...", "time": "HH:MM", "joinMatchId": "id o null", "preferCovered": false, "preferMixed": null }
   Usa quando l'utente vuole giocare/prenotare e ha fornito giorno + orario.
   preferCovered: true SOLO se l'utente lo chiede esplicitamente (es. "campo al coperto", "al chiuso"). Default: false (scoperto preferito).
+  preferMixed: true se accetta match misto (maschi e femmine insieme), false se preferisce solo stesso sesso, null se non ha ancora espresso preferenza.
+  ⚠️ REGOLA MISTO: se preferMixed è null (non ancora espresso e skill > 0), prima chiedi con NONE: "Preferisci un match solo con giocatori del tuo stesso sesso o va bene anche misto?" Poi al turno successivo usa BOOK_FIELD con preferMixed impostato. Se lo skill test è pendente (skill <= 0) non chiedere — salta e usa preferMixed: false.
   Se manca l'orario → NONE e chiedi solo quello.
   Se c'è una partita aperta compatibile → metti joinMatchId.
-  Messaggio nel JSON: breve e neutro, tipo "Perfetto, prenoto subito! 🎾" oppure "Vedo subito se c'è posto!" — NON menzionare mai il nome del campo, il tipo (coperto/scoperto) o altri dettagli nella risposta: non sai ancora quale campo verrà assegnato. I dettagli li manda il sistema subito dopo.
+  Messaggio nel JSON per BOOK_FIELD (quando skill > 0): "Perfetto, sto cercando gli altri giocatori — ti scrivo nel gruppo quando siamo in 4. 🎾" o simile. NON menzionare mai il nome del campo, il tipo (coperto/scoperto) o altri dettagli: non sai ancora quale campo verrà assegnato e i dettagli arrivano col gruppo WA.
+  Messaggio per BOOK_FIELD (quando skill test pendente): breve e neutro, tipo "Perfetto, prenoto subito! 🎾" — i dettagli li manda il sistema.
   ${skillTestPending ? 'Skill Test pendente: puoi confermare la prenotazione del campo, ma PRIMA spiega che il sistema non abbinerà altri giocatori finché non completa lo Skill Test.' : ''}
   ⚠️ ATTENZIONE: se il giocatore ha già partite confermate E chiede un nuovo slot, valuta se è una correzione o un'aggiunta (vedi regola RESCHEDULE sotto).
 - OPT_OUT — params: {} — utente non vuole più messaggi / vuole essere rimosso dalla lista
@@ -656,7 +659,7 @@ export async function executeAction(
             await decreaseReliability(player.id).catch(() => {});
 
             // 3. Prenota nuovo slot
-            return await bookSlotForPlayer(startTime, player, club);
+            return await bookSlotForPlayer(startTime, player, club, false, null);
         }
 
         if (action === 'REQUEST_LESSON') {
@@ -678,7 +681,8 @@ export async function executeAction(
                 return { ...joinResult, matchId: params.joinMatchId };
             }
 
-            return await bookSlotForPlayer(startTime, player, club, params.preferCovered === true);
+            const preferMixed = params.preferMixed === true ? true : params.preferMixed === false ? false : null;
+            return await bookSlotForPlayer(startTime, player, club, params.preferCovered === true, preferMixed);
         }
 
         if (action === 'OPT_OUT') {
@@ -840,6 +844,7 @@ async function bookSlotForPlayer(
     player: any,
     club: any,
     preferCovered: boolean = false,
+    preferMixed: boolean | null = null,
 ): Promise<{ success: boolean; errorMessage?: string; matchId?: string }> {
     // Cerca match aperto compatibile nella finestra ±30min
     const from = new Date(startTime.getTime() - 30 * 60 * 1000);
@@ -886,7 +891,7 @@ async function bookSlotForPlayer(
         }
     }
 
-    return await createNewMatchAction(startTime, player, club, preferCovered);
+    return await createNewMatchAction(startTime, player, club, preferCovered, preferMixed);
 }
 
 async function createNewMatchAction(
@@ -894,6 +899,7 @@ async function createNewMatchAction(
     player: any,
     club: any,
     preferCovered: boolean = false,
+    preferMixed: boolean | null = null,
 ): Promise<{ success: boolean; errorMessage?: string; matchId?: string }> {
     const occupied = await prisma.match.findMany({
         where: { clubId: player.clubId, status: { in: ['OPEN', 'LOCKED'] }, startTime },
@@ -928,7 +934,7 @@ async function createNewMatchAction(
             courtId: freeCourt.id,
             startTime,
             skillLevel,
-            isMixed: false,
+            isMixed: preferMixed === true,
             allowMixedLevels: club?.allowMixedLevels ?? false,
             playersNeeded: 4,
             status: 'OPEN',

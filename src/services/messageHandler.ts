@@ -404,44 +404,37 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[], cor
                 await simulateTypingAndSend(jid, `Ops! ${result.errorMessage} 😕`);
             }
         }
-        // BOOK_FIELD / RESCHEDULE_MATCH: se wave partirà → messaggio "in cerca di giocatori"
-        // Se no wave (skill <= 0) → scheda completa subito (non arriverà il gruppo WA)
+        // BOOK_FIELD / RESCHEDULE_MATCH: se NO wave (skill <= 0) → scheda completa subito
+        // Se wave partirà → il brain ha già comunicato "sto cercando giocatori";
+        //   la conferma reale arriva col gruppo WA (handleMatchFilled)
         if ((action === 'BOOK_FIELD' || action === 'RESCHEDULE_MATCH') && result.success && result.matchId) {
             try {
-                const match = await prisma.match.findUnique({
-                    where: { id: result.matchId },
-                    include: { court: true },
-                });
-                if (match) {
-                    const timeStr = match.startTime.toLocaleString('it-IT', {
-                        timeZone: 'Europe/Rome', weekday: 'long', day: 'numeric',
-                        month: 'long', hour: '2-digit', minute: '2-digit',
+                const waveWillStart = player && player.skillLevel > 0;
+                if (!waveWillStart) {
+                    const match = await prisma.match.findUnique({
+                        where: { id: result.matchId },
+                        include: { court: true },
                     });
-                    const waveWillStart = player && player.skillLevel > 0;
-                    if (waveWillStart) {
-                        // Il bot cercherà gli altri giocatori — i dettagli arrivano col gruppo WA
-                        await simulateTypingAndSend(jid,
-                            `Prenotazione confermata per ${timeStr}. Sto cercando gli altri giocatori — ti avviso appena siamo in 4 con tutti i dettagli. 🎾`
-                        );
-                    } else {
-                        // Nessuna wave (skill test pendente o skill <= 0): scheda completa subito
-                        if (match.court) {
-                            const { calculateSlotCost } = await import('./pricing');
-                            const totalCost = await calculateSlotCost(match.court.id, match.startTime);
-                            const pricePerPerson = totalCost > 0 ? (totalCost / 4).toFixed(2) : null;
-                            const racketPrice = (club as any)?.racketPrice != null ? `${(club as any).racketPrice}€` : null;
-                            const courtType = match.court.isCovered ? '🏟️ coperto' : '☀️ all\'aperto';
-                            const clubLocation = [club?.address, club?.city].filter(Boolean).join(' — ');
-                            const lines = [
-                                `📋 *Prenotazione confermata*`,
-                                `📅 ${timeStr}`,
-                                `🎾 ${match.court.name} (${courtType})`,
-                                pricePerPerson ? `💶 ${pricePerPerson}€ a persona` : null,
-                                racketPrice ? `🎾 Noleggio racchetta: ${racketPrice}/persona` : null,
-                                clubLocation ? `📍 ${clubLocation}` : null,
-                            ].filter(Boolean);
-                            await simulateTypingAndSend(jid, lines.join('\n'));
-                        }
+                    if (match?.court) {
+                        const { calculateSlotCost } = await import('./pricing');
+                        const totalCost = await calculateSlotCost(match.court.id, match.startTime);
+                        const pricePerPerson = totalCost > 0 ? (totalCost / 4).toFixed(2) : null;
+                        const racketPrice = (club as any)?.racketPrice != null ? `${(club as any).racketPrice}€` : null;
+                        const timeStr = match.startTime.toLocaleString('it-IT', {
+                            timeZone: 'Europe/Rome', weekday: 'long', day: 'numeric',
+                            month: 'long', hour: '2-digit', minute: '2-digit',
+                        });
+                        const courtType = match.court.isCovered ? '🏟️ coperto' : '☀️ all\'aperto';
+                        const clubLocation = [club?.address, club?.city].filter(Boolean).join(' — ');
+                        const lines = [
+                            `📋 *Prenotazione confermata*`,
+                            `📅 ${timeStr}`,
+                            `🎾 ${match.court.name} (${courtType})`,
+                            pricePerPerson ? `💶 ${pricePerPerson}€ a persona` : null,
+                            racketPrice ? `🎾 Noleggio racchetta: ${racketPrice}/persona` : null,
+                            clubLocation ? `📍 ${clubLocation}` : null,
+                        ].filter(Boolean);
+                        await simulateTypingAndSend(jid, lines.join('\n'));
                     }
                 }
             } catch (err) {
