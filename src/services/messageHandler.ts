@@ -99,6 +99,12 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[], cor
             if (content) {
                 const messageId = msg.raw.key?.id;
 
+                // Fix #5: skip persistence for replayed messages (already in DB from original send)
+                if (msg.alreadyPersisted) {
+                    filteredMessages.push(msg);
+                    continue;
+                }
+
                 if (messageId) {
                     const existing = await prisma.whatsAppMessage.findFirst({
                         where: { messageId }
@@ -202,6 +208,7 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[], cor
                         type: 'text',
                         text: stored,
                         clubId: getClubId(),
+                        alreadyPersisted: true, // Fix #5: already in DB from original send
                         raw: {
                             key: { id: `APPROVED_${Date.now()}`, remoteJid: `${targetPhone}@s.whatsapp.net`, fromMe: false },
                             pushName: targetPhone,
@@ -264,6 +271,63 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[], cor
         return;
     }
 
+    // ─── PENDING COVERED CONFIRMATION (Fix #4) ───
+    // Se il bot ha chiesto "campo coperto va bene?" e l'utente risponde sì, esegui il booking
+    {
+        const redis = getRedis();
+        const pendingCoveredRaw = await redis.get(`state:pending_covered:${jid}`);
+        if (pendingCoveredRaw && combinedText) {
+            const lower = combinedText.toLowerCase().trim();
+            const isYes = /^(s[iì]|yes|ok|certo|va bene|esatto|perfetto|dai|sì|si)/.test(lower);
+            const isNo = /^(no|nope|non|neanche|lascia perdere|cancella)/.test(lower);
+            if (isYes || isNo) {
+                await redis.del(`state:pending_covered:${jid}`);
+                if (isYes) {
+                    const { action: pendingAction, params: pendingParams } = JSON.parse(pendingCoveredRaw);
+                    const { executeAction } = await import('./brain');
+                    const brainPlayer = player || await prisma.player.findFirst({
+                        where: { phoneNumber: { in: phoneVariants }, clubId: resolvedClubId ? resolvedClubId : { not: '' } }
+                    });
+                    const result = await executeAction(pendingAction, pendingParams, brainPlayer, club, phoneNumber);
+                    if (result.success && result.matchId) {
+                        const { calculateSlotCost } = await import('./pricing');
+                        const match = await prisma.match.findUnique({
+                            where: { id: result.matchId },
+                            include: { court: true },
+                        });
+                        if (match?.court) {
+                            const totalCost = await calculateSlotCost(match.court.id, match.startTime);
+                            const pricePerPerson = totalCost > 0 ? (totalCost / 4).toFixed(2) : null;
+                            const timeStr = match.startTime.toLocaleString('it-IT', {
+                                timeZone: 'Europe/Rome', weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit',
+                            });
+                            const courtType = match.court.isCovered ? '🏟️ coperto' : '☀️ all\'aperto';
+                            const clubLocation = [club?.address, club?.city].filter(Boolean).join(' — ');
+                            await simulateTypingAndSend(jid, 'Perfetto, prenoto il campo coperto! 🏟️');
+                            const lines = [
+                                `📋 *Dettagli prenotazione*`,
+                                `📅 ${timeStr}`,
+                                `🎾 ${match.court.name} (${courtType})`,
+                                pricePerPerson ? `💶 ${pricePerPerson}€ a persona` : null,
+                                clubLocation ? `📍 ${clubLocation}` : null,
+                            ].filter(Boolean);
+                            await simulateTypingAndSend(jid, lines.join('\n'));
+                        } else {
+                            await simulateTypingAndSend(jid, 'Perfetto, sei dentro! 🏟️');
+                        }
+                    } else if (result.errorMessage) {
+                        await simulateTypingAndSend(jid, `Ops! ${result.errorMessage} 😕`);
+                    }
+                } else {
+                    await simulateTypingAndSend(jid, 'Ok, nessun problema! Dimmi se vuoi provare un altro orario. 🎾');
+                }
+                return;
+            }
+            // Se non è un sì/no chiaro, cancella il pending e prosegui normalmente col brain
+            await redis.del(`state:pending_covered:${jid}`);
+        }
+    }
+
     // ─── BRAIN ───
     conversationalPhase.set(getCorrelationId() || correlationId, true);
 
@@ -298,6 +362,18 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[], cor
     if (action !== 'NONE') {
         const result = await executeAction(action, params, player, club, phoneNumber);
         if (!result.success && result.errorMessage) {
+            // Fix #4: solo campo coperto disponibile — chiedi conferma prima di prenotare
+            if (result.errorMessage === 'ONLY_COVERED_AVAILABLE') {
+                const redis = getRedis();
+                // Salva i params in Redis per il prossimo turno (l'utente risponde sì/no)
+                await redis.set(
+                    `state:pending_covered:${jid}`,
+                    JSON.stringify({ action, params: { ...params, preferCovered: true } }),
+                    'EX', 300, // 5 minuti
+                );
+                await simulateTypingAndSend(jid, 'A quell\'orario gli scoperti sono tutti occupati. Posso prenotarti il campo coperto? 🏟️');
+                return;
+            }
             if (result.errorMessage.startsWith('PLAYER_NOT_FOUND:')) {
                 const searchedName = result.errorMessage.split(':').slice(1).join(':').trim();
                 const redis = getRedis();

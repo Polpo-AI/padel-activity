@@ -134,6 +134,32 @@ grep REDIS_PASSWORD .env       # → per redis-cli -a <password>
 **Fix in place:** in `callBrain` (brain.ts), prima di costruire il payload per Anthropic: (1) fonde i messaggi con lo stesso ruolo consecutivi con `\n`; (2) rimuove l'ultimo messaggio se è `user` (il `userMessage` lo sostituisce già). In questo modo Anthropic riceve sempre alternanza corretta.
 **Regola:** MAI passare ad Anthropic una lista di messaggi senza prima verificare che i ruoli si alternino correttamente.
 
+### 27. skillLevel -1 per nuovi giocatori + gender inference dal nome
+**Regola:** REGISTER_PLAYER crea il player con `skillLevel: -1` (non 0). `skillLevel <= 0` esclude già dalle wave. Il genere viene inferito dal primo nome via `inferGender(firstName)` al momento della registrazione.
+**Dettagli:** `skillLevel: -1` significa "registrato ma Skill Test non ancora effettuato". Il bot può prenotare campi (`BOOK_FIELD`) per questi giocatori ma NON avvia wave. Il brain ha una nota esplicita su questo comportamento nel system prompt.
+
+### 28. INVITE_PREFERRED NON va usato per "amici" generici
+**Regola:** INVITE_PREFERRED richiede un nome specifico (es. "voglio giocare con Marco Rossi"). Se l'utente dice "vengo con degli amici", "siamo in gruppo", "veniamo in 4" senza nomi → BOOK_FIELD direttamente. Il campo tiene fino a 4 giocatori.
+**Bug reale:** il bot chiedeva "i tuoi amici sono iscritti al circolo?" quando l'utente diceva genericamente "amici" → domanda inutile e fastidiosa.
+
+### 29. Il brain NON deve promettere il campo prima di eseguire BOOK_FIELD
+**Regola:** nella risposta JSON del brain (campo `message`), mai menzionare il nome del campo, il tipo (coperto/scoperto) o altri dettagli specifici. Il brain non sa quale campo verrà assegnato. Usare frasi neutre: "Perfetto, prenoto subito! 🎾" o "Vedo subito se c'è posto!". I dettagli arrivano nella scheda separata inviata da messageHandler DOPO executeAction.
+**Bug reale:** Roberto ha visto il bot "promettere" il campo scoperto, poi assegnare silenziosamente il coperto.
+
+### 30. Campo coperto silenzioso quando lo scoperto è pieno — chiedere conferma
+**Regola:** se l'utente non richiede esplicitamente il coperto ma tutti gli scoperti sono occupati a quell'orario, `createNewMatchAction` ritorna `ONLY_COVERED_AVAILABLE`. `messageHandler` intercetta questo errore e chiede conferma: "A quell'orario gli scoperti sono tutti occupati. Posso prenotarti il campo coperto?". La risposta sì/no è gestita nel successivo turno da `state:pending_covered:{jid}` (TTL 5min).
+**Scope:** si applica solo se nel circolo esistono campi scoperti (altrimenti il coperto è l'unico tipo disponibile e non serve conferma).
+
+### 31. Doppia prenotazione nello stesso slot — check pre-booking
+**Regola:** `bookSlotForPlayer` controlla PRIMA di creare/joinare una partita se il player ha già una `MatchPlayer` (leftAt=null) in un match OPEN/LOCKED nella finestra ±30min. Se sì, ritorna errore "Hai già una prenotazione in quella fascia oraria." — mai creare duplicati.
+
+### 32. Slot availability nel system prompt del brain
+**Architettura:** `buildBrainContext` calcola per i prossimi 10 giorni quali slot sono completamente occupati (`fullSlots`) e quali hanno solo campo coperto disponibile (`onlyCoveredSlots`). Questi vengono mostrati nel system prompt come sezione `═══ DISPONIBILITÀ CAMPI ═══`. Il brain usa queste info per gestire proattivamente le situazioni (es. chiedere conferma coperto PRIMA di tentare il booking).
+
+### 33. Messaggi replay (APPROVED_*) salvati due volte nel DB
+**Bug reale:** quando admin approva un numero (`ok +393...`), il messaggio originale è già in DB. Il replay viene inviato con ID fake `APPROVED_1234567` → messageHandler non trova il duplcato → salva di nuovo.
+**Fix:** `NormalizedMessage` ha campo `alreadyPersisted?: boolean`. Il replay viene creato con `alreadyPersisted: true`. In `_handleBatchInner`, i messaggi con questo flag vengono aggiunti a `filteredMessages` senza passare dal DB.
+
 ### 26. Messaggi `append` persi nella finestra di 5s dopo reconnect
 **Bug reale:** al `connection: 'open'`, `isResyncing` veniva impostato a `true` solo dentro un `setTimeout` di 5s. I messaggi `append` (offline recovery da WA) arrivano immediatamente dopo il connect — in quei 5s venivano scartati silenziosamente.
 **Fix in place:** i messaggi `append` vengono ora raccolti sempre, indipendentemente da `isResyncing`. Il `syncTimer` (15s debounce) parte all'arrivo del primo `append` e processa tutto dopo l'ultimo. I messaggi `notify` (real-time) non vengono mai bloccati durante il resync.

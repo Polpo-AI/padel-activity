@@ -25,6 +25,7 @@ export interface NormalizedMessage {
     contactName?: string;
     raw: proto.IWebMessageInfo;
     clubId?: string; // quale circolo ha ricevuto questo messaggio
+    alreadyPersisted?: boolean; // true per messaggi replay (approved) già salvati nel DB
 }
 
 type BatchHandler = (jid: string, messages: NormalizedMessage[]) => Promise<void>;
