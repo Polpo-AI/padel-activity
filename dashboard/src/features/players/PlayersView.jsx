@@ -138,6 +138,70 @@ function PlayerProfile({ playerId, token, onClose, onUpdated, skillLevelCount = 
   );
 }
 
+// ─── AddPlayerModal ────────────────────────────
+
+function AddPlayerModal({ token, onClose, onCreated }) {
+  const [name, setName] = useState("");
+  const [phone, setPhone] = useState("");
+  const [skillLevel, setSkillLevel] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState("");
+
+  const submit = async () => {
+    if (!name.trim() || !name.trim().includes(" ")) { setErr("Inserisci nome e cognome"); return; }
+    if (!phone.trim()) { setErr("Inserisci il numero di telefono"); return; }
+    setSaving(true); setErr("");
+    try {
+      await api("/players", token, {
+        method: "POST",
+        body: JSON.stringify({
+          name: name.trim(),
+          phoneNumber: phone.trim(),
+          ...(skillLevel !== "" ? { skillLevel: parseFloat(skillLevel) } : {}),
+        }),
+      });
+      onCreated();
+      onClose();
+    } catch (e) { setErr(e.message); }
+    finally { setSaving(false); }
+  };
+
+  return (
+    <Modal title="Aggiungi giocatore" onClose={onClose}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <div>
+          <label style={labelSt}>Nome e cognome *</label>
+          <input value={name} onChange={e => setName(e.target.value)}
+            placeholder="Mario Rossi" style={inputSt} autoFocus
+            onKeyDown={e => e.key === "Enter" && submit()} />
+        </div>
+        <div>
+          <label style={labelSt}>Numero di telefono *</label>
+          <input value={phone} onChange={e => setPhone(e.target.value)}
+            placeholder="393471234567" style={inputSt}
+            onKeyDown={e => e.key === "Enter" && submit()} />
+          <div style={{ fontSize: 11, color: "#6b7280", marginTop: 4 }}>Solo cifre, con prefisso (es. 393471234567)</div>
+        </div>
+        <div>
+          <label style={labelSt}>Livello di gioco (opzionale)</label>
+          <input type="number" step="0.5" min="1" max="7" value={skillLevel}
+            onChange={e => setSkillLevel(e.target.value)}
+            placeholder="es. 3.0 — lascia vuoto se da assegnare" style={inputSt}
+            onKeyDown={e => e.key === "Enter" && submit()} />
+          <div style={{ fontSize: 11, color: "#6b7280", marginTop: 4 }}>Se non assegnato, il giocatore potrà prenotare ma non riceverà inviti automatici</div>
+        </div>
+        {err && <div style={{ fontSize: 12, color: "#ef4444", padding: "8px 12px", background: "#fef2f2", borderRadius: 8 }}>⚠ {err}</div>}
+        <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+          <button onClick={onClose} style={btnGhost} disabled={saving}>Annulla</button>
+          <button onClick={submit} style={btnPrimary} disabled={saving}>
+            {saving ? "Creando..." : "Aggiungi giocatore"}
+          </button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
 // ─── PlayersView ──────────────────────────────
 
 export default function PlayersView({ token, club }) {
@@ -146,6 +210,7 @@ export default function PlayersView({ token, club }) {
   const [search, setSearch] = useState("");
   const [filterActive, setFilterActive] = useState("all");
   const [selectedPlayer, setSelectedPlayer] = useState(null);
+  const [showAddPlayer, setShowAddPlayer] = useState(false);
   const [togglePhone, setTogglePhone] = useState("");
   const [toggleResult, setToggleResult] = useState(null);
   const [toggleLoading, setToggleLoading] = useState(false);
@@ -209,6 +274,9 @@ export default function PlayersView({ token, club }) {
             {f === "all" ? "Tutti" : f === "active" ? "✅ Attivi" : "🚫 Disattivati"}
           </button>
         ))}
+        <button onClick={() => setShowAddPlayer(true)} style={{ ...btnPrimary, whiteSpace: "nowrap" }}>
+          + Aggiungi
+        </button>
       </div>
 
       {loading ? (
@@ -260,6 +328,14 @@ export default function PlayersView({ token, club }) {
           skillLevelCount={club?.skillLevelCount || 3}
           onClose={() => setSelectedPlayer(null)}
           onUpdated={load}
+        />
+      )}
+
+      {showAddPlayer && (
+        <AddPlayerModal
+          token={token}
+          onClose={() => setShowAddPlayer(false)}
+          onCreated={() => { load(); setToast({ msg: "Giocatore aggiunto ✓", type: "ok" }); }}
         />
       )}
 

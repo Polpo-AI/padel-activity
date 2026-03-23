@@ -534,6 +534,61 @@ router.get('/players/:id', authMiddleware, async (req: Request, res: Response) =
     }
 });
 
+// ─────────────────────────────────────────────
+// CREATE PLAYER — aggiunta manuale dalla dashboard
+// ─────────────────────────────────────────────
+
+router.post('/players', authMiddleware, async (req: Request, res: Response) => {
+    const clubId = (req as any).clubId as string;
+    const { name, phoneNumber, skillLevel } = req.body;
+
+    if (!name || !String(name).trim().includes(' ')) {
+        return res.status(400).json({ error: 'Nome e cognome richiesti (es. "Mario Rossi")' });
+    }
+    if (!phoneNumber) {
+        return res.status(400).json({ error: 'Numero di telefono richiesto' });
+    }
+
+    const normalized = String(phoneNumber).replace(/\D/g, '');
+    if (normalized.length < 8 || normalized.length > 15) {
+        return res.status(400).json({ error: 'Numero di telefono non valido' });
+    }
+
+    try {
+        const existing = await prisma.player.findFirst({
+            where: { phoneNumber: normalized, clubId },
+        });
+        if (existing) {
+            return res.status(409).json({ error: 'Giocatore già registrato con questo numero' });
+        }
+
+        const { inferGender } = await import('../services/ai');
+        const firstName = String(name).trim().split(' ')[0];
+        const gender = await inferGender(firstName).catch(() => 'UNKNOWN' as const);
+
+        const player = await prisma.player.create({
+            data: {
+                phoneNumber: normalized,
+                name: String(name).trim(),
+                clubId,
+                skillLevel: skillLevel !== undefined ? parseFloat(skillLevel) : -1,
+                gender,
+                active: true,
+            },
+        });
+
+        // Approva il numero in Redis così può scrivere al bot senza passare dall'admin
+        const { getRedis } = await import('../services/queue');
+        const redis = getRedis();
+        await redis.set(`approval:approved:${normalized}`, '1', 'EX', 90 * 24 * 3600);
+
+        logger.info({ playerId: player.id, phone: normalized }, 'Player created from dashboard');
+        res.status(201).json(player);
+    } catch (e: any) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
 router.patch('/players/:id', authMiddleware, async (req: Request, res: Response) => {
     const clubId = (req as any).clubId as string;
     const { id } = req.params;
