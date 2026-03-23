@@ -79,8 +79,8 @@ export async function buildBrainContext(jid: string, phoneNumber: string): Promi
         take: 30,
     }) : [];
 
-    const isAdmin = !!(player && club?.adminPhone &&
-        player.phoneNumber.replace(/\D/g, '') === club.adminPhone.replace(/\D/g, ''));
+    const isAdmin = !!(club?.adminPhone &&
+        phoneNumber.replace(/\D/g, '') === club.adminPhone.replace(/\D/g, ''));
 
     let pendingInvitations: any[] = [];
     let confirmedMatches: any[] = [];
@@ -257,11 +257,17 @@ export async function callBrain(
         ? `Noleggio racchetta: €${(club as any).racketPrice}/persona`
         : null;
 
+    const next7days = Array.from({ length: 7 }, (_, i) => {
+        const d = new Date(nowDate.getTime() + i * 24 * 60 * 60 * 1000);
+        return d.toLocaleDateString('it-IT', { timeZone: 'Europe/Rome', weekday: 'short', day: 'numeric', month: 'numeric' });
+    }).join(', ');
+
     const systemPrompt = `Ti chiami ${botName} e sei l'assistente virtuale del circolo padel "${club?.name || 'Padel Club'}".
 Tono: ${toneDescription}
 Presentati come ${botName}, assistente virtuale del circolo, se qualcuno ti chiede il tuo nome o in apertura di conversazione con nuovi contatti. Sei trasparente sul fatto di essere un assistente virtuale — se te lo chiedono esplicitamente, confermalo senza esitazione.
 Usa SEMPRE il "tu" — mai il "voi" o il "lei". Es. "ti trovi bene", "puoi prenotare", "sei dentro" — mai "vi trovate", "potete", "siete".
 Oggi è: ${now}
+Prossimi 7 giorni: ${next7days}
 ${isAdmin ? `
 ═══ MODALITÀ ADMIN ═══
 Stai parlando con l'amministratore del circolo. Rispondi in modo diretto e operativo, senza le presentazioni e le formalità che useresti con un giocatore normale.
@@ -324,8 +330,7 @@ ${!player ? `═══ AZIONI DISPONIBILI ═══
 Rispondi SEMPRE con JSON valido: { "message": "...", "action": "NOME", "params": {...} }
 
 - NONE — risposta conversazionale: info sul circolo, prezzi, come funziona, qualsiasi cosa che non richieda registrazione
-- REGISTER_PLAYER — params: { "name": "Nome Cognome" } — registra il nuovo giocatore. Usa SOLO quando hai nome E cognome certi. Il messaggio deve essere un breve benvenuto caldo nel circolo e spiegare che può già prenotare campi e che verranno contattati per lo Skill Test.
-- FAQ_REQUEST — params: { "question": "..." } — per domande specifiche sul circolo a cui non puoi rispondere` : `═══ AZIONI DISPONIBILI ═══
+- REGISTER_PLAYER — params: { "name": "Nome Cognome" } — registra il nuovo giocatore. Usa SOLO quando hai nome E cognome certi. Il messaggio deve essere un breve benvenuto caldo nel circolo e spiegare che può già prenotare campi e che verranno contattati per lo Skill Test.` : `═══ AZIONI DISPONIBILI ═══
 Rispondi SEMPRE con JSON valido: { "message": "...", "action": "NOME", "params": {...} }
 
 - NONE — risposta conversazionale, nessuna operazione DB. Usa per saluti, domande, info, ringraziamenti, qualsiasi cosa non richieda un'azione specifica
@@ -349,8 +354,9 @@ Rispondi SEMPRE con JSON valido: { "message": "...", "action": "NOME", "params":
 - SAVE_NOTE — params: { "note": "..." } — utente esprime una preferenza, abitudine o richiesta speciale (es. "voglio sempre giocare al coperto", "preferisco il mattino", "non mi piace la terra rossa"). Riassumi in una frase breve e salva. Puoi combinare con NONE per rispondere anche in modo conversazionale — in quel caso usa SAVE_NOTE e metti la risposta nel campo "message".
 - REQUEST_LESSON — params: { "day": "opzionale", "time": "opzionale" } — utente chiede di prenotare una lezione con il maestro. Rispondi con conferma che hai avvisato il maestro + durata + costo. Il maestro li contatterà per l'orario esatto.
 - RESCHEDULE_MATCH — params: { "matchPlayerId": "...", "newDay": "YYYY-MM-DD o oggi/domani/lunedì/...", "newTime": "HH:MM" } — utente vuole spostare una partita confermata. Cancella quella vecchia e prenota il nuovo slot. Messaggio breve tipo "Fatto! Ho spostato la tua partita 🎾" — i dettagli arrivano subito dopo.
-- FAQ_REQUEST — params: { "question": "testo esatto della domanda" } — usa SOLO quando l'utente fa una domanda sul circolo (orari speciali, regole particolari, eventi, iniziative) a cui NON puoi rispondere con le informazioni disponibili E la risposta non è già nelle FAQ.
+- FAQ_REQUEST — params: { "question": "testo esatto della domanda" } — usa SOLO quando l'utente fa una domanda sul circolo (orari speciali, regole particolari, eventi, iniziative) a cui NON puoi rispondere con le informazioni disponibili.
   ⛔ NON usare FAQ_REQUEST per: stato della partita, quante persone mancano, chi è già confermato — queste info sono nella sezione PARTITE CONFERMATE sopra, rispondi direttamente.
+  ⛔ NON usare FAQ_REQUEST se la risposta è già nella sezione FAQ DEL CIRCOLO sopra — quelle le hai già, rispondi direttamente.
   Il messaggio deve dire che verifichi con il circolo e che farai sapere presto. NON usare NONE quando non sai rispondere a una domanda specifica — usa FAQ_REQUEST.`}
 
 ═══ REGOLA RESCHEDULE vs BOOK_FIELD ═══
@@ -398,7 +404,7 @@ PRINCIPIO BASE: se c'è ambiguità, assumi l'interpretazione più favorevole all
 - Ogni emoji termina naturalmente un pensiero: il sistema divide il tuo testo in bolle separate ogni volta che incontra un'emoji. Scrivi quindi: [pensiero] 🎾 [nuovo pensiero separato]. L'emoji chiude la bolla precedente.
 `;
 
-    const rawHistory = recentMessages.slice(-8);
+    const rawHistory = recentMessages.slice(-15);
 
     // Merge consecutive same-role messages to avoid Anthropic 400 "roles must alternate".
     // This happens when a debounced batch saves N user messages individually to DB,
