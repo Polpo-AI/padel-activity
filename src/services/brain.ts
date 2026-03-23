@@ -434,16 +434,18 @@ PRINCIPIO BASE: se c'è ambiguità, assumi l'interpretazione più favorevole all
             messages: [
                 ...mergedHistory.map(m => ({
                     role: (m.role === 'USER' ? 'user' : 'assistant') as 'user' | 'assistant',
-                    content: m.content,
+                    // BOT messages wrappati in JSON: il modello impara il formato corretto dalla history
+                    content: m.role === 'BOT'
+                        ? JSON.stringify({ message: m.content, action: 'NONE', params: {} })
+                        : m.content,
                 })),
                 { role: 'user', content: userMessage },
-                { role: 'assistant', content: '{' },
             ],
         });
 
         const content = response.content[0];
         if (content.type === 'text') {
-            const text = ('{' + content.text).trim();
+            const text = content.text.trim();
             const start = text.indexOf('{');
             const end = text.lastIndexOf('}');
             if (start !== -1 && end !== -1) {
