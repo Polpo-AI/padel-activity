@@ -120,11 +120,11 @@ export default function StatsView({ token }) {
           highlight={hasRevenue}
         />
         <HeroCard
-          label="Partite salvate da disdetta"
+          label="Disdette recuperate"
           value={data.savedFromCancellation ?? 0}
           sub={data.savedFromCancellation > 0
-            ? `Il bot ha recuperato ${data.savedFromCancellation} partite che sarebbero saltate`
-            : "Nessuna disdetta nel periodo"}
+            ? `Il bot ha trovato un sostituto ${data.savedFromCancellation} volt${data.savedFromCancellation === 1 ? "a" : "e"} — partite che sarebbero saltate`
+            : "Nessuna disdetta da gestire nel periodo"}
           color={C.locked}
           icon="🚨"
           highlight={data.savedFromCancellation > 0}
@@ -138,21 +138,21 @@ export default function StatsView({ token }) {
           <DonutFill
             rate={data.fillRate}
             color={fillColor}
-            label="Fill rate"
-            sub={`${m.locked ?? 0}/${(m.locked ?? 0) + (m.cancelled ?? 0) + (m.unfilled ?? 0)} partite riempite`}
+            label="Campi riempiti"
+            sub={`${m.locked ?? 0} su ${(m.locked ?? 0) + (m.cancelled ?? 0) + (m.unfilled ?? 0)} partite completate`}
           />
           <DonutFill
             rate={data.waveConversionRate}
             color={convColor}
-            label="Conversione inviti"
-            sub={`${data.invSent ?? 0} inviti inviati`}
+            label="Giocatori che accettano"
+            sub={`su ${data.invSent ?? 0} inviti inviati dal bot`}
           />
           {hasOffHours && (
             <DonutFill
               rate={data.offHoursRate}
               color={C.warning}
-              label="Fuori orario"
-              sub="Messaggi gestiti di notte / weekend"
+              label="Gestiti di notte o weekend"
+              sub="Messaggi ricevuti fuori orario lavorativo"
             />
           )}
         </div>
@@ -164,9 +164,9 @@ export default function StatsView({ token }) {
         <div style={{ fontSize: 11, color: C.muted, marginBottom: 16 }}>{m.total ?? 0} totali</div>
         <div>
           {[
-            { label: "Completate con successo", value: m.locked ?? 0, color: C.locked },
-            { label: "Ancora aperte", value: m.open ?? 0, color: C.open },
-            { label: "Non riempite", value: m.unfilled ?? 0, color: C.unfilled },
+            { label: "Giocate (campo pieno)", value: m.locked ?? 0, color: C.locked },
+            { label: "In attesa di giocatori", value: m.open ?? 0, color: C.open },
+            { label: "Annullate per pochi giocatori", value: m.unfilled ?? 0, color: C.unfilled },
             { label: "Cancellate", value: m.cancelled ?? 0, color: C.cancelled },
           ].map((row, i, arr) => (
             <div key={row.label} style={{
@@ -194,14 +194,20 @@ export default function StatsView({ token }) {
         <div style={{ fontSize: 13, fontWeight: 600, color: C.text, marginBottom: 4 }}>👥 Community</div>
         <div style={{ fontSize: 11, color: C.muted, marginBottom: 16 }}>Giocatori nel circolo</div>
         <MetricRow
-          label="Giocatori attivi nel periodo"
-          detail="Hanno partecipato ad almeno una partita"
-          value={data.players?.active ?? 0}
+          label="Nuovi iscritti"
+          detail={`Si sono registrati negli ultimi ${range} giorni`}
+          value={data.players?.newThisPeriod ?? 0}
           color={C.accent}
         />
         <MetricRow
-          label="Totale iscritti"
-          detail="Giocatori registrati nel circolo"
+          label="Hanno giocato almeno una partita"
+          detail="Nel periodo selezionato"
+          value={data.players?.active ?? 0}
+          color={C.locked}
+        />
+        <MetricRow
+          label="Totale iscritti al circolo"
+          detail="Giocatori attivi registrati"
           value={data.players?.total ?? 0}
           color={C.text}
         />

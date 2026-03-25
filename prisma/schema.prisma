@@ -18,6 +18,7 @@ model Player {
   active             Boolean             @default(true)
   groupIds           String[]            @default([])
   notes              String?
+  createdAt          DateTime            @default(now())
   clubId             String?
   invitations        Invitation[]
   MatchPlayer        MatchPlayer[]

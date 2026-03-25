@@ -542,18 +542,19 @@ router.get('/stats', authMiddleware, async (req: Request, res: Response) => {
         const offHoursRate = allUserMessages.length > 0 ? offHoursMessages.length / allUserMessages.length : 0;
 
         // ── Giocatori ─────────────────────────────────────────────────
-        const [totalPlayers, activeInPeriod] = await Promise.all([
+        const [totalPlayers, activeInPeriod, newPlayers] = await Promise.all([
             prisma.player.count({ where: { clubId, active: true } }),
             prisma.matchPlayer.findMany({
                 where: { match: { clubId, startTime: { gte: since } }, leftAt: null },
                 select: { playerId: true },
                 distinct: ['playerId'],
             }),
+            prisma.player.count({ where: { clubId, createdAt: { gte: since } } }),
         ]);
 
         res.json({
             matches: { total, locked, open, cancelled, unfilled },
-            players: { total: totalPlayers, active: activeInPeriod.length },
+            players: { total: totalPlayers, active: activeInPeriod.length, newThisPeriod: newPlayers },
             fillRate,
             revenue,
             savedFromCancellation,
