@@ -346,6 +346,11 @@ function MatchChip({ match, onCancel }) {
           {pending > 0 && <span style={{ color: C.warning }}> +{pending}</span>}
         </div>
       )}
+      {match.isPrivateBooking && (() => {
+        const booker = match.MatchPlayer?.find(mp => !mp.leftAt);
+        const name = booker?.player?.name || booker?.player?.phoneNumber?.slice(-4);
+        return name ? <div style={{ fontSize: 10, color: C.muted }}>{name}</div> : null;
+      })()}
       {match.status === "OPEN" && match.type === "MATCH" && (
         <button
           onClick={() => onCancel(match.id)}
@@ -373,7 +378,13 @@ function MatchCard({ match, onCancel }) {
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
         <div>
           <div style={{ fontSize: 15, fontWeight: 700, color: C.text }}>{fmtTime(match.startTime)}</div>
-          <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>Liv. {match.skillLevel} · {match.playersNeeded}p</div>
+          {match.isPrivateBooking ? (() => {
+            const booker = confirmed[0];
+            const name = booker?.player?.name || booker?.player?.phoneNumber?.slice(-4);
+            return <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>🔒 Prenotazione privata{name ? ` · ${name}` : ""}</div>;
+          })() : (
+            <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>Liv. {match.skillLevel} · {match.playersNeeded}p</div>
+          )}
         </div>
         <Badge status={match.status} />
       </div>
