@@ -13,6 +13,8 @@
  */
 
 import { prisma } from './db';
+import { simulateTypingAndSend } from './whatsapp';
+import { redirectGroup } from './redirect';
 import pino from 'pino';
 
 const logger = pino({ level: 'info' });
@@ -42,9 +44,30 @@ export async function notifyMatchCancelled(matchId: string, clubId: string): Pro
     });
 
     const confirmed = match.MatchPlayer;
-    if (confirmed.length === 0) return;
 
-    const { simulateTypingAndSend } = await import('./whatsapp');
+    // Aggiorna leftAt su tutti i MatchPlayer (anche se 0 confermati, per coerenza dati)
+    if (confirmed.length > 0) {
+        await prisma.matchPlayer.updateMany({
+            where: { matchId, leftAt: null },
+            data: { leftAt: new Date() },
+        });
+
+        // Scrivi nella cronologia conversazione per aggiornare il contesto del brain
+        for (const mp of confirmed) {
+            const jid = `${mp.player.phoneNumber}@s.whatsapp.net`;
+            await prisma.whatsAppMessage.create({
+                data: {
+                    chatId: jid,
+                    sender: 'BOT',
+                    role: 'BOT',
+                    content: `La tua prenotazione del ${fmtTime(match.startTime)} è stata annullata dal circolo.`,
+                    clubId: match.clubId,
+                },
+            }).catch(() => {});
+        }
+    }
+
+    if (confirmed.length === 0) return;
 
     // Se esiste un gruppo WA (match LOCKED) notifica anche lì
     if (match.groupId && confirmed.length > 1) {
@@ -55,7 +78,6 @@ export async function notifyMatchCancelled(matchId: string, clubId: string): Pro
     }
 
     // redirectGroup: al solo prenotante se 1 confermato, a tutti se matchmaking (2+)
-    const { redirectGroup } = await import('./redirect');
     await redirectGroup({
         clubId,
         referentPhone: confirmed[0].player.phoneNumber,
@@ -87,7 +109,6 @@ export async function notifyMatchRescheduled(
     const confirmed = match.MatchPlayer;
     if (confirmed.length === 0) return;
 
-    const { simulateTypingAndSend } = await import('./whatsapp');
     const msg = `La tua partita è stata spostata al ${fmtTime(newStartTime)} (era il ${fmtTime(oldStartTime)}). Ci vediamo lì!`;
 
     // Notifica il gruppo WA se esiste

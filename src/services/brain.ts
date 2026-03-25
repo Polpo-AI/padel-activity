@@ -500,6 +500,7 @@ ${invitationsStr}
 
 ═══ PARTITE CONFERMATE ═══
 ${confirmedStr}
+⚠️ IMPORTANTE: questa sezione è l'UNICA fonte autorevole sulle prenotazioni attuali del giocatore. La cronologia della conversazione può essere obsoleta (es. partite cancellate dal circolo dopo la prenotazione). Se qui risulta "nessuno", il giocatore NON ha prenotazioni attive — indipendentemente da cosa dicono i messaggi precedenti.
 
 ═══ PARTITE APERTE DISPONIBILI ═══
 ${availableStr}` : ''}
