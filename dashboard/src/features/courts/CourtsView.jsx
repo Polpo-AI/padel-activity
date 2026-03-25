@@ -260,8 +260,8 @@ function UnavailabilityPanel({ court, token, onClose }) {
 
 // ─── CreateMatchModal ─────────────────────────
 
-function CreateMatchModal({ courts, club, token, onClose, onCreated, defaultDate }) {
-  const [courtId, setCourtId] = useState(courts[0]?.id || "");
+function CreateMatchModal({ courts, club, token, onClose, onCreated, defaultDate, defaultCourtId }) {
+  const [courtId, setCourtId] = useState(defaultCourtId || courts[0]?.id || "");
   const [date, setDate] = useState(defaultDate || today());
   const [skillLevel, setSkillLevel] = useState(Math.ceil((club?.skillLevelCount || 3) / 2));
   const [matchType, setMatchType] = useState("MATCH");
@@ -384,6 +384,7 @@ function CreateMatchModal({ courts, club, token, onClose, onCreated, defaultDate
 
 function MatchChip({ match, onCancel, onDeleteUnavailable }) {
   const [confirming, setConfirming] = useState(false);
+  const [hovered, setHovered] = useState(false);
   const confirmed = match.MatchPlayer?.filter(mp => !mp.leftAt).length || 0;
   const pending = match.invitations?.length || 0;
   const colorMap = { OPEN: C.open, LOCKED: C.locked, CANCELLED: C.cancelled, UNFILLED: C.unfilled };
@@ -408,12 +409,15 @@ function MatchChip({ match, onCancel, onDeleteUnavailable }) {
   };
 
   return (
-    <div style={{
-      background: isUnavail ? `${C.dim}` : `${color}15`,
-      border: `1px solid ${isUnavail ? C.border : color + "40"}`,
-      borderRadius: 6,
-      padding: "4px 6px",
-    }}>
+    <div
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      style={{
+        background: isUnavail ? `${C.dim}` : `${color}15`,
+        border: `1px solid ${isUnavail ? C.border : color + "40"}`,
+        borderRadius: 6,
+        padding: "4px 6px",
+      }}>
       <div style={{ display: "flex", alignItems: "center", gap: 3 }}>
         <span style={{ fontSize: 9 }}>{typeIcon}</span>
         <span style={{ fontSize: 10, fontWeight: 700, color: isUnavail ? C.muted : color, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", flex: 1 }}>
@@ -423,6 +427,18 @@ function MatchChip({ match, onCancel, onDeleteUnavailable }) {
       {sub && (
         <div style={{ fontSize: 9, color: C.muted, marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
           {sub}
+        </div>
+      )}
+      {hovered && !isUnavail && match.type === "MATCH" && (
+        <div style={{ marginTop: 4, borderTop: `1px solid ${C.border}`, paddingTop: 3 }}>
+          {(match.MatchPlayer?.filter(mp => !mp.leftAt) || []).map(mp => (
+            <div key={mp.player.id} style={{ fontSize: 9, color: C.muted, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+              {mp.player.name || mp.player.phoneNumber?.slice(-4)}
+            </div>
+          ))}
+          {(match.MatchPlayer?.filter(mp => !mp.leftAt) || []).length === 0 && (
+            <div style={{ fontSize: 9, color: C.dim }}>Nessun giocatore</div>
+          )}
         </div>
       )}
       {canDelete && !confirming && (
@@ -552,7 +568,7 @@ function DayDetailModal({ date, courts, onCancel, onClose }) {
 
 const DAY_NAMES = ["Lun", "Mar", "Mer", "Gio", "Ven", "Sab", "Dom"];
 
-function WeekCalendar({ courtData, weekDays, onCancel, onDeleteUnavailable, todayStr, onDayClick, onCourtManage }) {
+function WeekCalendar({ courtData, weekDays, onCancel, onDeleteUnavailable, todayStr, onDayClick, onCourtManage, onQuickCreate }) {
   const thBase = {
     padding: "10px 8px", textAlign: "center",
     borderBottom: `1px solid ${C.border}`,
@@ -639,7 +655,13 @@ function WeekCalendar({ courtData, weekDays, onCancel, onDeleteUnavailable, toda
                     minWidth: 110,
                   }}>
                     {dayMatches.length === 0 ? (
-                      <div style={{ textAlign: "center", color: C.dim, fontSize: 10, padding: "12px 0", userSelect: "none" }}>—</div>
+                      <div
+                        onClick={() => onQuickCreate?.(d, court.id)}
+                        style={{ textAlign: "center", color: C.dim, fontSize: 10, padding: "12px 0", cursor: "pointer", userSelect: "none", transition: "color 0.15s" }}
+                        onMouseEnter={e => e.currentTarget.style.color = C.accent}
+                        onMouseLeave={e => e.currentTarget.style.color = C.dim}
+                        title="Crea partita"
+                      >+</div>
                     ) : (
                       <div style={{ display: "flex", flexDirection: "column", gap: 3, maxHeight: 160, overflowY: "auto" }}>
                         {dayMatches.map(m => <MatchChip key={m.id} match={m} onCancel={onCancel} onDeleteUnavailable={onDeleteUnavailable} />)}
@@ -665,6 +687,7 @@ export default function CourtsView({ token, onClubUpdate }) {
   const [weekStart, setWeekStart] = useState(getMonday(today()));
   const [showCreate, setShowCreate] = useState(false);
   const [createDate, setCreateDate] = useState(null);
+  const [createCourtId, setCreateCourtId] = useState(null);
   const [unavailCourt, setUnavailCourt] = useState(null);
   const [dayDetail, setDayDetail] = useState(null);
   const [toast, setToast] = useState(null);
@@ -778,10 +801,22 @@ export default function CourtsView({ token, onClubUpdate }) {
         todayStr={todayStr}
         onDayClick={(d) => setDayDetail(d)}
         onCourtManage={(court) => setUnavailCourt(court)}
+        onQuickCreate={(d, cId) => { setCreateDate(d); setCreateCourtId(cId); setShowCreate(true); }}
       />
 
-      <div style={{ fontSize: 11, color: C.muted, textAlign: "center" }}>
-        Clicca su un giorno per vedere il dettaglio · Usa "Elimina" sul chip per cancellare una partita
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 16, flexWrap: "wrap" }}>
+        {[
+          { color: C.open, label: "Aperta" },
+          { color: C.locked, label: "Confermata" },
+          { color: C.cancelled, label: "Cancellata" },
+          { color: C.muted, label: "Evento" },
+        ].map(({ color, label }) => (
+          <div key={label} style={{ display: "flex", alignItems: "center", gap: 5 }}>
+            <div style={{ width: 10, height: 10, borderRadius: 3, background: `${color}40`, border: `1px solid ${color}80` }} />
+            <span style={{ fontSize: 11, color: C.muted }}>{label}</span>
+          </div>
+        ))}
+        <span style={{ fontSize: 11, color: C.dim }}>· Clicca + su cella vuota per creare · Clicca giorno per dettaglio</span>
       </div>
 
       {showCreate && (
@@ -790,7 +825,8 @@ export default function CourtsView({ token, onClubUpdate }) {
           club={club}
           token={token}
           defaultDate={createDate}
-          onClose={() => setShowCreate(false)}
+          defaultCourtId={createCourtId}
+          onClose={() => { setShowCreate(false); setCreateCourtId(null); }}
           onCreated={load}
         />
       )}
