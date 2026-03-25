@@ -228,13 +228,14 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[], cor
         const pendingActionHandled = await handleAdminPendingAction(combinedText, club, jid);
         if (pendingActionHandled) return;
 
-        // Admin: gestione FAQ intelligente via AI (nessun formato hardcoded)
-        const faqHandled = await handleAdminFaqFlow(combinedText, club, jid);
-        if (faqHandled) return;
-
-        // Admin: tenta sempre il parsing come comando DB — se non è un comando (UNKNOWN) cade al brain normale
+        // Admin: tenta il parsing come comando DB PRIMA del flusso FAQ
+        // (altrimenti i comandi vengono intercettati dal classificatore FAQ se c'è una domanda pending)
         const adminHandled = await handleAdminCommand(combinedText, club, jid);
         if (adminHandled) return;
+
+        // Admin: gestione FAQ intelligente — solo se il messaggio non era un comando DB
+        const faqHandled = await handleAdminFaqFlow(combinedText, club, jid);
+        if (faqHandled) return;
     }
 
     const player = await prisma.player.findFirst({
@@ -303,7 +304,12 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[], cor
                             });
                             const courtType = match.court.isCovered ? '🏟️ coperto' : '☀️ all\'aperto';
                             const clubLocation = [club?.address, club?.city].filter(Boolean).join(' — ');
-                            await simulateTypingAndSend(jid, 'Perfetto, prenoto il campo coperto! 🏟️');
+                            const coveredConfirmVariants = [
+                                'Perfetto, prenoto il campo coperto! 🏟️',
+                                'Ottimo, ti metto al coperto! 🏟️',
+                                'Fatto, campo coperto prenotato! 🏟️',
+                            ];
+                            await simulateTypingAndSend(jid, coveredConfirmVariants[Math.floor(Math.random() * coveredConfirmVariants.length)]);
                             const lines = [
                                 `📋 *Dettagli prenotazione*`,
                                 `📅 ${timeStr}`,
@@ -386,9 +392,16 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[], cor
                         altMsg = `\n\nOppure ho questi orari con scoperto libero:\n${altSlots.map(s => `  📅 ${s}`).join('\n')}\n\nDimmi "coperto" per andare avanti al chiuso, o scegli un orario alternativo!`;
                     }
                 } catch { /* non bloccare */ }
-                const baseMsg = altMsg
-                    ? 'A quell\'orario gli scoperti sono tutti occupati. Posso prenotarti il campo coperto 🏟️'
-                    : 'A quell\'orario gli scoperti sono tutti occupati. Posso prenotarti il campo coperto? 🏟️';
+                const onlyCoveredVariants = altMsg ? [
+                    'A quell\'orario gli scoperti sono tutti occupati. Posso prenotarti il campo coperto 🏟️',
+                    'Per quell\'orario ho solo il coperto disponibile. Ti va bene? 🏟️',
+                    'Gli scoperti sono tutti presi a quell\'orario. Posso metterti al coperto 🏟️',
+                ] : [
+                    'A quell\'orario gli scoperti sono tutti occupati. Posso prenotarti il campo coperto? 🏟️',
+                    'Per quell\'orario ho solo il campo coperto libero. Lo prenoto? 🏟️',
+                    'Gli scoperti sono tutti occupati a quell\'orario. Ti va bene il coperto? 🏟️',
+                ];
+                const baseMsg = onlyCoveredVariants[Math.floor(Math.random() * onlyCoveredVariants.length)];
                 await simulateTypingAndSend(jid, baseMsg + altMsg);
                 return;
             }

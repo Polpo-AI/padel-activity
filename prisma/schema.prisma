@@ -60,6 +60,7 @@ model Match {
   cancelledAt       DateTime?
   cancelledReason   String?
   recoveryWaveCount Int           @default(0)
+  isPrivateBooking  Boolean       @default(false) // true quando skill<=0: prenotazione campo privata, senza matchmaking
   invitations       Invitation[]
   club              Club?         @relation(fields: [clubId], references: [id])
   court             Court?        @relation(fields: [courtId], references: [id])

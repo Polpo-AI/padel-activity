@@ -362,7 +362,10 @@ router.post('/matches/:id/cancel', authMiddleware, async (req: Request, res: Res
     });
 
     const { notifyMatchCancelled } = await import('../services/match-notifications');
-    await notifyMatchCancelled(match.id, clubId).catch(err => logger.error({ err }, 'notifyMatchCancelled failed'));
+    // runWithContext necessario: notifyMatchCancelled usa simulateTypingAndSend che legge getClubId()
+    await runWithContext({ clubId }, () =>
+        notifyMatchCancelled(match.id, clubId).catch(err => logger.error({ err }, 'notifyMatchCancelled failed'))
+    );
 
     res.json({ success: true });
 });

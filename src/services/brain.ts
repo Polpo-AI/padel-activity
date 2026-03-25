@@ -543,7 +543,8 @@ Rispondi SEMPRE con JSON valido: { "message": "...", "action": "NOME", "params":
 - FAQ_REQUEST — params: { "question": "testo esatto della domanda" } — usa SOLO quando l'utente fa una domanda sul circolo (orari speciali, regole particolari, eventi, iniziative) a cui NON puoi rispondere con le informazioni disponibili.
   ⛔ NON usare FAQ_REQUEST per: stato della partita, quante persone mancano, chi è già confermato — queste info sono nella sezione PARTITE CONFERMATE sopra, rispondi direttamente.
   ⛔ NON usare FAQ_REQUEST se la risposta è già nella sezione FAQ DEL CIRCOLO sopra — quelle le hai già, rispondi direttamente.
-  Il messaggio deve dire che verifichi con il circolo e che farai sapere presto. NON usare NONE quando non sai rispondere a una domanda specifica — usa FAQ_REQUEST.`}
+  Il messaggio deve dire che verifichi con il circolo e che farai sapere presto. NON usare NONE quando non sai rispondere a una domanda specifica — usa FAQ_REQUEST.
+  ✅ Esempi di domande che RICHIEDONO FAQ_REQUEST (non inventare la risposta): "c'è l'assicurazione infortuni?", "avete tornei?", "si possono portare ospiti esterni?", "qual è il regolamento specifico del club?", "fate abbonamenti?", "avete docce/spogliatoi?", qualsiasi domanda su polizze, eventi speciali, regole interne, servizi non menzionati sopra.`}
 
 ═══ REGOLA RESCHEDULE vs BOOK_FIELD ═══
 Quando il giocatore ha già partite confermate E chiede un nuovo slot, devi capire dal contesto se sta correggendo/spostando o aggiungendo:
@@ -784,9 +785,6 @@ export async function executeAction(
                     scheduledAt: Date.now(),
                 }, { delay: 0 });
             }
-
-            const { decreaseReliability } = await import('./scoring');
-            await decreaseReliability(player.id).catch(() => {});
 
             // 3. Prenota nuovo slot
             return await bookSlotForPlayer(startTime, player, club, false, null);
@@ -1058,6 +1056,8 @@ async function createNewMatchAction(
 
     const skillLevel = player.skillLevel > 0 ? player.skillLevel : 1.0;
 
+    const isPrivateBooking = player.skillLevel <= 0;
+
     const match = await prisma.match.create({
         data: {
             clubId: player.clubId,
@@ -1068,6 +1068,7 @@ async function createNewMatchAction(
             allowMixedLevels: club?.allowMixedLevels ?? false,
             playersNeeded: 4,
             status: 'OPEN',
+            isPrivateBooking,
         },
     });
 

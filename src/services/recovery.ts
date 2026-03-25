@@ -237,7 +237,12 @@ export async function handleMatchUnfillable(matchId: string, forceCancel: boolea
             await sleep(randomInt(2, 5) * 1000);
             try {
                 const missing = match.playersNeeded - confirmedPlayers.length;
-                const unfillableVariants = [
+                // Messaggi diversi per prenotazione privata (skill<=0) vs matchmaking
+                const unfillableVariants = (match as any).isPrivateBooking ? [
+                    `La tua prenotazione per ${courtName} alle ${timeStr} è stata annullata automaticamente. Scrivimi quando vuoi prenotare di nuovo! 🎾`,
+                    `Ho dovuto liberare ${courtName} alle ${timeStr} — la prenotazione è scaduta. Quando sei pronto, prenotiamo subito!`,
+                    `La prenotazione per ${courtName} alle ${timeStr} non è andata a buon fine. Scrivimi per fissare un nuovo appuntamento 🎾`,
+                ] : [
                     `Mi dispiace, non siamo riusciti a trovare tutti e ${match.playersNeeded} per le ${timeStr} a ${courtName} 😔 Ho liberato il campo — scrivimi quando vuoi riprovare e ci penso io 🎾`,
                     `Purtroppo la partita delle ${timeStr} a ${courtName} è saltata — mancavano ancora ${missing} ${missing === 1 ? 'giocatore' : 'giocatori'} 😕 Dimmi quando sei libero e prenotiamo subito!`,
                     `Non ce l'abbiamo fatta stavolta: ${courtName} alle ${timeStr} è rimasto vuoto 😔 Il campo è già libero — quando vuoi riprovare?`,
