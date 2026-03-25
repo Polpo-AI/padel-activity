@@ -502,6 +502,83 @@ router.patch('/courts/:id', authMiddleware, async (req: Request, res: Response) 
 });
 
 // ─────────────────────────────────────────────
+// CHIUSURE (UNAVAILABILITY)
+// ─────────────────────────────────────────────
+
+router.get('/courts/:id/unavailability', authMiddleware, async (req: Request, res: Response) => {
+    const clubId = (req as any).clubId;
+    const court = await prisma.court.findFirst({ where: { id: req.params.id, clubId } });
+    if (!court) return res.status(404).json({ error: 'Campo non trovato' });
+
+    const items = await prisma.match.findMany({
+        where: { courtId: court.id, clubId, type: 'UNAVAILABLE', startTime: { gte: new Date() } },
+        orderBy: { startTime: 'asc' },
+    });
+    res.json(items.map(m => ({
+        id: m.id,
+        startTime: m.startTime,
+        endTime: m.endTime,
+        reason: m.cancelledReason,
+        recurring: m.groupId === 'recurring',
+    })));
+});
+
+router.post('/courts/:id/unavailability', authMiddleware, async (req: Request, res: Response) => {
+    const clubId = (req as any).clubId;
+    const court = await prisma.court.findFirst({ where: { id: req.params.id, clubId } });
+    if (!court) return res.status(404).json({ error: 'Campo non trovato' });
+
+    const { startTime, endTime, reason, recurring } = req.body;
+    if (!startTime || !endTime) return res.status(400).json({ error: 'startTime e endTime richiesti' });
+
+    const start = new Date(startTime);
+    const end = new Date(endTime);
+    if (isNaN(start.getTime()) || isNaN(end.getTime()) || end <= start)
+        return res.status(400).json({ error: 'Orari non validi' });
+
+    try {
+        // Check conflicting OPEN/LOCKED matches
+        const conflictingMatches = await prisma.match.findMany({
+            where: {
+                courtId: court.id, clubId,
+                status: { in: ['OPEN', 'LOCKED'] },
+                startTime: { gte: start, lt: end },
+            },
+        });
+
+        const weeks = recurring ? 52 : 1;
+        const created = [];
+        for (let w = 0; w < weeks; w++) {
+            const s = new Date(start.getTime() + w * 7 * 24 * 60 * 60 * 1000);
+            const e = new Date(end.getTime() + w * 7 * 24 * 60 * 60 * 1000);
+            created.push(await prisma.match.create({
+                data: {
+                    clubId, courtId: court.id, type: 'UNAVAILABLE',
+                    startTime: s, endTime: e, skillLevel: 0, playersNeeded: 0,
+                    cancelledReason: reason || null,
+                    groupId: recurring ? 'recurring' : null,
+                },
+            }));
+        }
+
+        res.json({ created: created.length, conflictingMatches: conflictingMatches.map(m => ({ id: m.id, startTime: m.startTime })) });
+    } catch (err) {
+        logger.error({ err }, 'POST /courts/:id/unavailability failed');
+        res.status(500).json({ error: 'Errore durante la creazione della chiusura' });
+    }
+});
+
+router.delete('/courts/:id/unavailability/:uid', authMiddleware, async (req: Request, res: Response) => {
+    const clubId = (req as any).clubId;
+    const match = await prisma.match.findFirst({
+        where: { id: req.params.uid, courtId: req.params.id, clubId, type: 'UNAVAILABLE' },
+    });
+    if (!match) return res.status(404).json({ error: 'Chiusura non trovata' });
+    await prisma.match.delete({ where: { id: match.id } });
+    res.json({ success: true });
+});
+
+// ─────────────────────────────────────────────
 // STATISTICHE
 // ─────────────────────────────────────────────
 

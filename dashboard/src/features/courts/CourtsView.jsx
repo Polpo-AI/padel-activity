@@ -76,6 +76,50 @@ function HoursEditor({ token, club, onUpdated }) {
   );
 }
 
+// ─── TimePillPicker ────────────────────────────
+
+function TimePillPicker({ label, value, onChange, otherValue, isStart }) {
+  const slots = [];
+  for (let h = 7; h <= 23; h++) {
+    for (let m = 0; m < 60; m += 30) {
+      if (h === 23 && m === 30) continue;
+      slots.push(`${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`);
+    }
+  }
+
+  return (
+    <div>
+      <label style={labelSt}>{label}</label>
+      <div style={{
+        display: "flex", flexWrap: "wrap", gap: 5, marginTop: 4,
+        maxHeight: 120, overflowY: "auto",
+        padding: "8px", background: C.bg, borderRadius: 8, border: `1px solid ${C.border}`,
+      }}>
+        {slots.map(t => {
+          const selected = value === t;
+          const disabled = isStart
+            ? (otherValue && t >= otherValue)
+            : (otherValue && t <= otherValue);
+          return (
+            <button
+              key={t}
+              onClick={() => !disabled && onChange(t)}
+              style={{
+                padding: "3px 9px", borderRadius: 6, fontSize: 12, cursor: disabled ? "default" : "pointer",
+                border: selected ? `1px solid ${C.accent}` : `1px solid ${C.dim}`,
+                background: selected ? C.accentDim : "transparent",
+                color: selected ? C.accent : disabled ? C.dim : C.muted,
+                fontWeight: selected ? 700 : 400,
+                transition: "all 0.1s",
+              }}
+            >{t}</button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 // ─── UnavailabilityPanel ──────────────────────
 
 function UnavailabilityPanel({ court, token, onClose }) {
@@ -105,18 +149,19 @@ function UnavailabilityPanel({ court, token, onClose }) {
         body: JSON.stringify({ startTime, endTime, reason: form.reason, recurring: form.recurring }),
       });
       if (d.conflictingMatches?.length > 0) {
-        setToast({ msg: `⚠ ${d.conflictingMatches.length} partite già create in questo slot — verifica manualmente`, type: "err" });
+        setToast({ msg: `⚠ ${d.conflictingMatches.length} partite già create in questo slot — verifica manualmente`, type: "warn" });
       } else {
-        setToast({ msg: "Blocco aggiunto ✓", type: "ok" });
+        setToast({ msg: "Chiusura aggiunta ✓", type: "ok" });
       }
       setShowForm(false);
+      setForm({ date: today(), startHour: "09:00", endHour: "10:30", reason: "", recurring: false });
       load();
     } catch (e) { setToast({ msg: e.message, type: "err" }); }
     finally { setSaving(false); }
   };
 
   const remove = async (uid) => {
-    if (!confirm("Eliminare questo blocco?")) return;
+    if (!confirm("Eliminare questa chiusura?")) return;
     await api(`/courts/${court.id}/unavailability/${uid}`, token, { method: "DELETE" });
     load();
   };
@@ -124,50 +169,63 @@ function UnavailabilityPanel({ court, token, onClose }) {
   const DAYS = ["Dom", "Lun", "Mar", "Mer", "Gio", "Ven", "Sab"];
 
   return (
-    <Modal title={`🔒 Indisponibilità — ${court.name}`} onClose={onClose}>
-      <button onClick={() => setShowForm(!showForm)} style={btnPrimary}>
-        {showForm ? "Annulla" : "+ Nuovo blocco"}
-      </button>
+    <Modal title={`⛔ Chiusure — ${court.name}`} onClose={onClose}>
+      {!showForm ? (
+        <button onClick={() => setShowForm(true)} style={{ ...btnPrimary, marginBottom: 16 }}>
+          + Nuova chiusura
+        </button>
+      ) : (
+        <div style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 12, padding: 16, marginBottom: 16, display: "flex", flexDirection: "column", gap: 14 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <span style={{ fontSize: 13, fontWeight: 600, color: C.text }}>Nuova chiusura</span>
+            <button onClick={() => setShowForm(false)} style={{ ...btnGhost, fontSize: 11, padding: "2px 8px" }}>Annulla</button>
+          </div>
 
-      {showForm && (
-        <div style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 10, padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
             <div>
-              <label style={labelSt}>Data {form.recurring && "(giorno settimana)"}</label>
+              <label style={labelSt}>
+                {form.recurring ? `Giorno (si ripete ogni ${DAYS[new Date(form.date + "T12:00").getDay()]})` : "Data"}
+              </label>
               <input type="date" value={form.date} onChange={e => setForm(f => ({ ...f, date: e.target.value }))} style={inputSt} />
-              {form.recurring && (
-                <div style={{ fontSize: 11, color: C.accent, marginTop: 4 }}>
-                  Si ripeterà ogni {DAYS[new Date(form.date + "T12:00").getDay()]}
-                </div>
-              )}
             </div>
             <div>
-              <label style={labelSt}>Motivo</label>
+              <label style={labelSt}>Motivo (opzionale)</label>
               <input value={form.reason} onChange={e => setForm(f => ({ ...f, reason: e.target.value }))}
                 placeholder="es. Lezione istruttore" style={inputSt} />
             </div>
           </div>
+
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-            <div>
-              <label style={labelSt}>Dalle</label>
-              <input type="time" value={form.startHour} onChange={e => setForm(f => ({ ...f, startHour: e.target.value }))} style={inputSt} />
-            </div>
-            <div>
-              <label style={labelSt}>Alle</label>
-              <input type="time" value={form.endHour} onChange={e => setForm(f => ({ ...f, endHour: e.target.value }))} style={inputSt} />
-            </div>
+            <TimePillPicker
+              label="Dalle"
+              value={form.startHour}
+              onChange={v => setForm(f => ({ ...f, startHour: v }))}
+              otherValue={form.endHour}
+              isStart={true}
+            />
+            <TimePillPicker
+              label="Alle"
+              value={form.endHour}
+              onChange={v => setForm(f => ({ ...f, endHour: v }))}
+              otherValue={form.startHour}
+              isStart={false}
+            />
           </div>
+
           <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", fontSize: 13, color: C.text }}>
             <input type="checkbox" checked={form.recurring} onChange={e => setForm(f => ({ ...f, recurring: e.target.checked }))}
               style={{ accentColor: C.accent, width: 16, height: 16 }} />
             Ripeti ogni settimana (stesso giorno + orario)
           </label>
-          <button onClick={create} disabled={saving} style={btnPrimary}>{saving ? "..." : "Salva blocco"}</button>
+
+          <button onClick={create} disabled={saving} style={btnPrimary}>
+            {saving ? "..." : "Salva chiusura"}
+          </button>
         </div>
       )}
 
       {loading ? <Spinner /> : list.length === 0 ? (
-        <div style={{ textAlign: "center", color: C.muted, fontSize: 13, padding: "20px 0" }}>Nessun blocco configurato</div>
+        <div style={{ textAlign: "center", color: C.muted, fontSize: 13, padding: "20px 0" }}>Nessuna chiusura configurata</div>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           {list.map(u => (
@@ -177,10 +235,11 @@ function UnavailabilityPanel({ court, token, onClose }) {
             }}>
               <div>
                 <div style={{ fontSize: 13, color: C.text, display: "flex", alignItems: "center", gap: 8 }}>
-                  {u.recurring && <span style={{ fontSize: 10, background: `${C.unavail}30`, color: C.unavail, padding: "2px 6px", borderRadius: 4, fontWeight: 700 }}>RICORRENTE</span>}
-                  <span style={{ color: C.accent }}>{fmtTime(u.startTime)}–{fmtTime(u.endTime)}</span>
-                  {u.recurring && <span style={{ color: C.muted, fontSize: 11 }}>ogni {DAYS[new Date(u.startTime).getDay()]}</span>}
-                  {!u.recurring && <span style={{ color: C.muted, fontSize: 11 }}>{fmtDate(u.startTime)}</span>}
+                  {u.recurring && <span style={{ fontSize: 10, background: `${C.unavail ?? C.cancelled}30`, color: C.unavail ?? C.cancelled, padding: "2px 6px", borderRadius: 4, fontWeight: 700 }}>RICORRENTE</span>}
+                  <span style={{ color: C.accent, fontWeight: 600 }}>{fmtTime(u.startTime)}–{fmtTime(u.endTime)}</span>
+                  {u.recurring
+                    ? <span style={{ color: C.muted, fontSize: 11 }}>ogni {DAYS[new Date(u.startTime).getDay()]}</span>
+                    : <span style={{ color: C.muted, fontSize: 11 }}>{fmtDate(u.startTime)}</span>}
                 </div>
                 {u.reason && <div style={{ fontSize: 11, color: C.muted, marginTop: 3 }}>{u.reason}</div>}
               </div>
