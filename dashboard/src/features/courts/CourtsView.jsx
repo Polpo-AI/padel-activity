@@ -155,7 +155,7 @@ function UnavailabilityPanel({ court, token, onClose }) {
       if (d.conflictingMatches?.length > 0) {
         setToast({ msg: `⚠ ${d.conflictingMatches.length} partite già create in questo slot — verifica manualmente`, type: "warn" });
       } else {
-        setToast({ msg: "Chiusura aggiunta ✓", type: "ok" });
+        setToast({ msg: "Evento aggiunto ✓", type: "ok" });
       }
       setShowForm(false);
       setForm({ date: today(), startHour: "", endHour: "", reason: "", recurring: false });
@@ -165,7 +165,7 @@ function UnavailabilityPanel({ court, token, onClose }) {
   };
 
   const remove = async (uid) => {
-    if (!confirm("Eliminare questa chiusura?")) return;
+    if (!confirm("Eliminare questo evento?")) return;
     await api(`/courts/${court.id}/unavailability/${uid}`, token, { method: "DELETE" });
     load();
   };
@@ -173,15 +173,15 @@ function UnavailabilityPanel({ court, token, onClose }) {
   const DAYS = ["Dom", "Lun", "Mar", "Mer", "Gio", "Ven", "Sab"];
 
   return (
-    <Modal title={`⛔ Chiusure — ${court.name}`} onClose={onClose}>
+    <Modal title={`📅 Eventi — ${court.name}`} onClose={onClose}>
       {!showForm ? (
         <button onClick={() => setShowForm(true)} style={{ ...btnPrimary, marginBottom: 16 }}>
-          + Nuova chiusura
+          + Nuovo evento
         </button>
       ) : (
         <div style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 12, padding: 16, marginBottom: 16, display: "flex", flexDirection: "column", gap: 14 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <span style={{ fontSize: 13, fontWeight: 600, color: C.text }}>Nuova chiusura</span>
+            <span style={{ fontSize: 13, fontWeight: 600, color: C.text }}>Nuovo evento</span>
             <button onClick={() => setShowForm(false)} style={{ ...btnGhost, fontSize: 11, padding: "2px 8px" }}>Annulla</button>
           </div>
 
@@ -223,13 +223,13 @@ function UnavailabilityPanel({ court, token, onClose }) {
           </label>
 
           <button onClick={create} disabled={saving} style={btnPrimary}>
-            {saving ? "..." : "Salva chiusura"}
+            {saving ? "..." : "Salva evento"}
           </button>
         </div>
       )}
 
       {loading ? <Spinner /> : list.length === 0 ? (
-        <div style={{ textAlign: "center", color: C.muted, fontSize: 13, padding: "20px 0" }}>Nessuna chiusura configurata</div>
+        <div style={{ textAlign: "center", color: C.muted, fontSize: 13, padding: "20px 0" }}>Nessun evento configurato</div>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           {list.map(u => (
@@ -606,7 +606,7 @@ function WeekCalendar({ courtData, weekDays, onCancel, onDeleteUnavailable, toda
                 <button
                   onClick={() => onCourtManage(court)}
                   style={{ ...btnGhost, fontSize: 9, color: C.unavail, borderColor: `${C.unavail}30`, marginTop: 6, padding: "2px 6px" }}>
-                  Chiusure
+                  Eventi
                 </button>
               </td>
               {weekDays.map((d, ci) => {
@@ -671,11 +671,11 @@ export default function CourtsView({ token, onClubUpdate }) {
   useEffect(() => { const t = setInterval(load, 30000); return () => clearInterval(t); }, [load]);
 
   const deleteUnavailability = async (match) => {
-    if (!confirm("Eliminare questa chiusura?")) return;
+    if (!confirm("Eliminare questo evento?")) return;
     try {
       await api(`/courts/${match.courtId}/unavailability/${match.id}`, token, { method: "DELETE" });
       load();
-      setToast({ msg: "Chiusura eliminata ✓", type: "ok" });
+      setToast({ msg: "Evento eliminato ✓", type: "ok" });
     } catch (e) { setToast({ msg: e.message, type: "err" }); }
   };
 
