@@ -45,26 +45,12 @@ export async function notifyMatchCancelled(matchId: string, clubId: string): Pro
 
     const confirmed = match.MatchPlayer;
 
-    // Aggiorna leftAt su tutti i MatchPlayer (anche se 0 confermati, per coerenza dati)
+    // Aggiorna leftAt su tutti i MatchPlayer per coerenza dati
     if (confirmed.length > 0) {
         await prisma.matchPlayer.updateMany({
             where: { matchId, leftAt: null },
             data: { leftAt: new Date() },
         });
-
-        // Scrivi nella cronologia conversazione per aggiornare il contesto del brain
-        for (const mp of confirmed) {
-            const jid = `${mp.player.phoneNumber}@s.whatsapp.net`;
-            await prisma.whatsAppMessage.create({
-                data: {
-                    chatId: jid,
-                    sender: 'BOT',
-                    role: 'BOT',
-                    content: `La tua prenotazione del ${fmtTime(match.startTime)} è stata annullata dal circolo.`,
-                    clubId: match.clubId,
-                },
-            }).catch(() => {});
-        }
     }
 
     if (confirmed.length === 0) return;
