@@ -783,9 +783,21 @@ export async function executeAction(
             // 1. Cancella partecipazione vecchia
             await prisma.matchPlayer.update({ where: { id: mp.id }, data: { leftAt: new Date() } });
 
-            // 2. Se LOCKED → riapri + wave immediata con urgency x2
-            const oldMatch = await prisma.match.findUnique({ where: { id: mp.matchId } });
-            if (oldMatch?.status === 'LOCKED') {
+            // 2. Controlla quanti giocatori rimangono nel vecchio match
+            const oldMatch = await prisma.match.findUnique({
+                where: { id: mp.matchId },
+                include: { MatchPlayer: { where: { leftAt: null } } },
+            });
+            const remainingPlayers = oldMatch?.MatchPlayer.length ?? 0;
+
+            if (remainingPlayers === 0) {
+                // Nessun giocatore rimasto → cancella il match per liberare il campo
+                await prisma.match.update({
+                    where: { id: mp.matchId },
+                    data: { status: 'CANCELLED', cancelledAt: new Date(), cancelledReason: 'RESCHEDULED' },
+                });
+            } else if (oldMatch?.status === 'LOCKED') {
+                // Match LOCKED con giocatori rimasti → riapri e rilancia wave
                 await prisma.match.update({ where: { id: mp.matchId }, data: { status: 'OPEN' } });
                 await waveQueue.add('process-wave', {
                     matchId: mp.matchId,

@@ -389,7 +389,7 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[], cor
                         3,
                     );
                     if (altSlots.length > 0) {
-                        altMsg = `\n\nOppure ho questi orari con scoperto libero:\n${altSlots.map(s => `  📅 ${s}`).join('\n')}\n\nDimmi "coperto" per andare avanti al chiuso, o scegli un orario alternativo!`;
+                        altMsg = `\n\nSe preferisci all'aperto, ho questi orari liberi:\n${altSlots.map(s => `  📅 ${s}`).join('\n')}`;
                     }
                 } catch { /* non bloccare */ }
                 const onlyCoveredVariants = altMsg ? [
