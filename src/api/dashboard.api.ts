@@ -216,7 +216,19 @@ router.get('/courts', authMiddleware, async (req: Request, res: Response) => {
             orderBy: { name: 'asc' },
         });
 
-        res.json(courts);
+        const club = await prisma.club.findUnique({ where: { id: clubId }, select: { matchDuration: true } });
+        const matchDurationMs = (club?.matchDuration || 90) * 60 * 1000;
+
+        // Calcola endTime per match che non ce l'hanno (es. creati dal bot)
+        const enriched = courts.map((court: any) => ({
+            ...court,
+            matches: court.matches.map((m: any) => ({
+                ...m,
+                endTime: m.endTime ?? new Date(new Date(m.startTime).getTime() + matchDurationMs),
+            })),
+        }));
+
+        res.json(enriched);
     } catch (err) {
         logger.error({ err }, 'Error fetching courts in dashboard');
         res.status(500).json({ error: 'Errore nel recupero dei campi' });
