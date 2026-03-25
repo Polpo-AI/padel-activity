@@ -594,8 +594,15 @@ export default function CourtsView({ token, onClubUpdate }) {
 
   const cancelMatch = async (id) => {
     if (!confirm("Sicuro?")) return;
-    try { await api(`/matches/${id}/cancel`, token, { method: "POST" }); load(); }
-    catch (e) { setToast({ msg: e.message, type: "err" }); }
+    try {
+      const res = await api(`/matches/${id}/cancel`, token, { method: "POST" });
+      load();
+      if (!res.notified) {
+        setToast({ msg: "⚠️ Partita cancellata, ma la notifica WhatsApp non è stata inviata (bot offline). Avvisa i giocatori manualmente.", type: "err" });
+      } else {
+        setToast({ msg: "Partita cancellata — giocatori notificati ✓", type: "ok" });
+      }
+    } catch (e) { setToast({ msg: e.message, type: "err" }); }
   };
 
   const prevWeek = () => setWeekStart(addDays(weekStart, -7));

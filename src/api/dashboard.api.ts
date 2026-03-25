@@ -145,7 +145,9 @@ router.patch('/club', authMiddleware, async (req: Request, res: Response) => {
             const { findMatchesOutsideHours, cancelMatchesWithNotification } = await import('../services/match-notifications');
             const affected = await findMatchesOutsideHours(clubId, newOpen, newClose);
             if (affected.length > 0) {
-                await cancelMatchesWithNotification(affected.map(m => m.id), clubId, 'Modifica orari circolo');
+                await runWithContext({ clubId }, () =>
+                    cancelMatchesWithNotification(affected.map(m => m.id), clubId, 'Modifica orari circolo')
+                ).catch(err => logger.error({ err }, 'cancelMatchesWithNotification (hours) failed'));
             }
         }
 
@@ -372,12 +374,18 @@ router.post('/matches/:id/cancel', authMiddleware, async (req: Request, res: Res
     });
 
     const { notifyMatchCancelled } = await import('../services/match-notifications');
-    // runWithContext necessario: notifyMatchCancelled usa simulateTypingAndSend che legge getClubId()
-    await runWithContext({ clubId }, () =>
-        notifyMatchCancelled(match.id, clubId).catch(err => logger.error({ err }, 'notifyMatchCancelled failed'))
-    );
+    let notified = false;
+    let notifyError: string | undefined;
 
-    res.json({ success: true });
+    try {
+        await runWithContext({ clubId }, () => notifyMatchCancelled(match.id, clubId));
+        notified = true;
+    } catch (err: any) {
+        notifyError = err?.message || 'Errore sconosciuto';
+        logger.error({ err }, 'notifyMatchCancelled failed');
+    }
+
+    res.json({ success: true, notified, notifyError });
 });
 
 // Modifica orario o campo di una partita — notifica automatica ai giocatori
@@ -414,10 +422,17 @@ router.patch('/matches/:id', authMiddleware, async (req: Request, res: Response)
         });
 
         const { notifyMatchRescheduled } = await import('../services/match-notifications');
-        await notifyMatchRescheduled(match.id, oldStartTime, newStartTime, clubId)
-            .catch(err => logger.error({ err }, 'notifyMatchRescheduled failed'));
+        let notified = false;
+        let notifyError: string | undefined;
+        try {
+            await runWithContext({ clubId }, () => notifyMatchRescheduled(match.id, oldStartTime, newStartTime, clubId));
+            notified = true;
+        } catch (err: any) {
+            notifyError = err?.message || 'Errore sconosciuto';
+            logger.error({ err }, 'notifyMatchRescheduled failed');
+        }
 
-        res.json({ success: true });
+        res.json({ success: true, notified, notifyError });
     } catch (err) {
         logger.error({ err }, 'PATCH /matches/:id failed');
         res.status(500).json({ error: 'Errore durante la modifica' });
@@ -452,10 +467,20 @@ router.patch('/courts/:id', authMiddleware, async (req: Request, res: Response) 
         }
 
         // Se confermato: cancella partite e notifica
+        let notified = true;
+        let notifyError: string | undefined;
         if (active === false && court.active) {
             const affected = await findMatchesOnCourt(court.id);
             if (affected.length > 0) {
-                await cancelMatchesWithNotification(affected.map(m => m.id), clubId, 'Campo disattivato');
+                try {
+                    await runWithContext({ clubId }, () =>
+                        cancelMatchesWithNotification(affected.map(m => m.id), clubId, 'Campo disattivato')
+                    );
+                } catch (err: any) {
+                    notified = false;
+                    notifyError = err?.message || 'Errore sconosciuto';
+                    logger.error({ err }, 'cancelMatchesWithNotification failed');
+                }
             }
         }
 
@@ -469,7 +494,7 @@ router.patch('/courts/:id', authMiddleware, async (req: Request, res: Response) 
             },
         });
 
-        res.json({ success: true });
+        res.json({ success: true, notified, notifyError });
     } catch (err) {
         logger.error({ err }, 'PATCH /courts/:id failed');
         res.status(500).json({ error: 'Errore durante la modifica del campo' });
@@ -720,18 +745,15 @@ router.patch('/players/:id', authMiddleware, async (req: Request, res: Response)
             data
         });
 
-        // ✅ Notifica WhatsApp al cambio livello
+        // ✅ Notifica WhatsApp al cambio livello (sendMessage statico — no dynamic import per lesson 16)
         if (skillLevel !== undefined && parseFloat(skillLevel) !== player.skillLevel) {
-            const { sendMessage } = await import('../services/whatsapp');
-            try {
-                await sendMessage(
-                    player.phoneNumber, 
-                    `🎉 *Bravissimo!* Il tuo livello Padel è stato aggiornato a: *${skillLevel}*! Continua così! 💪🎾`
-                );
-                logger.info({ phone: player.phoneNumber, level: skillLevel }, 'WhatsApp notification for level update sent');
-            } catch (err) {
-                logger.error({ err }, 'Failed to send WhatsApp notification for level update');
-            }
+            runWithContext({ clubId }, () =>
+                sendMessage(
+                    player.phoneNumber,
+                    `🎉 Il tuo livello di gioco è stato aggiornato a *${skillLevel}*! Continua così 💪🎾`
+                )
+            ).then(() => logger.info({ phone: player.phoneNumber, level: skillLevel }, 'Level update WA sent'))
+             .catch(err => logger.error({ err }, 'Failed to send WA for level update'));
         }
 
         res.json(updated);
