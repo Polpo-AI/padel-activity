@@ -178,19 +178,29 @@ router.patch('/club', authMiddleware, async (req: Request, res: Response) => {
 router.get('/courts', authMiddleware, async (req: Request, res: Response) => {
     try {
         const clubId = (req as any).clubId;
-        const { date } = req.query;
+        const { date, dateFrom, dateTo } = req.query;
 
-        const targetDate = date ? new Date(date as string) : new Date();
-        const dayStart = new Date(targetDate);
-        dayStart.setHours(0, 0, 0, 0);
-        const dayEnd = new Date(targetDate);
-        dayEnd.setHours(23, 59, 59, 999);
+        let matchTimeFilter: { gte: Date; lte: Date };
+        if (dateFrom && dateTo) {
+            const from = new Date(dateFrom as string);
+            from.setHours(0, 0, 0, 0);
+            const to = new Date(dateTo as string);
+            to.setHours(23, 59, 59, 999);
+            matchTimeFilter = { gte: from, lte: to };
+        } else {
+            const targetDate = date ? new Date(date as string) : new Date();
+            const dayStart = new Date(targetDate);
+            dayStart.setHours(0, 0, 0, 0);
+            const dayEnd = new Date(targetDate);
+            dayEnd.setHours(23, 59, 59, 999);
+            matchTimeFilter = { gte: dayStart, lte: dayEnd };
+        }
 
         const courts = await prisma.court.findMany({
             where: { clubId, active: true },
             include: {
                 matches: {
-                    where: { startTime: { gte: dayStart, lte: dayEnd } },
+                    where: { startTime: matchTimeFilter },
                     include: {
                         MatchPlayer: { include: { player: true } },
                         invitations: {

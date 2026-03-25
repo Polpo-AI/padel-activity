@@ -5,6 +5,31 @@ import Badge from "../../shared/Badge";
 import Toast from "../../shared/Toast";
 import Modal from "../../shared/Modal";
 
+// ─── Calendar helpers ─────────────────────────
+
+function getMonday(dateStr) {
+  const d = new Date(dateStr + "T12:00:00");
+  const day = d.getDay();
+  const diff = day === 0 ? -6 : 1 - day;
+  d.setDate(d.getDate() + diff);
+  return d.toISOString().split("T")[0];
+}
+
+function addDays(dateStr, n) {
+  const d = new Date(dateStr + "T12:00:00");
+  d.setDate(d.getDate() + n);
+  return d.toISOString().split("T")[0];
+}
+
+function getWeekDays(mondayStr) {
+  return Array.from({ length: 7 }, (_, i) => addDays(mondayStr, i));
+}
+
+// Returns YYYY-MM-DD in Europe/Rome timezone (matches how users think of the day)
+function matchDay(isoString) {
+  return new Date(isoString).toLocaleString("sv-SE", { timeZone: "Europe/Rome" }).split(" ")[0];
+}
+
 // ─── HoursEditor ─────────────────────────────
 
 function HoursEditor({ token, club, onUpdated }) {
@@ -172,9 +197,9 @@ function UnavailabilityPanel({ court, token, onClose }) {
 
 // ─── CreateMatchModal ─────────────────────────
 
-function CreateMatchModal({ courts, club, token, onClose, onCreated }) {
+function CreateMatchModal({ courts, club, token, onClose, onCreated, defaultDate }) {
   const [courtId, setCourtId] = useState(courts[0]?.id || "");
-  const [date, setDate] = useState(today());
+  const [date, setDate] = useState(defaultDate || today());
   const [skillLevel, setSkillLevel] = useState(Math.ceil((club?.skillLevelCount || 3) / 2));
   const [matchType, setMatchType] = useState("MATCH");
   const [duration, setDuration] = useState(club?.matchDuration || 90);
@@ -292,7 +317,51 @@ function CreateMatchModal({ courts, club, token, onClose, onCreated }) {
   );
 }
 
-// ─── MatchCard ────────────────────────────────
+// ─── MatchChip (compact for calendar) ─────────
+
+function MatchChip({ match, onCancel }) {
+  const confirmed = match.MatchPlayer?.filter(mp => !mp.leftAt).length || 0;
+  const pending = match.invitations?.length || 0;
+  const colorMap = { OPEN: C.open, LOCKED: C.locked, CANCELLED: C.cancelled, UNFILLED: C.unfilled };
+  const color = colorMap[match.status] || C.muted;
+  const typeIcon = match.type === "LESSON" ? "👨‍🏫" : match.type === "UNAVAILABLE" ? "⛔" : match.isPrivateBooking ? "🔒" : "🎾";
+
+  return (
+    <div style={{
+      background: `${color}15`,
+      border: `1px solid ${color}40`,
+      borderRadius: 6,
+      padding: "5px 7px",
+      display: "flex",
+      flexDirection: "column",
+      gap: 2,
+    }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 4 }}>
+        <span style={{ fontSize: 11, fontWeight: 700, color, fontVariantNumeric: "tabular-nums" }}>{fmtTime(match.startTime)}</span>
+        <span style={{ fontSize: 9 }}>{typeIcon}</span>
+      </div>
+      {match.type === "MATCH" && (
+        <div style={{ fontSize: 10, color: C.muted }}>
+          {confirmed}/{match.playersNeeded}
+          {pending > 0 && <span style={{ color: C.warning }}> +{pending}</span>}
+        </div>
+      )}
+      {match.status === "OPEN" && match.type === "MATCH" && (
+        <button
+          onClick={() => onCancel(match.id)}
+          title="Cancella"
+          style={{
+            marginTop: 1, background: "transparent",
+            border: `1px solid ${C.cancelled}30`,
+            borderRadius: 4, color: C.cancelled, fontSize: 9,
+            cursor: "pointer", padding: "1px 4px", lineHeight: 1.4,
+          }}>✕ cancella</button>
+      )}
+    </div>
+  );
+}
+
+// ─── MatchCard (for day detail modal) ─────────
 
 function MatchCard({ match, onCancel }) {
   const confirmed = match.MatchPlayer?.filter(mp => !mp.leftAt) || [];
@@ -343,31 +412,172 @@ function MatchCard({ match, onCancel }) {
   );
 }
 
+// ─── DayDetailModal ───────────────────────────
+
+function DayDetailModal({ date, courts, onCancel, onClose }) {
+  const dateLabel = new Date(date + "T12:00").toLocaleDateString("it-IT", { weekday: "long", day: "numeric", month: "long" });
+  const allMatches = courts.flatMap(c =>
+    (c.matches || [])
+      .filter(m => matchDay(m.startTime) === date)
+      .map(m => ({ ...m, courtName: c.name }))
+  ).sort((a, b) => new Date(a.startTime) - new Date(b.startTime));
+
+  return (
+    <Modal title={`📅 ${dateLabel}`} onClose={onClose}>
+      {allMatches.length === 0 ? (
+        <div style={{ textAlign: "center", color: C.muted, fontSize: 13, padding: "24px 0" }}>Nessuna partita in questa giornata</div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          {allMatches.map(m => (
+            <div key={m.id}>
+              <div style={{ fontSize: 11, color: C.accent, marginBottom: 4, fontWeight: 600 }}>{m.courtName}</div>
+              <MatchCard match={m} onCancel={(id) => { onCancel(id); onClose(); }} />
+            </div>
+          ))}
+        </div>
+      )}
+    </Modal>
+  );
+}
+
+// ─── WeekCalendar ─────────────────────────────
+
+const DAY_NAMES = ["Lun", "Mar", "Mer", "Gio", "Ven", "Sab", "Dom"];
+
+function WeekCalendar({ courtData, weekDays, onCancel, todayStr, onDayClick, onCourtManage }) {
+  const thBase = {
+    padding: "10px 8px", textAlign: "center",
+    borderBottom: `1px solid ${C.border}`,
+    fontWeight: 600,
+  };
+  const tdBase = {
+    padding: 6, verticalAlign: "top",
+    borderBottom: `1px solid ${C.dim}`,
+    borderRight: `1px solid ${C.dim}`,
+  };
+
+  return (
+    <div style={{ overflowX: "auto", borderRadius: 12, border: `1px solid ${C.border}`, background: C.surface }}>
+      <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 760 }}>
+        <thead>
+          <tr>
+            {/* Court header */}
+            <th style={{
+              ...thBase, width: 110, textAlign: "left", padding: "10px 14px",
+              background: C.surface, position: "sticky", left: 0, zIndex: 2,
+              borderRight: `1px solid ${C.border}`,
+            }}>
+              <span style={{ fontSize: 10, color: C.muted, textTransform: "uppercase", letterSpacing: "0.1em" }}>Campo</span>
+            </th>
+            {weekDays.map((d, i) => {
+              const dt = new Date(d + "T12:00:00");
+              const isToday = d === todayStr;
+              const totalMatches = courtData.reduce((n, c) =>
+                n + (c.matches || []).filter(m => matchDay(m.startTime) === d && m.status !== "CANCELLED").length, 0);
+              return (
+                <th key={d} style={{
+                  ...thBase,
+                  background: isToday ? C.accentDim : C.surface,
+                  borderRight: i < 6 ? `1px solid ${C.border}` : "none",
+                  minWidth: 110, cursor: "pointer",
+                }} onClick={() => onDayClick(d)}>
+                  <div style={{ fontSize: 10, color: isToday ? C.accent : C.muted, textTransform: "uppercase", letterSpacing: "0.08em" }}>
+                    {DAY_NAMES[i]}
+                  </div>
+                  <div style={{ fontSize: 18, fontWeight: 700, color: isToday ? C.accent : C.text, marginTop: 1 }}>
+                    {dt.getDate()}
+                  </div>
+                  <div style={{ fontSize: 10, color: C.muted }}>
+                    {dt.toLocaleDateString("it-IT", { month: "short" })}
+                  </div>
+                  {totalMatches > 0 && (
+                    <div style={{ fontSize: 9, color: isToday ? C.accent : C.muted, marginTop: 2 }}>
+                      {totalMatches} partit{totalMatches === 1 ? "a" : "e"}
+                    </div>
+                  )}
+                </th>
+              );
+            })}
+          </tr>
+        </thead>
+        <tbody>
+          {courtData.map((court, ri) => (
+            <tr key={court.id}>
+              <td style={{
+                ...tdBase,
+                background: C.surface,
+                position: "sticky", left: 0, zIndex: 1,
+                borderRight: `1px solid ${C.border}`,
+                borderBottom: ri < courtData.length - 1 ? `1px solid ${C.dim}` : "none",
+              }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: C.accent }}>{court.name}</div>
+                <div style={{ fontSize: 10, color: C.muted, marginTop: 2 }}>{court.isCovered ? "🏠 Coperto" : "☀️ Scoperto"}</div>
+                <button
+                  onClick={() => onCourtManage(court)}
+                  style={{ ...btnGhost, fontSize: 9, color: C.unavail, borderColor: `${C.unavail}30`, marginTop: 6, padding: "2px 6px" }}>
+                  Blocchi
+                </button>
+              </td>
+              {weekDays.map((d, ci) => {
+                const dayMatches = (court.matches || []).filter(m => matchDay(m.startTime) === d);
+                const isToday = d === todayStr;
+                return (
+                  <td key={d} style={{
+                    ...tdBase,
+                    background: isToday ? `${C.accentDim}` : "transparent",
+                    borderRight: ci < 6 ? `1px solid ${C.dim}` : "none",
+                    borderBottom: ri < courtData.length - 1 ? `1px solid ${C.dim}` : "none",
+                    minWidth: 110,
+                  }}>
+                    {dayMatches.length === 0 ? (
+                      <div style={{ textAlign: "center", color: C.dim, fontSize: 10, padding: "12px 0", userSelect: "none" }}>—</div>
+                    ) : (
+                      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                        {dayMatches.map(m => <MatchChip key={m.id} match={m} onCancel={onCancel} />)}
+                      </div>
+                    )}
+                  </td>
+                );
+              })}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 // ─── CourtsView ───────────────────────────────
 
 export default function CourtsView({ token, onClubUpdate }) {
   const [courtData, setCourtData] = useState([]);
   const [club, setClub] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [date, setDate] = useState(today());
+  const [weekStart, setWeekStart] = useState(getMonday(today()));
   const [showCreate, setShowCreate] = useState(false);
+  const [createDate, setCreateDate] = useState(null);
   const [unavailCourt, setUnavailCourt] = useState(null);
+  const [dayDetail, setDayDetail] = useState(null);
   const [toast, setToast] = useState(null);
+
+  const weekDays = getWeekDays(weekStart);
+  const weekEnd = weekDays[6];
+  const todayStr = today();
 
   const load = useCallback(async () => {
     try {
       const [courts, clubData] = await Promise.all([
-        api(`/courts?date=${date}`, token),
+        api(`/courts?dateFrom=${weekStart}&dateTo=${weekEnd}`, token),
         api("/club", token),
       ]);
       setCourtData(courts);
       setClub(clubData);
       onClubUpdate?.(clubData);
     } finally { setLoading(false); }
-  }, [token, date]);
+  }, [token, weekStart]);
 
   useEffect(() => { load(); }, [load]);
-  useEffect(() => { const t = setInterval(load, 15000); return () => clearInterval(t); }, [load]);
+  useEffect(() => { const t = setInterval(load, 30000); return () => clearInterval(t); }, [load]);
 
   const cancelMatch = async (id) => {
     if (!confirm("Sicuro?")) return;
@@ -375,7 +585,21 @@ export default function CourtsView({ token, onClubUpdate }) {
     catch (e) { setToast({ msg: e.message, type: "err" }); }
   };
 
+  const prevWeek = () => setWeekStart(addDays(weekStart, -7));
+  const nextWeek = () => setWeekStart(addDays(weekStart, 7));
+  const goToday = () => setWeekStart(getMonday(todayStr));
+
+  const weekLabel = () => {
+    const from = new Date(weekStart + "T12:00");
+    const to = new Date(weekEnd + "T12:00");
+    if (from.getMonth() === to.getMonth()) {
+      return `${from.getDate()} – ${to.getDate()} ${to.toLocaleDateString("it-IT", { month: "long", year: "numeric" })}`;
+    }
+    return `${from.getDate()} ${from.toLocaleDateString("it-IT", { month: "short" })} – ${to.getDate()} ${to.toLocaleDateString("it-IT", { month: "short", year: "numeric" })}`;
+  };
+
   const allMatches = courtData.flatMap(c => c.matches || []);
+  const weekMatches = allMatches.filter(m => m.status !== "CANCELLED");
 
   if (loading) return <div style={{ padding: 40, display: "flex", gap: 10, alignItems: "center" }}><Spinner /> <span style={{ color: C.muted, fontSize: 13 }}>Caricamento...</span></div>;
 
@@ -383,19 +607,35 @@ export default function CourtsView({ token, onClubUpdate }) {
     <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
       {club && <HoursEditor token={token} club={club} onUpdated={d => setClub(prev => ({ ...prev, ...d }))} />}
 
+      {/* Week navigation + controls */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <input type="date" value={date} onChange={e => setDate(e.target.value)} style={{ ...inputSt, width: "auto" }} />
-          <span style={{ fontSize: 11, color: C.muted }}>● aggiornamento automatico 15s</span>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <button onClick={prevWeek} style={{ ...btnGhost, padding: "7px 14px", fontSize: 16 }}>‹</button>
+          <div style={{
+            minWidth: 260, textAlign: "center", fontSize: 14, fontWeight: 600, color: C.text,
+            background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: "7px 16px",
+          }}>
+            {weekLabel()}
+          </div>
+          <button onClick={nextWeek} style={{ ...btnGhost, padding: "7px 14px", fontSize: 16 }}>›</button>
+          {weekStart !== getMonday(todayStr) && (
+            <button onClick={goToday} style={{ ...btnGhost, color: C.accent, borderColor: `${C.accent}40`, fontSize: 12 }}>
+              Oggi
+            </button>
+          )}
         </div>
-        <button onClick={() => setShowCreate(true)} style={btnPrimary}>+ Nuova partita</button>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <span style={{ fontSize: 11, color: C.muted }}>● auto-refresh 30s</span>
+          <button onClick={() => { setCreateDate(todayStr); setShowCreate(true); }} style={btnPrimary}>+ Nuova partita</button>
+        </div>
       </div>
 
+      {/* Weekly stats */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12 }}>
         {[
-          { l: "Partite aperte", v: allMatches.filter(m => m.status === "OPEN").length, c: C.open },
-          { l: "Partite chiuse", v: allMatches.filter(m => m.status === "LOCKED").length, c: C.locked },
-          { l: "Giocatori confermati", v: allMatches.filter(m => m.status === "LOCKED").reduce((s, m) => s + (m.MatchPlayer?.filter(mp => !mp.leftAt).length || 0), 0), c: C.accent },
+          { l: "Partite aperte (settimana)", v: weekMatches.filter(m => m.status === "OPEN").length, c: C.open },
+          { l: "Partite chiuse (settimana)", v: weekMatches.filter(m => m.status === "LOCKED").length, c: C.locked },
+          { l: "Giocatori confermati", v: weekMatches.filter(m => m.status === "LOCKED").reduce((s, m) => s + (m.MatchPlayer?.filter(mp => !mp.leftAt).length || 0), 0), c: C.accent },
         ].map(s => (
           <div key={s.l} style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: "18px 20px" }}>
             <div style={{ fontSize: 10, color: C.muted, textTransform: "uppercase", letterSpacing: "0.1em" }}>{s.l}</div>
@@ -404,51 +644,39 @@ export default function CourtsView({ token, onClubUpdate }) {
         ))}
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: `repeat(${Math.min(courtData.length || 1, 3)}, 1fr)`, gap: 16 }}>
-        {courtData.map(court => {
-          const todayBlocks = (court.unavailabilities || []).filter(u => {
-            if (!u.recurring) return true;
-            return new Date(u.startTime).getDay() === new Date(date).getDay();
-          });
+      {/* Weekly calendar grid */}
+      <WeekCalendar
+        courtData={courtData}
+        weekDays={weekDays}
+        onCancel={cancelMatch}
+        todayStr={todayStr}
+        onDayClick={(d) => setDayDetail(d)}
+        onCourtManage={(court) => setUnavailCourt(court)}
+      />
 
-          return (
-            <div key={court.id} style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, overflow: "hidden" }}>
-              <div style={{ padding: "12px 16px", borderBottom: `1px solid ${C.border}`, display: "flex", justifyContent: "space-between", alignItems: "center", background: C.accentDim }}>
-                <div>
-                  <div style={{ fontSize: 14, fontWeight: 700, color: C.accent }}>{court.name}</div>
-                  {todayBlocks.length > 0 && (
-                    <div style={{ fontSize: 10, color: C.unavail, marginTop: 2 }}>
-                      🔒 {todayBlocks.length} blocco{todayBlocks.length > 1 ? "i" : ""} oggi
-                    </div>
-                  )}
-                </div>
-                <button onClick={() => setUnavailCourt(court)} style={{ ...btnGhost, fontSize: 11, color: C.unavail, borderColor: `${C.unavail}40` }}>
-                  Gestisci blocchi
-                </button>
-              </div>
-
-              <div style={{ padding: 12, display: "flex", flexDirection: "column", gap: 10 }}>
-                {todayBlocks.map(u => (
-                  <div key={u.id} style={{ background: `${C.unavail}18`, border: `1px solid ${C.unavail}30`, borderRadius: 8, padding: "8px 12px" }}>
-                    <div style={{ fontSize: 11, color: C.unavail, fontWeight: 600 }}>
-                      🔒 {fmtTime(u.startTime)}–{fmtTime(u.endTime)}
-                      {u.recurring && " (ricorrente)"}
-                    </div>
-                    {u.reason && <div style={{ fontSize: 10, color: C.muted, marginTop: 2 }}>{u.reason}</div>}
-                  </div>
-                ))}
-                {court.matches?.length === 0 && todayBlocks.length === 0 && (
-                  <div style={{ textAlign: "center", padding: "16px 0", color: C.dim, fontSize: 12 }}>Nessuna partita oggi</div>
-                )}
-                {court.matches?.map(m => <MatchCard key={m.id} match={m} onCancel={cancelMatch} />)}
-              </div>
-            </div>
-          );
-        })}
+      <div style={{ fontSize: 11, color: C.muted, textAlign: "center" }}>
+        Clicca su un giorno per vedere il dettaglio · Clicca ✕ su una partita per cancellarla
       </div>
 
-      {showCreate && <CreateMatchModal courts={courtData} club={club} token={token} onClose={() => setShowCreate(false)} onCreated={load} />}
+      {showCreate && (
+        <CreateMatchModal
+          courts={courtData}
+          club={club}
+          token={token}
+          defaultDate={createDate}
+          onClose={() => setShowCreate(false)}
+          onCreated={load}
+        />
+      )}
       {unavailCourt && <UnavailabilityPanel court={unavailCourt} token={token} onClose={() => { setUnavailCourt(null); load(); }} />}
+      {dayDetail && (
+        <DayDetailModal
+          date={dayDetail}
+          courts={courtData}
+          onCancel={cancelMatch}
+          onClose={() => setDayDetail(null)}
+        />
+      )}
       {toast && <Toast msg={toast.msg} type={toast.type} onDone={() => setToast(null)} />}
     </div>
   );
