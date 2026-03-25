@@ -382,50 +382,60 @@ function CreateMatchModal({ courts, club, token, onClose, onCreated, defaultDate
 
 // ─── MatchChip (compact for calendar) ─────────
 
-function MatchChip({ match, onCancel }) {
+function MatchChip({ match, onCancel, onDeleteUnavailable }) {
   const confirmed = match.MatchPlayer?.filter(mp => !mp.leftAt).length || 0;
   const pending = match.invitations?.length || 0;
   const colorMap = { OPEN: C.open, LOCKED: C.locked, CANCELLED: C.cancelled, UNFILLED: C.unfilled };
-  const color = colorMap[match.status] || C.muted;
-  const typeIcon = match.type === "LESSON" ? "👨‍🏫" : match.type === "UNAVAILABLE" ? "⛔" : match.isPrivateBooking ? "🔒" : "🎾";
+  const isUnavail = match.type === "UNAVAILABLE";
+  const color = isUnavail ? C.muted : (colorMap[match.status] || C.muted);
+  const typeIcon = match.type === "LESSON" ? "👨‍🏫" : isUnavail ? "⛔" : match.isPrivateBooking ? "🔒" : "🎾";
+  const canDelete = (match.status === "OPEN" && match.type === "MATCH") || isUnavail;
+
+  const bookerName = match.isPrivateBooking
+    ? (() => { const b = match.MatchPlayer?.find(mp => !mp.leftAt); return b?.player?.name || b?.player?.phoneNumber?.slice(-4) || null; })()
+    : null;
+
+  const sub = isUnavail
+    ? (match.cancelledReason || null)
+    : match.type === "MATCH" && !match.isPrivateBooking
+      ? `${confirmed}/${match.playersNeeded}${pending > 0 ? ` +${pending}` : ""}`
+      : bookerName;
 
   return (
     <div style={{
-      background: `${color}15`,
-      border: `1px solid ${color}40`,
+      background: isUnavail ? `${C.dim}` : `${color}15`,
+      border: `1px solid ${isUnavail ? C.border : color + "40"}`,
       borderRadius: 6,
-      padding: "5px 7px",
+      padding: "4px 6px",
       display: "flex",
-      flexDirection: "column",
-      gap: 2,
+      alignItems: "flex-start",
+      gap: 4,
     }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 4 }}>
-        <span style={{ fontSize: 11, fontWeight: 700, color, fontVariantNumeric: "tabular-nums" }}>
-          {fmtTime(match.startTime)}{match.endTime ? `–${fmtTime(match.endTime)}` : ""}
-        </span>
-        <span style={{ fontSize: 9 }}>{typeIcon}</span>
-      </div>
-      {match.type === "MATCH" && !match.isPrivateBooking && (
-        <div style={{ fontSize: 10, color: C.muted }}>
-          {confirmed}/{match.playersNeeded}
-          {pending > 0 && <span style={{ color: C.warning }}> +{pending}</span>}
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 3 }}>
+          <span style={{ fontSize: 9 }}>{typeIcon}</span>
+          <span style={{ fontSize: 10, fontWeight: 700, color: isUnavail ? C.muted : color, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+            {fmtTime(match.startTime)}{match.endTime ? `–${fmtTime(match.endTime)}` : ""}
+          </span>
         </div>
-      )}
-      {match.isPrivateBooking && (() => {
-        const booker = match.MatchPlayer?.find(mp => !mp.leftAt);
-        const name = booker?.player?.name || booker?.player?.phoneNumber?.slice(-4);
-        return name ? <div style={{ fontSize: 10, color: C.muted }}>{name}</div> : null;
-      })()}
-      {match.status === "OPEN" && match.type === "MATCH" && (
+        {sub && (
+          <div style={{ fontSize: 9, color: C.muted, marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            {sub}
+          </div>
+        )}
+      </div>
+      {canDelete && (
         <button
-          onClick={() => onCancel(match.id)}
-          title="Cancella"
+          onClick={() => isUnavail ? onDeleteUnavailable(match) : onCancel(match.id)}
+          title="Elimina"
           style={{
-            marginTop: 1, background: "transparent",
-            border: `1px solid ${C.cancelled}30`,
-            borderRadius: 4, color: C.cancelled, fontSize: 9,
-            cursor: "pointer", padding: "1px 4px", lineHeight: 1.4,
-          }}>✕ cancella</button>
+            flexShrink: 0, background: "transparent", border: "none",
+            color: C.muted, fontSize: 10, cursor: "pointer",
+            padding: "0 1px", lineHeight: 1, opacity: 0.6,
+          }}
+          onMouseEnter={e => e.currentTarget.style.opacity = "1"}
+          onMouseLeave={e => e.currentTarget.style.opacity = "0.6"}
+        >✕</button>
       )}
     </div>
   );
@@ -524,7 +534,7 @@ function DayDetailModal({ date, courts, onCancel, onClose }) {
 
 const DAY_NAMES = ["Lun", "Mar", "Mer", "Gio", "Ven", "Sab", "Dom"];
 
-function WeekCalendar({ courtData, weekDays, onCancel, todayStr, onDayClick, onCourtManage }) {
+function WeekCalendar({ courtData, weekDays, onCancel, onDeleteUnavailable, todayStr, onDayClick, onCourtManage }) {
   const thBase = {
     padding: "10px 8px", textAlign: "center",
     borderBottom: `1px solid ${C.border}`,
@@ -613,8 +623,8 @@ function WeekCalendar({ courtData, weekDays, onCancel, todayStr, onDayClick, onC
                     {dayMatches.length === 0 ? (
                       <div style={{ textAlign: "center", color: C.dim, fontSize: 10, padding: "12px 0", userSelect: "none" }}>—</div>
                     ) : (
-                      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                        {dayMatches.map(m => <MatchChip key={m.id} match={m} onCancel={onCancel} />)}
+                      <div style={{ display: "flex", flexDirection: "column", gap: 3, maxHeight: 160, overflowY: "auto" }}>
+                        {dayMatches.map(m => <MatchChip key={m.id} match={m} onCancel={onCancel} onDeleteUnavailable={onDeleteUnavailable} />)}
                       </div>
                     )}
                   </td>
@@ -659,6 +669,15 @@ export default function CourtsView({ token, onClubUpdate }) {
 
   useEffect(() => { load(); }, [load]);
   useEffect(() => { const t = setInterval(load, 30000); return () => clearInterval(t); }, [load]);
+
+  const deleteUnavailability = async (match) => {
+    if (!confirm("Eliminare questa chiusura?")) return;
+    try {
+      await api(`/courts/${match.courtId}/unavailability/${match.id}`, token, { method: "DELETE" });
+      load();
+      setToast({ msg: "Chiusura eliminata ✓", type: "ok" });
+    } catch (e) { setToast({ msg: e.message, type: "err" }); }
+  };
 
   const cancelMatch = async (id) => {
     if (!confirm("Sicuro?")) return;
@@ -737,6 +756,7 @@ export default function CourtsView({ token, onClubUpdate }) {
         courtData={courtData}
         weekDays={weekDays}
         onCancel={cancelMatch}
+        onDeleteUnavailable={deleteUnavailability}
         todayStr={todayStr}
         onDayClick={(d) => setDayDetail(d)}
         onCourtManage={(court) => setUnavailCourt(court)}
