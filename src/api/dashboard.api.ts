@@ -477,6 +477,76 @@ router.patch('/courts/:id', authMiddleware, async (req: Request, res: Response) 
 });
 
 // ─────────────────────────────────────────────
+// STATISTICHE
+// ─────────────────────────────────────────────
+
+router.get('/stats', authMiddleware, async (req: Request, res: Response) => {
+    const clubId = (req as any).clubId as string;
+    const days = parseInt(req.query.days as string) || 30;
+    const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+
+    try {
+        const [total, locked, open, cancelled, unfilled] = await Promise.all([
+            prisma.match.count({ where: { clubId, startTime: { gte: since }, status: { not: 'ARCHIVED' } } }),
+            prisma.match.count({ where: { clubId, startTime: { gte: since }, status: 'LOCKED' } }),
+            prisma.match.count({ where: { clubId, startTime: { gte: since }, status: 'OPEN' } }),
+            prisma.match.count({ where: { clubId, startTime: { gte: since }, status: 'CANCELLED' } }),
+            prisma.match.count({ where: { clubId, startTime: { gte: since }, status: 'UNFILLED' } }),
+        ]);
+
+        const completed = locked + cancelled + unfilled;
+        const fillRate = completed > 0 ? locked / completed : 0;
+
+        const activePlayers = await prisma.player.findMany({
+            where: { clubId, active: true },
+            select: { id: true, name: true, phoneNumber: true, reliabilityScore: true },
+        });
+
+        // Giocatori che hanno partecipato ad almeno una partita nel periodo
+        const activeInPeriod = await prisma.matchPlayer.findMany({
+            where: { match: { clubId, startTime: { gte: since } }, leftAt: null },
+            select: { playerId: true },
+            distinct: ['playerId'],
+        });
+
+        const wavesLaunched = await prisma.invitation.count({
+            where: { match: { clubId }, sentAt: { gte: since } },
+        });
+
+        const aiInteractions = await prisma.whatsAppMessage.count({
+            where: { clubId, role: 'user', timestamp: { gte: since } },
+        });
+
+        const avgReliability = activePlayers.length > 0
+            ? activePlayers.reduce((s, p) => s + p.reliabilityScore, 0) / activePlayers.length
+            : 0;
+
+        const topPlayers = [...activePlayers]
+            .sort((a, b) => b.reliabilityScore - a.reliabilityScore)
+            .slice(0, 5);
+
+        const [totalMp, noShowMp] = await Promise.all([
+            prisma.matchPlayer.count({ where: { match: { clubId, startTime: { gte: since } } } }),
+            prisma.matchPlayer.count({ where: { match: { clubId, startTime: { gte: since } }, noShow: true } }),
+        ]);
+        const noShowRate = totalMp > 0 ? noShowMp / totalMp : 0;
+
+        res.json({
+            matches: { total, locked, open, cancelled, unfilled },
+            players: { total: activePlayers.length, active: activeInPeriod.length, newThisPeriod: 0 },
+            reliability: { avg: avgReliability, topPlayers },
+            fillRate,
+            wavesLaunched,
+            aiInteractions,
+            noShowRate,
+        });
+    } catch (err) {
+        logger.error({ err }, 'Error fetching stats');
+        res.status(500).json({ error: 'Errore nel recupero statistiche' });
+    }
+});
+
+// ─────────────────────────────────────────────
 // GIOCATORI
 // ─────────────────────────────────────────────
 

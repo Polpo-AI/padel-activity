@@ -74,7 +74,7 @@ export default function StatsView({ token }) {
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 14 }}>
         <StatCard label="Partite totali" value={m.total ?? "—"} icon="🎾" sub={`${m.locked ?? 0} chiuse con successo`} />
         <StatCard label="Fill rate" value={`${((fillRate) * 100).toFixed(0)}%`} icon="📊" color={fillColor} sub="Partite riempite / totali" />
-        <StatCard label="Giocatori attivi" value={p.active ?? "—"} icon="👥" color={C.locked} sub={`+${p.newThisPeriod ?? 0} nuovi nel periodo`} />
+        <StatCard label="Giocatori attivi" value={p.active ?? "—"} icon="👥" color={C.locked} sub={`${p.total ?? 0} totali nel circolo`} />
         <StatCard label="Wave lanciate" value={data.wavesLaunched ?? "—"} icon="📡" color={C.warning} sub="Inviti WhatsApp inviati" />
       </div>
 
