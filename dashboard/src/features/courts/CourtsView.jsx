@@ -98,8 +98,8 @@ function TimePillPicker({ label, value, onChange, otherValue, isStart }) {
         {slots.map(t => {
           const selected = value === t;
           const disabled = isStart
-            ? (otherValue && t >= otherValue)
-            : (otherValue && t <= otherValue);
+            ? (otherValue !== "" && t >= otherValue)
+            : (otherValue !== "" && t <= otherValue);
           return (
             <button
               key={t}
@@ -126,7 +126,7 @@ function UnavailabilityPanel({ court, token, onClose }) {
   const [list, setList] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({ date: today(), startHour: "09:00", endHour: "10:30", reason: "", recurring: false });
+  const [form, setForm] = useState({ date: today(), startHour: "", endHour: "", reason: "", recurring: false });
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState(null);
 
@@ -140,6 +140,10 @@ function UnavailabilityPanel({ court, token, onClose }) {
   useEffect(() => { load(); }, [load]);
 
   const create = async () => {
+    if (!form.startHour || !form.endHour) {
+      setToast({ msg: "Seleziona orario di inizio e fine", type: "err" });
+      return;
+    }
     setSaving(true);
     try {
       const startTime = `${form.date}T${form.startHour}:00`;
@@ -154,7 +158,7 @@ function UnavailabilityPanel({ court, token, onClose }) {
         setToast({ msg: "Chiusura aggiunta ✓", type: "ok" });
       }
       setShowForm(false);
-      setForm({ date: today(), startHour: "09:00", endHour: "10:30", reason: "", recurring: false });
+      setForm({ date: today(), startHour: "", endHour: "", reason: "", recurring: false });
       load();
     } catch (e) { setToast({ msg: e.message, type: "err" }); }
     finally { setSaving(false); }
