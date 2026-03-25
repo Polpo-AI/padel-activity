@@ -30,10 +30,10 @@ export default function LoginPage({ onLogin }) {
           <div style={{ fontSize: 12, color: C.muted, marginTop: 4 }}>Accesso riservato</div>
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          <input value={u} onChange={e => setU(e.target.value)} placeholder="Username" style={inputSt} onKeyDown={e => e.key === "Enter" && submit()} />
-          <input type="password" value={p} onChange={e => setP(e.target.value)} placeholder="Password" style={inputSt} onKeyDown={e => e.key === "Enter" && submit()} />
+          <input value={u} onChange={e => setU(e.target.value)} placeholder="Username" style={{ ...inputSt, boxSizing: "border-box" }} onKeyDown={e => e.key === "Enter" && submit()} />
+          <input type="password" value={p} onChange={e => setP(e.target.value)} placeholder="Password" style={{ ...inputSt, boxSizing: "border-box" }} onKeyDown={e => e.key === "Enter" && submit()} />
           {err && <div style={{ fontSize: 12, color: C.cancelled, textAlign: "center" }}>{err}</div>}
-          <button onClick={submit} disabled={loading} style={{ ...btnPrimary, width: "100%", boxSizing: "border-box" }}>{loading ? "..." : "Accedi →"}</button>
+          <button onClick={submit} disabled={loading} style={{ ...btnPrimary, display: "block", width: "100%", boxSizing: "border-box" }}>{loading ? "..." : "Accedi →"}</button>
         </div>
       </div>
     </div>

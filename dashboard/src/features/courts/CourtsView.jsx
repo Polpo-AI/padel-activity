@@ -400,7 +400,9 @@ function MatchChip({ match, onCancel }) {
       gap: 2,
     }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 4 }}>
-        <span style={{ fontSize: 11, fontWeight: 700, color, fontVariantNumeric: "tabular-nums" }}>{fmtTime(match.startTime)}</span>
+        <span style={{ fontSize: 11, fontWeight: 700, color, fontVariantNumeric: "tabular-nums" }}>
+          {fmtTime(match.startTime)}{match.endTime ? `–${fmtTime(match.endTime)}` : ""}
+        </span>
         <span style={{ fontSize: 9 }}>{typeIcon}</span>
       </div>
       {match.type === "MATCH" && !match.isPrivateBooking && (
@@ -440,7 +442,9 @@ function MatchCard({ match, onCancel }) {
     <div style={{ background: C.bg, border: `1px solid ${C.dim}`, borderRadius: 10, padding: "12px 14px", display: "flex", flexDirection: "column", gap: 10 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
         <div>
-          <div style={{ fontSize: 15, fontWeight: 700, color: C.text }}>{fmtTime(match.startTime)}</div>
+          <div style={{ fontSize: 15, fontWeight: 700, color: C.text }}>
+            {fmtTime(match.startTime)}{match.endTime ? `–${fmtTime(match.endTime)}` : ""}
+          </div>
           {match.isPrivateBooking ? (() => {
             const booker = confirmed[0];
             const name = booker?.player?.name || booker?.player?.phoneNumber?.slice(-4);
@@ -527,9 +531,10 @@ function WeekCalendar({ courtData, weekDays, onCancel, todayStr, onDayClick, onC
     fontWeight: 600,
   };
   const tdBase = {
-    padding: 6, verticalAlign: "top",
+    padding: 8, verticalAlign: "top",
     borderBottom: `1px solid ${C.dim}`,
     borderRight: `1px solid ${C.dim}`,
+    minHeight: 80,
   };
 
   return (
@@ -591,7 +596,7 @@ function WeekCalendar({ courtData, weekDays, onCancel, todayStr, onDayClick, onC
                 <button
                   onClick={() => onCourtManage(court)}
                   style={{ ...btnGhost, fontSize: 9, color: C.unavail, borderColor: `${C.unavail}30`, marginTop: 6, padding: "2px 6px" }}>
-                  Blocchi
+                  Chiusure
                 </button>
               </td>
               {weekDays.map((d, ci) => {
