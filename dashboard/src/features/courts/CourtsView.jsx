@@ -383,6 +383,7 @@ function CreateMatchModal({ courts, club, token, onClose, onCreated, defaultDate
 // ─── MatchChip (compact for calendar) ─────────
 
 function MatchChip({ match, onCancel, onDeleteUnavailable }) {
+  const [confirming, setConfirming] = useState(false);
   const confirmed = match.MatchPlayer?.filter(mp => !mp.leftAt).length || 0;
   const pending = match.invitations?.length || 0;
   const colorMap = { OPEN: C.open, LOCKED: C.locked, CANCELLED: C.cancelled, UNFILLED: C.unfilled };
@@ -401,41 +402,58 @@ function MatchChip({ match, onCancel, onDeleteUnavailable }) {
       ? `${confirmed}/${match.playersNeeded}${pending > 0 ? ` +${pending}` : ""}`
       : bookerName;
 
+  const handleDelete = () => {
+    if (isUnavail) onDeleteUnavailable(match);
+    else onCancel(match.id);
+  };
+
   return (
     <div style={{
       background: isUnavail ? `${C.dim}` : `${color}15`,
       border: `1px solid ${isUnavail ? C.border : color + "40"}`,
       borderRadius: 6,
       padding: "4px 6px",
-      display: "flex",
-      alignItems: "flex-start",
-      gap: 4,
     }}>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 3 }}>
-          <span style={{ fontSize: 9 }}>{typeIcon}</span>
-          <span style={{ fontSize: 10, fontWeight: 700, color: isUnavail ? C.muted : color, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-            {fmtTime(match.startTime)}{match.endTime ? `–${fmtTime(match.endTime)}` : ""}
-          </span>
-        </div>
-        {sub && (
-          <div style={{ fontSize: 9, color: C.muted, marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-            {sub}
-          </div>
-        )}
+      <div style={{ display: "flex", alignItems: "center", gap: 3 }}>
+        <span style={{ fontSize: 9 }}>{typeIcon}</span>
+        <span style={{ fontSize: 10, fontWeight: 700, color: isUnavail ? C.muted : color, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", flex: 1 }}>
+          {fmtTime(match.startTime)}{match.endTime ? `–${fmtTime(match.endTime)}` : ""}
+        </span>
       </div>
-      {canDelete && (
+      {sub && (
+        <div style={{ fontSize: 9, color: C.muted, marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          {sub}
+        </div>
+      )}
+      {canDelete && !confirming && (
         <button
-          onClick={() => isUnavail ? onDeleteUnavailable(match) : onCancel(match.id)}
-          title="Elimina"
+          onClick={() => setConfirming(true)}
           style={{
-            flexShrink: 0, background: "transparent", border: "none",
-            color: C.muted, fontSize: 10, cursor: "pointer",
-            padding: "0 1px", lineHeight: 1, opacity: 0.6,
+            marginTop: 4, width: "100%", fontSize: 9, padding: "2px 0",
+            background: `${C.cancelled}15`, border: `1px solid ${C.cancelled}40`,
+            borderRadius: 4, color: C.cancelled, cursor: "pointer", fontWeight: 600,
           }}
-          onMouseEnter={e => e.currentTarget.style.opacity = "1"}
-          onMouseLeave={e => e.currentTarget.style.opacity = "0.6"}
-        >✕</button>
+        >Elimina</button>
+      )}
+      {canDelete && confirming && (
+        <div style={{ marginTop: 4, display: "flex", gap: 3 }}>
+          <button
+            onClick={handleDelete}
+            style={{
+              flex: 1, fontSize: 9, padding: "2px 0",
+              background: C.cancelled, border: "none",
+              borderRadius: 4, color: "#fff", cursor: "pointer", fontWeight: 700,
+            }}
+          >Sì</button>
+          <button
+            onClick={() => setConfirming(false)}
+            style={{
+              flex: 1, fontSize: 9, padding: "2px 0",
+              background: `${C.dim}`, border: `1px solid ${C.border}`,
+              borderRadius: 4, color: C.muted, cursor: "pointer",
+            }}
+          >No</button>
+        </div>
       )}
     </div>
   );
@@ -763,7 +781,7 @@ export default function CourtsView({ token, onClubUpdate }) {
       />
 
       <div style={{ fontSize: 11, color: C.muted, textAlign: "center" }}>
-        Clicca su un giorno per vedere il dettaglio · Clicca ✕ su una partita per cancellarla
+        Clicca su un giorno per vedere il dettaglio · Usa "Elimina" sul chip per cancellare una partita
       </div>
 
       {showCreate && (
