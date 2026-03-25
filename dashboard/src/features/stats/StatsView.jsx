@@ -2,27 +2,59 @@ import { useState, useEffect, useCallback } from "react";
 import { C, api, btnGhost } from "../../shared/config";
 import Spinner from "../../shared/Spinner";
 
-function StatCard({ label, value, sub, color, icon }) {
+function HeroCard({ label, value, sub, color, icon, highlight }) {
   return (
-    <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: "20px 22px", display: "flex", flexDirection: "column", gap: 8 }}>
+    <div style={{
+      background: highlight ? `linear-gradient(135deg, ${C.surface} 0%, ${color}18 100%)` : C.surface,
+      border: `1px solid ${highlight ? color + "50" : C.border}`,
+      borderRadius: 14, padding: "24px 26px",
+      display: "flex", flexDirection: "column", gap: 10,
+    }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-        <div style={{ fontSize: 10, color: C.muted, textTransform: "uppercase", letterSpacing: "0.1em" }}>{label}</div>
-        <span style={{ fontSize: 18 }}>{icon}</span>
+        <div style={{ fontSize: 10, color: C.muted, textTransform: "uppercase", letterSpacing: "0.12em", fontWeight: 600 }}>{label}</div>
+        <span style={{ fontSize: 22 }}>{icon}</span>
       </div>
-      <div style={{ fontSize: 32, fontWeight: 700, color: color || C.accent, fontVariantNumeric: "tabular-nums", lineHeight: 1 }}>{value}</div>
-      {sub && <div style={{ fontSize: 11, color: C.muted }}>{sub}</div>}
+      <div style={{ fontSize: 38, fontWeight: 700, color: color || C.accent, fontVariantNumeric: "tabular-nums", lineHeight: 1 }}>{value}</div>
+      {sub && <div style={{ fontSize: 12, color: C.muted, lineHeight: 1.4 }}>{sub}</div>}
     </div>
   );
 }
 
-function MiniBar({ value, max, color }) {
-  const pct = Math.min(100, Math.round((value / (max || 1)) * 100));
+function MetricRow({ label, value, detail, color }) {
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-      <div style={{ flex: 1, height: 5, background: C.dim, borderRadius: 3, overflow: "hidden" }}>
-        <div style={{ height: "100%", width: `${pct}%`, background: color || C.accent, borderRadius: 3, transition: "width 0.5s" }} />
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 0", borderBottom: `1px solid ${C.dim}` }}>
+      <div>
+        <div style={{ fontSize: 13, color: C.text }}>{label}</div>
+        {detail && <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>{detail}</div>}
       </div>
-      <span style={{ fontSize: 10, color: C.muted, minWidth: 28, textAlign: "right" }}>{pct}%</span>
+      <div style={{ fontSize: 18, fontWeight: 700, color: color || C.text, fontVariantNumeric: "tabular-nums" }}>{value}</div>
+    </div>
+  );
+}
+
+function DonutFill({ rate, color, label, sub }) {
+  const pct = Math.round(rate * 100);
+  const r = 36;
+  const circ = 2 * Math.PI * r;
+  const dash = (pct / 100) * circ;
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>
+      <div style={{ position: "relative", width: 100, height: 100 }}>
+        <svg width="100" height="100" style={{ transform: "rotate(-90deg)" }}>
+          <circle cx="50" cy="50" r={r} fill="none" stroke={C.dim} strokeWidth="8" />
+          <circle cx="50" cy="50" r={r} fill="none" stroke={color} strokeWidth="8"
+            strokeDasharray={`${dash} ${circ}`} strokeLinecap="round"
+            style={{ transition: "stroke-dasharray 0.6s ease" }} />
+        </svg>
+        <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
+          <span style={{ fontSize: 18, fontWeight: 700, color, lineHeight: 1 }}>{pct}%</span>
+        </div>
+      </div>
+      <div style={{ textAlign: "center" }}>
+        <div style={{ fontSize: 12, color: C.text, fontWeight: 600 }}>{label}</div>
+        {sub && <div style={{ fontSize: 10, color: C.muted, marginTop: 2 }}>{sub}</div>}
+      </div>
     </div>
   );
 }
@@ -38,28 +70,34 @@ export default function StatsView({ token }) {
       const d = await api(`/stats?days=${range}`, token);
       setData(d);
     } catch {
-      setData({
-        matches: { total: 0, open: 0, locked: 0, cancelled: 0, unfilled: 0 },
-        players: { total: 0, active: 0, newThisPeriod: 0 },
-        reliability: { avg: 0, topPlayers: [] },
-        fillRate: 0, wavesLaunched: 0, aiInteractions: 0, noShowRate: 0,
-      });
+      setData(null);
     } finally { setLoading(false); }
   }, [token, range]);
 
   useEffect(() => { load(); }, [load]);
 
-  if (loading) return <div style={{ display: "flex", gap: 10, alignItems: "center", padding: 40 }}><Spinner /><span style={{ color: C.muted, fontSize: 13 }}>Caricamento statistiche...</span></div>;
-  if (!data) return null;
+  if (loading) return (
+    <div style={{ display: "flex", gap: 10, alignItems: "center", padding: 40 }}>
+      <Spinner /><span style={{ color: C.muted, fontSize: 13 }}>Caricamento...</span>
+    </div>
+  );
+
+  if (!data) return (
+    <div style={{ padding: 40, textAlign: "center", color: C.muted, fontSize: 13 }}>
+      Dati non disponibili
+    </div>
+  );
 
   const m = data.matches || {};
-  const p = data.players || {};
-  const r = data.reliability || {};
-  const fillRate = data.fillRate || 0;
-  const fillColor = fillRate >= 0.7 ? C.open : fillRate >= 0.4 ? C.warning : C.cancelled;
+  const fillColor = data.fillRate >= 0.7 ? C.open : data.fillRate >= 0.4 ? C.warning : C.cancelled;
+  const convColor = data.waveConversionRate >= 0.3 ? C.open : data.waveConversionRate >= 0.15 ? C.warning : C.cancelled;
+  const hasRevenue = data.revenue > 0;
+  const hasOffHours = data.totalMessages > 0;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+
+      {/* Range selector */}
       <div style={{ display: "flex", gap: 8 }}>
         {[7, 30, 90].map(d => (
           <button key={d} onClick={() => setRange(d)} style={{
@@ -71,73 +109,104 @@ export default function StatsView({ token }) {
         ))}
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 14 }}>
-        <StatCard label="Partite totali" value={m.total ?? "—"} icon="🎾" sub={`${m.locked ?? 0} chiuse con successo`} />
-        <StatCard label="Fill rate" value={`${((fillRate) * 100).toFixed(0)}%`} icon="📊" color={fillColor} sub="Partite riempite / totali" />
-        <StatCard label="Giocatori attivi" value={p.active ?? "—"} icon="👥" color={C.locked} sub={`${p.total ?? 0} totali nel circolo`} />
-        <StatCard label="Wave lanciate" value={data.wavesLaunched ?? "—"} icon="📡" color={C.warning} sub="Inviti WhatsApp inviati" />
+      {/* Hero: revenue + partite completate */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+        <HeroCard
+          label="Revenue generata"
+          value={hasRevenue ? `€${data.revenue.toLocaleString("it-IT")}` : "—"}
+          sub={hasRevenue ? `${m.locked ?? 0} partite completate con successo` : "Configura i prezzi dei campi per abilitare"}
+          color={C.open}
+          icon="💰"
+          highlight={hasRevenue}
+        />
+        <HeroCard
+          label="Partite salvate da disdetta"
+          value={data.savedFromCancellation ?? 0}
+          sub={data.savedFromCancellation > 0
+            ? `Il bot ha recuperato ${data.savedFromCancellation} partite che sarebbero saltate`
+            : "Nessuna disdetta nel periodo"}
+          color={C.locked}
+          icon="🚨"
+          highlight={data.savedFromCancellation > 0}
+        />
       </div>
 
-      <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: 24 }}>
-        <div style={{ fontSize: 13, fontWeight: 600, color: C.text, marginBottom: 20 }}>📈 Distribuzione partite</div>
-        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      {/* Metriche di efficienza */}
+      <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 14, padding: 24 }}>
+        <div style={{ fontSize: 13, fontWeight: 600, color: C.text, marginBottom: 20 }}>📊 Efficienza del bot</div>
+        <div style={{ display: "flex", justifyContent: "space-around", flexWrap: "wrap", gap: 24 }}>
+          <DonutFill
+            rate={data.fillRate}
+            color={fillColor}
+            label="Fill rate"
+            sub={`${m.locked ?? 0}/${(m.locked ?? 0) + (m.cancelled ?? 0) + (m.unfilled ?? 0)} partite riempite`}
+          />
+          <DonutFill
+            rate={data.waveConversionRate}
+            color={convColor}
+            label="Conversione inviti"
+            sub={`${data.invSent ?? 0} inviti inviati`}
+          />
+          {hasOffHours && (
+            <DonutFill
+              rate={data.offHoursRate}
+              color={C.warning}
+              label="Fuori orario"
+              sub="Messaggi gestiti di notte / weekend"
+            />
+          )}
+        </div>
+      </div>
+
+      {/* Partite nel periodo */}
+      <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 14, padding: 24 }}>
+        <div style={{ fontSize: 13, fontWeight: 600, color: C.text, marginBottom: 4 }}>🎾 Partite negli ultimi {range} giorni</div>
+        <div style={{ fontSize: 11, color: C.muted, marginBottom: 16 }}>{m.total ?? 0} totali</div>
+        <div>
           {[
-            { label: "Chiuse (successo)", value: m.locked ?? 0, color: C.locked },
-            { label: "Aperte", value: m.open ?? 0, color: C.open },
+            { label: "Completate con successo", value: m.locked ?? 0, color: C.locked },
+            { label: "Ancora aperte", value: m.open ?? 0, color: C.open },
             { label: "Non riempite", value: m.unfilled ?? 0, color: C.unfilled },
             { label: "Cancellate", value: m.cancelled ?? 0, color: C.cancelled },
-          ].map(row => (
-            <div key={row.label} style={{ display: "grid", gridTemplateColumns: "160px 1fr 36px", alignItems: "center", gap: 12 }}>
-              <span style={{ fontSize: 12, color: C.muted }}>{row.label}</span>
-              <MiniBar value={row.value} max={m.total || 1} color={row.color} />
-              <span style={{ fontSize: 12, color: row.color, fontWeight: 700, textAlign: "right" }}>{row.value}</span>
+          ].map((row, i, arr) => (
+            <div key={row.label} style={{
+              display: "flex", justifyContent: "space-between", alignItems: "center",
+              padding: "11px 0",
+              borderBottom: i < arr.length - 1 ? `1px solid ${C.dim}` : "none",
+            }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <div style={{ width: 8, height: 8, borderRadius: "50%", background: row.color, flexShrink: 0 }} />
+                <span style={{ fontSize: 13, color: C.text }}>{row.label}</span>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                <div style={{ width: 80, height: 4, background: C.dim, borderRadius: 2, overflow: "hidden" }}>
+                  <div style={{ height: "100%", width: `${((row.value / (m.total || 1)) * 100)}%`, background: row.color, borderRadius: 2 }} />
+                </div>
+                <span style={{ fontSize: 14, fontWeight: 700, color: row.color, minWidth: 28, textAlign: "right" }}>{row.value}</span>
+              </div>
             </div>
           ))}
         </div>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-        <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: 24 }}>
-          <div style={{ fontSize: 13, fontWeight: 600, color: C.text, marginBottom: 6 }}>⭐ Affidabilità media</div>
-          <div style={{ fontSize: 10, color: C.muted, marginBottom: 16 }}>basata su reliabilityScore del sistema</div>
-          <div style={{ fontSize: 42, fontWeight: 700, color: (r.avg ?? 0) >= 0.6 ? C.open : C.warning, fontVariantNumeric: "tabular-nums" }}>
-            {((r.avg ?? 0.33) * 100).toFixed(0)}<span style={{ fontSize: 20 }}>%</span>
-          </div>
-          <div style={{ height: 6, background: C.dim, borderRadius: 3, overflow: "hidden", marginTop: 12 }}>
-            <div style={{ height: "100%", width: `${(r.avg ?? 0.33) * 100}%`, background: (r.avg ?? 0.33) >= 0.6 ? C.open : C.warning, borderRadius: 3 }} />
-          </div>
-          <div style={{ fontSize: 11, color: C.muted, marginTop: 10 }}>No-show rate: <span style={{ color: C.cancelled }}>{((data.noShowRate ?? 0) * 100).toFixed(0)}%</span></div>
-        </div>
-
-        <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: 24 }}>
-          <div style={{ fontSize: 13, fontWeight: 600, color: C.text, marginBottom: 16 }}>🏆 Top giocatori affidabili</div>
-          {(r.topPlayers ?? []).length === 0 ? (
-            <div style={{ fontSize: 12, color: C.muted, padding: "20px 0", textAlign: "center" }}>Dati disponibili dopo le prime partite</div>
-          ) : (
-            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              {(r.topPlayers ?? []).slice(0, 5).map((pl, i) => (
-                <div key={pl.id} style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                  <span style={{ fontSize: 11, color: C.dim, width: 16, textAlign: "right" }}>{i + 1}</span>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 12, color: C.text }}>{pl.name || pl.phoneNumber}</div>
-                    <MiniBar value={pl.reliabilityScore} max={1} color={C.open} />
-                  </div>
-                  <span style={{ fontSize: 11, color: C.open, fontWeight: 700 }}>{((pl.reliabilityScore ?? 0.33) * 100).toFixed(0)}%</span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+      {/* Giocatori */}
+      <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 14, padding: 24 }}>
+        <div style={{ fontSize: 13, fontWeight: 600, color: C.text, marginBottom: 4 }}>👥 Community</div>
+        <div style={{ fontSize: 11, color: C.muted, marginBottom: 16 }}>Giocatori nel circolo</div>
+        <MetricRow
+          label="Giocatori attivi nel periodo"
+          detail="Hanno partecipato ad almeno una partita"
+          value={data.players?.active ?? 0}
+          color={C.accent}
+        />
+        <MetricRow
+          label="Totale iscritti"
+          detail="Giocatori registrati nel circolo"
+          value={data.players?.total ?? 0}
+          color={C.text}
+        />
       </div>
 
-      <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: 20, display: "flex", alignItems: "center", gap: 24 }}>
-        <div style={{ fontSize: 32 }}>🤖</div>
-        <div style={{ flex: 1 }}>
-          <div style={{ fontSize: 13, fontWeight: 600, color: C.text }}>Interazioni AI (Anthropic)</div>
-          <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>Messaggi elaborati dal modello nel periodo selezionato</div>
-        </div>
-        <div style={{ fontSize: 28, fontWeight: 700, color: C.accent, fontVariantNumeric: "tabular-nums" }}>{data.aiInteractions ?? "—"}</div>
-      </div>
     </div>
   );
 }

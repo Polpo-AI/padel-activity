@@ -486,6 +486,7 @@ router.get('/stats', authMiddleware, async (req: Request, res: Response) => {
     const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
 
     try {
+        // ── Conteggi partite ──────────────────────────────────────────
         const [total, locked, open, cancelled, unfilled] = await Promise.all([
             prisma.match.count({ where: { clubId, startTime: { gte: since }, status: { not: 'ARCHIVED' } } }),
             prisma.match.count({ where: { clubId, startTime: { gte: since }, status: 'LOCKED' } }),
@@ -493,52 +494,74 @@ router.get('/stats', authMiddleware, async (req: Request, res: Response) => {
             prisma.match.count({ where: { clubId, startTime: { gte: since }, status: 'CANCELLED' } }),
             prisma.match.count({ where: { clubId, startTime: { gte: since }, status: 'UNFILLED' } }),
         ]);
-
         const completed = locked + cancelled + unfilled;
         const fillRate = completed > 0 ? locked / completed : 0;
 
-        const activePlayers = await prisma.player.findMany({
-            where: { clubId, active: true },
-            select: { id: true, name: true, phoneNumber: true, reliabilityScore: true },
+        // ── Revenue: match LOCKED × prezzo slot ───────────────────────
+        const lockedMatches = await prisma.match.findMany({
+            where: { clubId, startTime: { gte: since }, status: 'LOCKED' },
+            include: { court: { include: { prices: true } } },
+        });
+        let revenue = 0;
+        for (const match of lockedMatches) {
+            if (!match.court?.prices?.length) continue;
+            const rome = new Date(match.startTime).toLocaleTimeString('it-IT', { timeZone: 'Europe/Rome', hour: '2-digit', minute: '2-digit' });
+            const price = match.court.prices.find(p => {
+                if (rome < p.startTime || rome >= p.endTime) return false;
+                if (p.startDate && match.startTime < p.startDate) return false;
+                if (p.endDate && match.startTime > p.endDate) return false;
+                return true;
+            });
+            if (price) revenue += price.price;
+        }
+
+        // ── Partite salvate da disdetta ───────────────────────────────
+        const savedFromCancellation = await prisma.match.count({
+            where: { clubId, startTime: { gte: since }, status: 'LOCKED', recoveryWaveCount: { gt: 0 } },
         });
 
-        // Giocatori che hanno partecipato ad almeno una partita nel periodo
-        const activeInPeriod = await prisma.matchPlayer.findMany({
-            where: { match: { clubId, startTime: { gte: since } }, leftAt: null },
-            select: { playerId: true },
-            distinct: ['playerId'],
-        });
-
-        const wavesLaunched = await prisma.invitation.count({
-            where: { match: { clubId }, sentAt: { gte: since } },
-        });
-
-        const aiInteractions = await prisma.whatsAppMessage.count({
-            where: { clubId, role: 'user', timestamp: { gte: since } },
-        });
-
-        const avgReliability = activePlayers.length > 0
-            ? activePlayers.reduce((s, p) => s + p.reliabilityScore, 0) / activePlayers.length
-            : 0;
-
-        const topPlayers = [...activePlayers]
-            .sort((a, b) => b.reliabilityScore - a.reliabilityScore)
-            .slice(0, 5);
-
-        const [totalMp, noShowMp] = await Promise.all([
-            prisma.matchPlayer.count({ where: { match: { clubId, startTime: { gte: since } } } }),
-            prisma.matchPlayer.count({ where: { match: { clubId, startTime: { gte: since } }, noShow: true } }),
+        // ── Conversione wave ──────────────────────────────────────────
+        const [invSent, invAccepted] = await Promise.all([
+            prisma.invitation.count({ where: { match: { clubId }, sentAt: { gte: since } } }),
+            prisma.invitation.count({ where: { match: { clubId }, sentAt: { gte: since }, status: 'ACCEPTED' } }),
         ]);
-        const noShowRate = totalMp > 0 ? noShowMp / totalMp : 0;
+        const waveConversionRate = invSent > 0 ? invAccepted / invSent : 0;
+
+        // ── Messaggi fuori orario (bot attivo mentre lo staff non c'è) ─
+        // Fuori orario = prima delle 8:00 o dopo le 20:00 in ora italiana, oppure sabato/domenica
+        const allUserMessages = await prisma.whatsAppMessage.findMany({
+            where: { clubId, role: 'user', timestamp: { gte: since } },
+            select: { timestamp: true },
+        });
+        const offHoursMessages = allUserMessages.filter(m => {
+            const d = new Date(m.timestamp);
+            const hour = parseInt(d.toLocaleString('it-IT', { timeZone: 'Europe/Rome', hour: '2-digit', hour12: false }));
+            const dow = d.getDay(); // 0=Dom, 6=Sab in locale UTC — approssimazione accettabile
+            return hour < 8 || hour >= 20 || dow === 0 || dow === 6;
+        });
+        const offHoursRate = allUserMessages.length > 0 ? offHoursMessages.length / allUserMessages.length : 0;
+
+        // ── Giocatori ─────────────────────────────────────────────────
+        const [totalPlayers, activeInPeriod] = await Promise.all([
+            prisma.player.count({ where: { clubId, active: true } }),
+            prisma.matchPlayer.findMany({
+                where: { match: { clubId, startTime: { gte: since } }, leftAt: null },
+                select: { playerId: true },
+                distinct: ['playerId'],
+            }),
+        ]);
 
         res.json({
             matches: { total, locked, open, cancelled, unfilled },
-            players: { total: activePlayers.length, active: activeInPeriod.length, newThisPeriod: 0 },
-            reliability: { avg: avgReliability, topPlayers },
+            players: { total: totalPlayers, active: activeInPeriod.length },
             fillRate,
-            wavesLaunched,
-            aiInteractions,
-            noShowRate,
+            revenue,
+            savedFromCancellation,
+            waveConversionRate,
+            invSent,
+            offHoursMessages: offHoursMessages.length,
+            totalMessages: allUserMessages.length,
+            offHoursRate,
         });
     } catch (err) {
         logger.error({ err }, 'Error fetching stats');
