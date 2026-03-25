@@ -340,7 +340,7 @@ function MatchChip({ match, onCancel }) {
         <span style={{ fontSize: 11, fontWeight: 700, color, fontVariantNumeric: "tabular-nums" }}>{fmtTime(match.startTime)}</span>
         <span style={{ fontSize: 9 }}>{typeIcon}</span>
       </div>
-      {match.type === "MATCH" && (
+      {match.type === "MATCH" && !match.isPrivateBooking && (
         <div style={{ fontSize: 10, color: C.muted }}>
           {confirmed}/{match.playersNeeded}
           {pending > 0 && <span style={{ color: C.warning }}> +{pending}</span>}
@@ -378,19 +378,21 @@ function MatchCard({ match, onCancel }) {
         <Badge status={match.status} />
       </div>
 
-      <div>
-        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
-          <span style={{ fontSize: 11, color: C.muted }}>{confirmed.length}/{match.playersNeeded}</span>
-          {pending > 0 && <span style={{ fontSize: 10, color: C.warning, background: `${C.warning}15`, padding: "1px 6px", borderRadius: 8 }}>{pending} in attesa</span>}
+      {!match.isPrivateBooking && (
+        <div>
+          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+            <span style={{ fontSize: 11, color: C.muted }}>{confirmed.length}/{match.playersNeeded}</span>
+            {pending > 0 && <span style={{ fontSize: 10, color: C.warning, background: `${C.warning}15`, padding: "1px 6px", borderRadius: 8 }}>{pending} in attesa</span>}
+          </div>
+          <div style={{ height: 3, background: C.dim, borderRadius: 2, overflow: "hidden" }}>
+            <div style={{
+              height: "100%", borderRadius: 2, transition: "width 0.3s",
+              width: `${(confirmed.length / match.playersNeeded) * 100}%`,
+              background: match.status === "LOCKED" ? C.locked : confirmed.length > 0 ? C.accent : C.muted,
+            }} />
+          </div>
         </div>
-        <div style={{ height: 3, background: C.dim, borderRadius: 2, overflow: "hidden" }}>
-          <div style={{
-            height: "100%", borderRadius: 2, transition: "width 0.3s",
-            width: `${(confirmed.length / match.playersNeeded) * 100}%`,
-            background: match.status === "LOCKED" ? C.locked : confirmed.length > 0 ? C.accent : C.muted,
-          }} />
-        </div>
-      </div>
+      )}
 
       <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
         {confirmed.map(mp => (
@@ -398,7 +400,7 @@ function MatchCard({ match, onCancel }) {
             {mp.player?.name || mp.player?.phoneNumber?.slice(-4)}
           </span>
         ))}
-        {Array.from({ length: spotsLeft }).map((_, i) => (
+        {!match.isPrivateBooking && Array.from({ length: spotsLeft }).map((_, i) => (
           <span key={i} style={{ fontSize: 10, color: C.dim, padding: "2px 7px", borderRadius: 4, border: `1px dashed ${C.dim}` }}>—</span>
         ))}
       </div>
