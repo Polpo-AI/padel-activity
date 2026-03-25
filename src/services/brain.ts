@@ -632,7 +632,16 @@ PRINCIPIO BASE: se c'è ambiguità, assumi l'interpretazione più favorevole all
         if (content.type === 'text') {
             const text = content.text.trim();
             const start = text.indexOf('{');
-            const end = text.lastIndexOf('}');
+            // Trova la graffa chiusa che corrisponde alla prima aperta,
+            // tracciando la profondità — evita errori se Claude aggiunge testo dopo il JSON
+            let end = -1;
+            if (start !== -1) {
+                let depth = 0;
+                for (let i = start; i < text.length; i++) {
+                    if (text[i] === '{') depth++;
+                    else if (text[i] === '}') { depth--; if (depth === 0) { end = i; break; } }
+                }
+            }
             if (start !== -1 && end !== -1) {
                 const parsed = JSON.parse(text.substring(start, end + 1));
                 return {
