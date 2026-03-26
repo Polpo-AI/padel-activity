@@ -263,6 +263,7 @@ function UnavailabilityPanel({ court, token, onClose }) {
 function CreateMatchModal({ courts, club, token, onClose, onCreated, defaultDate, defaultCourtId }) {
   const [courtId, setCourtId] = useState(defaultCourtId || courts[0]?.id || "");
   const [date, setDate] = useState(defaultDate || today());
+  const [title, setTitle] = useState("");
   const [skillLevel, setSkillLevel] = useState(Math.ceil((club?.skillLevelCount || 3) / 2));
   const [matchType, setMatchType] = useState("MATCH");
   const [duration, setDuration] = useState(club?.matchDuration || 90);
@@ -305,7 +306,7 @@ function CreateMatchModal({ courts, club, token, onClose, onCreated, defaultDate
         startTime = selectedSlot;
         dur = duration;
       }
-      await api("/matches", token, { method: "POST", body: JSON.stringify({ courtId, startTime, skillLevel, type: matchType, duration: dur }) });
+      await api("/matches", token, { method: "POST", body: JSON.stringify({ courtId, startTime, skillLevel, type: matchType, duration: dur, title: title.trim() || undefined }) });
       onCreated(); onClose();
     } catch (e) { setErr(e.message); }
     finally { setSaving(false); }
@@ -341,6 +342,13 @@ function CreateMatchModal({ courts, club, token, onClose, onCreated, defaultDate
         <div>
           <label style={labelSt}>Data</label>
           <input type="date" value={date} onChange={e => setDate(e.target.value)} style={inputSt} />
+        </div>
+
+        <div>
+          <label style={labelSt}>Nome evento <span style={{ color: C.muted, fontWeight: 400 }}>(opzionale)</span></label>
+          <input value={title} onChange={e => setTitle(e.target.value)}
+            placeholder={matchType === "MATCH" ? "es. Torneo amici" : matchType === "LESSON" ? "es. Lezione Marco" : "es. Manutenzione campo"}
+            style={inputSt} />
         </div>
 
         {matchType === "MATCH" && (
@@ -450,6 +458,11 @@ function MatchChip({ match, onCancel, onDeleteUnavailable }) {
           {fmtTime(match.startTime)}{match.endTime ? `–${fmtTime(match.endTime)}` : ""}
         </span>
       </div>
+      {match.title && (
+        <div style={{ fontSize: 9, fontWeight: 600, color: isUnavail ? C.muted : color, marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          {match.title}
+        </div>
+      )}
       {sub && (
         <div style={{ fontSize: 9, color: C.muted, marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
           {sub}

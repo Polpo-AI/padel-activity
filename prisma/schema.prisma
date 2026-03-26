@@ -51,6 +51,7 @@ model Court {
 model Match {
   id                String        @id @default(uuid())
   type              MatchType     @default(MATCH)
+  title             String?
   clubId            String?
   courtId           String?
   startTime         DateTime
