@@ -491,7 +491,7 @@ ${slotsAvailability.fullSlots.length > 0 ? `\nSlot completamente occupati (nessu
 COME USARE QUESTA INFO:
 • freeScopertoSlots è una lista di SUGGERIMENTI pre-calcolati a intervalli fissi — NON è una whitelist di orari prenotabili. Se l'utente richiede un orario SPECIFICO (es. "sabato alle 9"), quell'orario è valido anche se non appare nella lista, purché non sia in fullSlots e rientri nell'orario di apertura del circolo.
 • "quando hai disponibilità?" / "quando c'è posto?" → proponi 3-4 slot da freeScopertoSlots in modo conversazionale. Se non ci sono scoperti liberi, proponi quelli con solo coperto.
-• Se l'utente chiede un orario specifico: controlla SOLO se è in fullSlots (bloccante) o fuori orario apertura. In tutti gli altri casi esegui BOOK_FIELD direttamente senza chiedere conferma disponibilità.
+• Se l'utente chiede un orario specifico: controlla SOLO se è in fullSlots (bloccante), prima dell'orario di apertura, o se startTime + 90 min supera l'orario di chiusura (es. chiusura 23:30 → ultimo orario valido 22:00). In tutti gli altri casi esegui BOOK_FIELD direttamente senza chiedere conferma disponibilità.
 • Matchmaking (skill > 0): se l'orario richiesto è in fullSlots → NON eseguire BOOK_FIELD. Proponi le "PARTITE APERTE DISPONIBILI" (quasi complete, usa joinMatchId). Messaggio: "Quell'orario è al completo, ma ho queste partite che cercano ancora giocatori — vuoi unirti a una di queste?" Se nessuna va bene → suggerisci slot da freeScopertoSlots per creare una nuova pending.
 • Se l'utente vuole un orario specifico pieno E non vuole alternative → BOOK_FIELD sull'orario più vicino libero da freeScopertoSlots.
 • Se l'utente riceve "tutti i campi occupati" e chiede alternative → mostra le partite quasi complete da "PARTITE APERTE DISPONIBILI" (joinMatchId) oppure slot da freeScopertoSlots per nuova pending.
@@ -1027,6 +1027,27 @@ async function bookSlotForPlayer(
     preferCovered: boolean = false,
     preferMixed: boolean | null = null,
 ): Promise<{ success: boolean; errorMessage?: string; matchId?: string }> {
+    // Valida che ci siano almeno 90 minuti prima della chiusura e dopo l'apertura
+    if (club?.openTime || club?.closeTime) {
+        const romeHM = (d: Date) => {
+            const s = d.toLocaleString('en-US', { timeZone: 'Europe/Rome', hour: '2-digit', minute: '2-digit', hour12: false });
+            const [h, m] = s.split(':').map(Number);
+            return h * 60 + m;
+        };
+        const startMinutes = romeHM(startTime);
+        const [openH, openM] = (club.openTime || '08:00').split(':').map(Number);
+        const [closeH, closeM] = (club.closeTime || '23:30').split(':').map(Number);
+        const openMinutes = openH * 60 + openM;
+        const closeMinutes = closeH * 60 + closeM;
+        if (startMinutes < openMinutes) {
+            return { success: false, errorMessage: `Il circolo apre alle ${club.openTime || '08:00'}.` };
+        }
+        if (startMinutes + 90 > closeMinutes) {
+            const lastValid = `${String(Math.floor((closeMinutes - 90) / 60)).padStart(2, '0')}:${String((closeMinutes - 90) % 60).padStart(2, '0')}`;
+            return { success: false, errorMessage: `L'ultimo orario disponibile è alle ${lastValid} (servono 90 minuti prima della chiusura alle ${club.closeTime || '23:30'}).` };
+        }
+    }
+
     // Cerca match aperto compatibile nella finestra ±30min
     const from = new Date(startTime.getTime() - 30 * 60 * 1000);
     const to = new Date(startTime.getTime() + 30 * 60 * 1000);
