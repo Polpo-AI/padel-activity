@@ -181,12 +181,10 @@ export async function generateInvitation(
             signals.push(`${reliable.length === socialContext.players.length ? 'Sono' : 'Alcuni sono'} giocatori che rispondono sempre presente.`);
         }
 
-        // Urgenza posti
-        if (socialContext.spotsLeft === 1) {
-            signals.push('Manca solo 1 posto — è l\'ultimo disponibile.');
-        } else if (socialContext.spotsLeft <= 2) {
-            signals.push(`Mancano solo ${socialContext.spotsLeft} posti.`);
-        }
+        // Status onesto del gruppo
+        const confirmed = socialContext.players.length;
+        const total = confirmed + socialContext.spotsLeft;
+        signals.push(`Siamo in ${confirmed}/${total}.`);
 
         // Familiarità
         if (socialContext.hasPlayedWithBefore) {
