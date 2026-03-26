@@ -286,6 +286,72 @@ router.get('/matches/:id', authMiddleware, async (req: Request, res: Response) =
 // ─────────────────────────────────────────────
 // CREA PARTITA → parte wave
 // ─────────────────────────────────────────────
+// SUGGEST OPTIMAL SKILL LEVEL
+// Trova il livello che massimizza sum(EMA) dei giocatori eligibili
+// ─────────────────────────────────────────────
+
+router.get('/matches/suggest-level', authMiddleware, async (req: Request, res: Response) => {
+    const clubId = (req as any).clubId as string;
+    const { date, time } = req.query as { date?: string; time?: string };
+
+    try {
+        const club = await prisma.club.findUnique({ where: { id: clubId } });
+        if (!club) return res.status(404).json({ error: 'Club non trovato' });
+
+        const lowerRange = club.matchLowerRange ?? 1.0;
+        const upperRange = club.matchUpperRange ?? 1.0;
+        const dailyCap = club.maxDailyMessages ?? 2;
+        const PRIOR = 0.33;
+
+        // Determina fascia oraria per filtrare il cap corretto
+        let isMorning = false;
+        if (date && time) {
+            const matchDate = new Date(`${date}T${time}:00`);
+            const hour = parseInt(
+                new Intl.DateTimeFormat('en-US', { timeZone: 'Europe/Rome', hour: '2-digit', hour12: false })
+                    .format(matchDate).replace('24', '0'), 10
+            );
+            isMorning = hour < 14;
+        }
+
+        // Pool eligibile: attivi, skillLevel > 0, cap fascia non raggiunto, avoid flag rispettato
+        const pool = await prisma.player.findMany({
+            where: {
+                clubId,
+                active: true,
+                skillLevel: { gt: 0 },
+                ...(isMorning
+                    ? { morningContactsToday: { lt: dailyCap }, avoidMorning: false }
+                    : { afternoonContactsToday: { lt: dailyCap }, avoidAfternoon: false }),
+            },
+            select: { skillLevel: true, reliabilityScore: true },
+        });
+
+        if (pool.length === 0) {
+            return res.json({ suggestions: [], message: 'Nessun giocatore disponibile in questa fascia oraria' });
+        }
+
+        // Candidati: ogni livello distinto nel pool (arrotondato a 0.5)
+        const candidates = Array.from(new Set(pool.map(p => Math.round(p.skillLevel * 2) / 2))).sort((a, b) => a - b);
+
+        const suggestions = candidates.map(level => {
+            const eligible = pool.filter(p =>
+                p.skillLevel >= level - lowerRange && p.skillLevel <= level + upperRange
+            );
+            const emaSum = eligible.reduce((sum, p) => sum + (p.reliabilityScore === 0 ? PRIOR : p.reliabilityScore), 0);
+            return { level, playerCount: eligible.length, emaSum: parseFloat(emaSum.toFixed(2)) };
+        });
+
+        // Ordina per EMA sum decrescente
+        suggestions.sort((a, b) => b.emaSum - a.emaSum);
+
+        res.json({ suggestions: suggestions.slice(0, 5), isMorning });
+    } catch (e: any) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// ─────────────────────────────────────────────
 
 router.post('/matches', authMiddleware, async (req: Request, res: Response) => {
     const clubId = (req as any).clubId;

@@ -266,6 +266,8 @@ function CreateMatchModal({ courts, club, token, onClose, onCreated, defaultDate
   const [title, setTitle] = useState("");
   const [skillLevel, setSkillLevel] = useState(Math.ceil((club?.skillLevelCount || 3) / 2));
   const [matchType, setMatchType] = useState("MATCH");
+  const [suggestions, setSuggestions] = useState(null);
+  const [loadingSuggest, setLoadingSuggest] = useState(false);
   const [duration, setDuration] = useState(club?.matchDuration || 90);
   // Slot picker (MATCH / LESSON)
   const [slots, setSlots] = useState([]);
@@ -352,11 +354,57 @@ function CreateMatchModal({ courts, club, token, onClose, onCreated, defaultDate
         </div>
 
         {matchType === "MATCH" && (
-          <div>
-            <label style={labelSt}>Livello di gioco</label>
-            <input type="number" step="0.5" min="1" max="10" value={skillLevel}
-              onChange={e => setSkillLevel(parseFloat(e.target.value) || 1)}
-              style={{ ...inputSt, width: "100%" }} />
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            <div style={{ display: "flex", alignItems: "flex-end", gap: 8 }}>
+              <div style={{ flex: 1 }}>
+                <label style={labelSt}>Livello di gioco</label>
+                <input type="number" step="0.5" min="1" max="10" value={skillLevel}
+                  onChange={e => { setSkillLevel(parseFloat(e.target.value) || 1); setSuggestions(null); }}
+                  style={{ ...inputSt, width: "100%" }} />
+              </div>
+              <button
+                disabled={loadingSuggest || !date}
+                onClick={async () => {
+                  setLoadingSuggest(true); setSuggestions(null);
+                  try {
+                    const slot = suggestions ? null : (selectedSlot ? new Date(selectedSlot).toTimeString().slice(0,5) : null);
+                    const params = new URLSearchParams({ date });
+                    if (slot) params.set("time", slot);
+                    const d = await api(`/matches/suggest-level?${params}`, token);
+                    setSuggestions(d.suggestions || []);
+                    if (d.suggestions?.[0]) setSkillLevel(d.suggestions[0].level);
+                  } catch {}
+                  finally { setLoadingSuggest(false); }
+                }}
+                style={{ ...btnGhost, whiteSpace: "nowrap", color: C.accent, borderColor: `${C.accent}40`, padding: "8px 12px" }}
+              >
+                {loadingSuggest ? "..." : "🎯 Ottimizza"}
+              </button>
+            </div>
+            {suggestions && suggestions.length > 0 && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                {suggestions.slice(0, 3).map((s, i) => (
+                  <button key={s.level} onClick={() => setSkillLevel(s.level)} style={{
+                    display: "flex", alignItems: "center", justifyContent: "space-between",
+                    padding: "6px 10px", borderRadius: 8, fontSize: 11, cursor: "pointer", textAlign: "left",
+                    background: s.level === skillLevel ? C.accentDim : C.bg,
+                    border: `1px solid ${s.level === skillLevel ? C.accent : C.dim}`,
+                    color: C.text,
+                  }}>
+                    <span>
+                      {i === 0 && <span style={{ color: C.accent, fontWeight: 700, marginRight: 4 }}>★</span>}
+                      Livello <strong>{s.level}</strong>
+                    </span>
+                    <span style={{ color: C.muted, fontSize: 10 }}>
+                      {s.playerCount} giocatori · EMA {s.emaSum}
+                    </span>
+                  </button>
+                ))}
+                {suggestions[0]?.playerCount === 0 && (
+                  <div style={{ fontSize: 11, color: C.cancelled }}>Nessun giocatore disponibile oggi</div>
+                )}
+              </div>
+            )}
           </div>
         )}
 
