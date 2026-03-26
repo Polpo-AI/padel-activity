@@ -286,6 +286,7 @@ export async function checkMatchTimeouts(): Promise<void> {
     const expiredMatches = await prisma.match.findMany({
         where: {
             status: { in: ['OPEN', 'UNFILLED'] },
+            type: 'MATCH',   // lezioni e occupati non vanno in timeout
             startTime: { lt: new Date(now.getTime() + 60 * 60 * 1000) },
         },
         include: {

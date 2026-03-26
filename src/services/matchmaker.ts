@@ -85,6 +85,11 @@ async function _processWaveInner(matchId: string, waveNumber: number, urgencyMul
             return null;
         }
 
+        if (match.type !== 'MATCH') {
+            logger.info(`Match ${matchId} type=${match.type}, not a playable match — skipping wave`);
+            return null;
+        }
+
         const confirmedCount = match.MatchPlayer.filter(mp => !mp.leftAt).length;
         const actualSpotsNeeded = match.playersNeeded - confirmedCount;
         const spotsNeeded = Math.max(actualSpotsNeeded, Math.round(actualSpotsNeeded * urgencyMultiplier));

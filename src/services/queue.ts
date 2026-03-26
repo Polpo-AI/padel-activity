@@ -167,6 +167,7 @@ export async function checkSilentMatches(): Promise<void> {
         const openMatches = await prisma.match.findMany({
             where: {
                 status: 'OPEN',
+                type: 'MATCH',   // solo partite reali — no LESSON, no UNAVAILABLE
                 startTime: {
                     gt: new Date(now.getTime() + 60 * 60 * 1000),
                     gte: sevenDaysAgo,  // ✅ FIX F: esclude match storici
