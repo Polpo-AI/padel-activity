@@ -11,7 +11,7 @@
  */
 
 import { prisma } from './db';
-import { selectPlayersForWave, computeNextWaveDelayMs, getPlayersForRecovery } from './scoring';
+import { selectPlayersForWave, computeNextWaveDelayMs, getPlayersForRecovery, isNightInRome, msUntil8amRome, humanSendDelayMs } from './scoring';
 import { generateInvitation } from './ai';
 import { simulateTypingAndSend } from './whatsapp';
 import { waveQueue, getRedis } from './queue';
@@ -64,6 +64,15 @@ export async function processWave(matchId: string, waveNumber: number, urgencyMu
 }
 
 async function _processWaveInner(matchId: string, waveNumber: number, urgencyMultiplier: number): Promise<void> {
+    // ── NIGHT WINDOW: 22:00–08:00 Rome → riprogramma al mattino ──────────
+    const now = new Date();
+    if (isNightInRome(now)) {
+        const delayMs = msUntil8amRome(now);
+        logger.info(`Wave ${waveNumber} for ${matchId} falls in night window — rescheduling in ${Math.round(delayMs / 60000)}min`);
+        await waveQueue.add('process-wave', { matchId, waveNumber }, { delay: delayMs });
+        return;
+    }
+
     // ── FASE 1: Selezione e creazione invitation atomica ──────────────────
     const context = await withMatchLock(matchId, async () => {
         const match = await prisma.match.findUnique({
@@ -213,7 +222,7 @@ async function _processWaveInner(matchId: string, waveNumber: number, urgencyMul
             socialContext
         );
 
-        if (i > 0) await sleep(randomInt(15, 45) * 1000);
+        if (i > 0) await sleep(humanSendDelayMs());
 
         try {
             await simulateTypingAndSend(player.phoneNumber, text);
@@ -234,15 +243,19 @@ async function _processWaveInner(matchId: string, waveNumber: number, urgencyMul
         }
     }
 
-    // Schedula prossima wave
+    // Schedula prossima wave (con correzione night window)
     const nextDelayMs = computeNextWaveDelayMs(minutesUntilMatch);
     if (nextDelayMs) {
+        const nextFireAt = new Date(Date.now() + nextDelayMs);
+        const nightDelayMs = msUntil8amRome(nextFireAt);
+        const finalDelayMs = nightDelayMs > 0 ? nightDelayMs : nextDelayMs;
         await waveQueue.add(
             'process-wave',
             { matchId, waveNumber: waveNumber + 1 },
-            { delay: nextDelayMs }
+            { delay: finalDelayMs }
         );
-        logger.info(`Next wave ${waveNumber + 1} for ${matchId} in ${(nextDelayMs / 60000).toFixed(0)}min`);
+        const label = nightDelayMs > 0 ? `${(finalDelayMs / 60000).toFixed(0)}min (night→08:00)` : `${(finalDelayMs / 60000).toFixed(0)}min`;
+        logger.info(`Next wave ${waveNumber + 1} for ${matchId} in ${label}`);
     }
 }
 

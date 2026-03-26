@@ -295,6 +295,65 @@ export function computeNextWaveDelayMs(minutesUntilMatch: number): number | null
 }
 
 // ─────────────────────────────────────────────
+// NIGHT WINDOW — 22:00–08:00 Europe/Rome
+// ─────────────────────────────────────────────
+
+/** Restituisce true se l'orario (in Rome) è nella fascia notturna 22:00–08:00. */
+export function isNightInRome(d: Date): boolean {
+    const h = parseInt(
+        new Intl.DateTimeFormat('en-US', { timeZone: 'Europe/Rome', hour: '2-digit', hour12: false })
+            .format(d).replace('24', '0'),
+        10
+    );
+    return h >= 22 || h < 8;
+}
+
+/**
+ * Se `from` cade in fascia notturna, restituisce i ms mancanti alle 08:00 Rome
+ * del mattino successivo (o dello stesso giorno se siamo < 08:00).
+ * Altrimenti restituisce 0.
+ */
+export function msUntil8amRome(from: Date): number {
+    if (!isNightInRome(from)) return 0;
+
+    const romeStr = from.toLocaleString('sv-SE', { timeZone: 'Europe/Rome' }); // "YYYY-MM-DD HH:mm:ss"
+    const [dateStr, timeStr] = romeStr.split(' ');
+    const romeHour = parseInt(timeStr.split(':')[0], 10);
+
+    // Se siamo dopo le 22, target = domani 08:00; se siamo prima delle 08, target = oggi 08:00
+    let [y, mo, dd] = dateStr.split('-').map(Number);
+    if (romeHour >= 22) dd += 1;
+
+    // Costruisci "YYYY-MM-DDT08:00:00" come wall-clock Rome e converti in UTC
+    const wallClock = new Date(`${y}-${String(mo).padStart(2,'0')}-${String(dd).padStart(2,'0')}T08:00:00`);
+    // Stima dell'offset Rome→UTC al momento del target (iterazione singola per DST)
+    const approxOffset = new Date(from.toLocaleString('en-US', { timeZone: 'Europe/Rome' })).getTime() - from.getTime();
+    const targetUtc = new Date(wallClock.getTime() - approxOffset);
+
+    // Aggiunge jitter 0–15min per evitare che tutte le wave si sveglino alle 08:00:00 esatte
+    const jitterMs = Math.floor(Math.random() * 15 * 60 * 1000);
+    return Math.max(60_000, targetUtc.getTime() - from.getTime() + jitterMs);
+}
+
+// ─────────────────────────────────────────────
+// ANTI-BOT — delay umano tra un invito e l'altro
+// Distribuzione a 4 fasce per simulare comportamento reale:
+//   50% → 8–35s   (risposta rapida)
+//   25% → 40–150s (piccola pausa)
+//   15% → 150–360s (distratto)
+//   10% → 360–900s (pausa lunga)
+// ─────────────────────────────────────────────
+
+export function humanSendDelayMs(): number {
+    const r = Math.random();
+    const rand = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1)) + min;
+    if (r < 0.50) return rand(8,  35)  * 1000;
+    if (r < 0.75) return rand(40, 150) * 1000;
+    if (r < 0.90) return rand(150, 360) * 1000;
+    return            rand(360, 900) * 1000;
+}
+
+// ─────────────────────────────────────────────
 // STATISTICHE GIOCATORE
 // ─────────────────────────────────────────────
 
