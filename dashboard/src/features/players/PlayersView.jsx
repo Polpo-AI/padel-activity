@@ -110,6 +110,32 @@ function PlayerProfile({ playerId, token, onClose, onUpdated, skillLevelCount = 
         </button>
       </div>
 
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        <label style={labelSt}>Preferenze orario (da matchmaking)</label>
+        {[
+          { key: "avoidMorning", label: "Evita mattina", sub: "Non invitare prima delle 14:00", icon: "☀️" },
+          { key: "avoidAfternoon", label: "Evita pomeriggio/sera", sub: "Non invitare dopo le 14:00", icon: "🌙" },
+        ].map(({ key, label, sub, icon }) => (
+          <div key={key} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: C.bg, border: `1px solid ${C.dim}`, borderRadius: 10, padding: "10px 14px" }}>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 600, color: C.text }}>{icon} {label}</div>
+              <div style={{ fontSize: 11, color: C.muted, marginTop: 1 }}>{sub}</div>
+            </div>
+            <button disabled={saving} onClick={() => patch({ [key]: !player[key] })} style={{
+              ...btnGhost,
+              color: player[key] ? C.warning : C.muted,
+              borderColor: player[key] ? `${C.warning}50` : C.border,
+              background: player[key] ? `${C.warning}12` : "transparent",
+            }}>
+              {saving ? "..." : player[key] ? "Attivo" : "Off"}
+            </button>
+          </div>
+        ))}
+        <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>
+          Contatti odierni: {player.morningContactsToday ?? 0} ☀ mattina — {player.afternoonContactsToday ?? 0} 🌙 sera
+        </div>
+      </div>
+
       {player.history?.length > 0 && (
         <div>
           <label style={labelSt}>Ultime {player.history.length} partite</label>
@@ -284,7 +310,7 @@ export default function PlayersView({ token, club }) {
       ) : (
         <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, overflow: "hidden" }}>
           <div style={{ display: "grid", gridTemplateColumns: "2fr 1.5fr 0.6fr 0.8fr 0.7fr 0.7fr", padding: "10px 16px", borderBottom: `1px solid ${C.border}`, fontSize: 10, color: C.muted, textTransform: "uppercase", letterSpacing: "0.1em" }}>
-            <span>Nome</span><span>Telefono</span><span>Liv.</span><span>Affidabilità</span><span>Inviti</span><span>Stato</span>
+            <span>Nome</span><span>Telefono</span><span>Liv.</span><span>Affidabilità</span><span>Oggi</span><span>Stato</span>
           </div>
 
           {players.length === 0 && <div style={{ padding: 32, textAlign: "center", color: C.muted, fontSize: 13 }}>Nessun giocatore trovato</div>}
@@ -311,7 +337,10 @@ export default function PlayersView({ token, club }) {
                   </div>
                   <span style={{ fontSize: 10, color: rateColor(rate), minWidth: 28 }}>{(rate * 100).toFixed(0)}%</span>
                 </div>
-                <span style={{ color: C.muted, fontSize: 11 }}>{p.dailyMessagesCount}/2</span>
+                <span style={{ color: C.muted, fontSize: 10, display: "flex", flexDirection: "column", gap: 1 }}>
+                  <span title="Mattina (pre 14:00)">{p.morningContactsToday ?? 0}☀</span>
+                  <span title="Pomeriggio/sera (post 14:00)">{p.afternoonContactsToday ?? 0}🌙</span>
+                </span>
                 <span style={{ fontSize: 10, fontWeight: 600 }}>
                   {p.active ? <span style={{ color: C.open }}>● attivo</span> : <span style={{ color: C.cancelled }}>● off</span>}
                 </span>

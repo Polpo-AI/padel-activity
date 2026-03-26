@@ -890,7 +890,7 @@ router.post('/players', authMiddleware, async (req: Request, res: Response) => {
 router.patch('/players/:id', authMiddleware, async (req: Request, res: Response) => {
     const clubId = (req as any).clubId as string;
     const { id } = req.params;
-    const { name, skillLevel, active } = req.body;
+    const { name, skillLevel, active, avoidMorning, avoidAfternoon } = req.body;
 
     try {
         const player = await prisma.player.findFirst({
@@ -905,6 +905,8 @@ router.patch('/players/:id', authMiddleware, async (req: Request, res: Response)
         if (name !== undefined) data.name = String(name).replace(/\0/g, '');
         if (skillLevel !== undefined) data.skillLevel = parseFloat(skillLevel);
         if (active !== undefined) data.active = active;
+        if (avoidMorning !== undefined) data.avoidMorning = Boolean(avoidMorning);
+        if (avoidAfternoon !== undefined) data.avoidAfternoon = Boolean(avoidAfternoon);
 
         const updated = await prisma.player.update({
             where: { id: id as string },
