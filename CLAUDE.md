@@ -23,9 +23,19 @@ git fetch origin && git merge origin/preview --no-edit
 
 # Deploy produzione (solo quando esplicitamente richiesto)
 cd /root/padel-prod && git pull origin main
+cd dashboard && npm run build && cd ..
 systemctl restart padel-prod padel-worker-prod
 ```
 MAI pushare su `main` durante sviluppo — solo `preview`.
+
+**⚠️ IMPORTANTE — build dashboard obbligatoria:**
+La dashboard è una React/Vite app. Il VPS serve `dashboard/dist` (build statica), NON i file `.jsx` sorgente.
+Dopo ogni `git pull` che tocca file in `dashboard/src/`, eseguire SEMPRE:
+```bash
+cd /root/padel-staging/dashboard && npm run build && cd ..
+systemctl restart padel-staging
+```
+Senza build, le modifiche ai componenti React non sono visibili agli utenti.
 
 ### 2. Il brain gestisce anche gli utenti non registrati (REGISTER_PLAYER)
 **Architettura attuale:** non esiste più una state machine di onboarding. Tutti i messaggi — da utenti registrati E non — passano dal brain (`callBrain`). Quando player è null, il system prompt mostra `═══ UTENTE NON REGISTRATO ═══` con istruzioni per raccogliere nome+cognome naturalmente. Quando il brain raccoglie entrambi → action `REGISTER_PLAYER` → `executeAction` crea il player nel DB.
@@ -48,6 +58,18 @@ MAI pushare su `main` durante sviluppo — solo `preview`.
 
 ### 7. Fallback AI MAI identico due volte
 **Regola:** il catch di `callBrain` deve restituire uno di N messaggi random, mai sempre lo stesso. Utente che riceve "Scusa, ho un problema tecnico" due volte di fila → pessima esperienza.
+
+### 34. `prisma db push` su staging: eseguire SEMPRE sul VPS, non in locale
+**Bug reale:** `prisma db push` lanciato in locale con `DATABASE_URL="...DIRECT_URL_STAGING..."` viene intercettato da `prisma.config.ts` che legge `DIRECT_URL` dal `.env` locale (diverso da staging) → il push finisce sul DB sbagliato. Il VPS poi ricarica il client già rigenerato che conosce le nuove colonne, ma il DB staging non le ha → crash con `column X does not exist`.
+**Regola:** per applicare schema changes al DB staging, eseguire `prisma db push` DIRETTAMENTE sul VPS:
+```bash
+ssh root@46.225.212.159
+cd /root/padel-staging
+DATABASE_URL="postgresql://postgres.ildhffoxuufcbvmmqitj:<pw>@aws-1-eu-west-1.pooler.supabase.com:5432/postgres" npx prisma db push
+npx prisma generate
+systemctl restart padel-staging padel-worker-staging
+```
+Le credenziali corrette sono in `/root/padel-staging/.env` → `DIRECT_URL` (porta 5432).
 
 ### 8. Reset DB locale: usare DIRECT_URL_STAGING (porta 5432), non DATABASE_URL (pgBouncer 6543)
 **Regola:** per operazioni dirette (script, `db push`, `migrate dev`) usare sempre il valore letterale di `DIRECT_URL_STAGING` / porta 5432. Il pgBouncer su 6543 non supporta prepared statements. Il parsing `$(grep DIRECT_URL .env ...)` può estrarre la variabile sbagliata — passare sempre il valore esplicito.
