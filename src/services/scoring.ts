@@ -286,11 +286,12 @@ export async function getPlayersForRecovery(matchId: string): Promise<any[]> {
 // ─────────────────────────────────────────────
 
 export function computeNextWaveDelayMs(minutesUntilMatch: number): number | null {
-    if (minutesUntilMatch > 1440) return 3 * 60 * 60 * 1000;
-    if (minutesUntilMatch > 360)  return 90 * 60 * 1000;
-    if (minutesUntilMatch > 120)  return 25 * 60 * 1000;
-    if (minutesUntilMatch > 60)   return 10 * 60 * 1000;
-    return null;
+    if (minutesUntilMatch > 1440) return 3 * 60 * 60 * 1000;   // >24h  → ogni 3h
+    if (minutesUntilMatch > 720)  return 2 * 60 * 60 * 1000;   // >12h  → ogni 2h
+    if (minutesUntilMatch > 360)  return 90 * 60 * 1000;        // >6h   → ogni 90min
+    if (minutesUntilMatch > 120)  return 25 * 60 * 1000;        // >2h   → ogni 25min
+    if (minutesUntilMatch > 60)   return 10 * 60 * 1000;        // >1h   → ogni 10min
+    return null;                                                  // <1h   → stop
 }
 
 // ─────────────────────────────────────────────
