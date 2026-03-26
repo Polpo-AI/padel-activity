@@ -339,32 +339,27 @@ router.post('/matches', authMiddleware, async (req: Request, res: Response) => {
         include: { court: true },
     });
 
-    // Schedula prima wave con delay iniziale casuale (anti-bot)
-    const initialDelayMs = Math.floor(Math.random() * 60000) + 30000; // 30-90s
-    // ✅ FIX D: includere scheduledAt per staleness check nel wave.worker
-    // ✅ FIX: timeout 5s su queue.add per evitare hang se Redis è down
+    // Wave solo per MATCH con skillLevel > 0
     let waveScheduled = false;
-    try {
-        await Promise.race([
-            waveQueue.add(
-                'process-wave',
-                { matchId: match.id, waveNumber: 1, scheduledAt: Date.now() + initialDelayMs },
-                { delay: initialDelayMs, removeOnComplete: true }
-            ),
-            new Promise<never>((_, rej) => setTimeout(() => rej(new Error('Redis timeout')), 5000))
-        ]);
-        waveScheduled = true;
-    } catch (waveErr: any) {
-        logger.warn({ matchId: match.id, err: waveErr?.message }, 'Wave scheduling failed (Redis down?) — match creato ma wave non schedulata');
+    if (matchType === 'MATCH' && (parseInt(skillLevel) || 0) > 0) {
+        const initialDelayMs = Math.floor(Math.random() * 60000) + 30000; // 30-90s
+        try {
+            await Promise.race([
+                waveQueue.add(
+                    'process-wave',
+                    { matchId: match.id, waveNumber: 1, scheduledAt: Date.now() + initialDelayMs },
+                    { delay: initialDelayMs, removeOnComplete: true }
+                ),
+                new Promise<never>((_, rej) => setTimeout(() => rej(new Error('Redis timeout')), 5000))
+            ]);
+            waveScheduled = true;
+            logger.info(`Match ${match.id} created from dashboard, first wave in ${Math.round(initialDelayMs / 1000)}s`);
+        } catch (waveErr: any) {
+            logger.warn({ matchId: match.id, err: waveErr?.message }, 'Wave scheduling failed (Redis down?) — match creato ma wave non schedulata');
+        }
     }
 
-    logger.info(`Match ${match.id} created from dashboard, first wave in ${initialDelayMs / 1000}s (waveScheduled=${waveScheduled})`);
-
-    res.status(201).json({
-        match,
-        waveScheduledInSeconds: Math.round(initialDelayMs / 1000),
-        waveScheduled,
-    });
+    res.status(201).json({ match, waveScheduled });
 });
 
 // ─────────────────────────────────────────────
@@ -511,6 +506,88 @@ router.patch('/courts/:id', authMiddleware, async (req: Request, res: Response) 
         logger.error({ err }, 'PATCH /courts/:id failed');
         res.status(500).json({ error: 'Errore durante la modifica del campo' });
     }
+});
+
+// ─────────────────────────────────────────────
+// SLOT DISPONIBILI PER UN CAMPO
+// ─────────────────────────────────────────────
+
+router.get('/courts/:id/slots', authMiddleware, async (req: Request, res: Response) => {
+    const clubId = (req as any).clubId;
+    const { date, duration: durationStr } = req.query as { date?: string; duration?: string };
+
+    if (!date) return res.status(400).json({ error: 'date è richiesto (YYYY-MM-DD)' });
+
+    const court = await prisma.court.findFirst({ where: { id: req.params.id, clubId } });
+    if (!court) return res.status(404).json({ error: 'Campo non trovato' });
+
+    const club = await prisma.club.findUnique({ where: { id: clubId } });
+    if (!club) return res.status(404).json({ error: 'Club non trovato' });
+
+    const slotDurationMins = durationStr ? parseInt(durationStr) : club.matchDuration;
+    const slotDurationMs = slotDurationMins * 60 * 1000;
+
+    // Genera slot dall'apertura alla chiusura
+    const [openH, openM] = club.openTime.split(':').map(Number);
+    const [closeH, closeM] = club.closeTime.split(':').map(Number);
+
+    // Usa Europe/Rome per costruire i timestamp in orario italiano
+    const slots: { startTime: string; endTime: string; available: boolean; reason?: string }[] = [];
+    let cursor = new Date(`${date}T00:00:00`);
+    // setHours in Rome: usiamo offset fisso +1/+2 → meglio costruire via toLocaleString trick
+    // Costruiamo startOfDay in Rome
+    const romeStart = new Date(new Date(`${date}T${String(openH).padStart(2,'0')}:${String(openM).padStart(2,'0')}:00`).toLocaleString('en-US', { timeZone: 'Europe/Rome' }) === 'Invalid Date'
+        ? `${date}T${String(openH).padStart(2,'0')}:${String(openM).padStart(2,'0')}:00`
+        : `${date}T${String(openH).padStart(2,'0')}:${String(openM).padStart(2,'0')}:00`
+    );
+    // Approccio più semplice: buildRomeTime-like usando Intl
+    const toUtc = (dateStr: string, h: number, m: number): Date => {
+        // Crea una data in Rome timezone e convertila in UTC
+        const isoLike = `${dateStr}T${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:00`;
+        // Trick: new Date() interpreta come locale, usiamo un workaround con Intl
+        const d = new Date(isoLike);
+        const romeOffset = new Date(d.toLocaleString('en-US', { timeZone: 'Europe/Rome' })).getTime() - d.getTime();
+        return new Date(d.getTime() - romeOffset);
+    };
+
+    cursor = toUtc(date, openH, openM);
+    const closeUtc = toUtc(date, closeH, closeM);
+    const now = new Date();
+
+    // Carica i match esistenti sul campo in quella giornata
+    const dayStart = toUtc(date, 0, 0);
+    const dayEnd = toUtc(date, 23, 59);
+    const existingMatches = await prisma.match.findMany({
+        where: {
+            courtId: court.id,
+            status: { not: 'CANCELLED' },
+            startTime: { gte: dayStart, lte: dayEnd },
+        },
+        select: { id: true, startTime: true, endTime: true, type: true, status: true },
+    });
+
+    while (cursor.getTime() + slotDurationMs <= closeUtc.getTime()) {
+        const slotStart = new Date(cursor);
+        const slotEnd = new Date(cursor.getTime() + slotDurationMs);
+
+        // Controlla sovrapposizione con match esistenti
+        const conflict = existingMatches.find(m =>
+            m.endTime && new Date(m.startTime) < slotEnd && new Date(m.endTime) > slotStart
+        );
+
+        const isPast = slotStart <= now;
+
+        slots.push({
+            startTime: slotStart.toISOString(),
+            endTime: slotEnd.toISOString(),
+            available: !conflict && !isPast,
+            reason: isPast ? 'Passato' : conflict ? 'Campo occupato' : undefined,
+        });
+
+        cursor = new Date(cursor.getTime() + slotDurationMs);
+    }
+
+    res.json({ slots, slotDurationMins });
 });
 
 // ─────────────────────────────────────────────

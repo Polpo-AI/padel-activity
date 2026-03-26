@@ -276,11 +276,11 @@ function CreateMatchModal({ courts, club, token, onClose, onCreated, defaultDate
     if (!courtId || !date) return;
     setLoadingSlots(true); setSlots([]); setSelectedSlot(null);
     try {
-      const d = await api(`/courts/${courtId}/slots?date=${date}`, token);
+      const d = await api(`/courts/${courtId}/slots?date=${date}&duration=${duration}`, token);
       setSlots(d.slots || []);
     } catch {}
     finally { setLoadingSlots(false); }
-  }, [courtId, date, token]);
+  }, [courtId, date, duration, token]);
 
   useEffect(() => { loadSlots(); }, [loadSlots]);
 
@@ -373,7 +373,7 @@ function CreateMatchModal({ courts, club, token, onClose, onCreated, defaultDate
       <div style={{ display: "flex", gap: 10 }}>
         <button onClick={onClose} style={{ ...btnGhost, flex: 1, padding: "10px 0" }}>Annulla</button>
         <button onClick={create} disabled={saving || !selectedSlot} style={{ ...btnPrimary, flex: 2, opacity: selectedSlot ? 1 : 0.4 }}>
-          {saving ? "Creazione..." : matchType === "MATCH" ? "Crea e lancia wave →" : "Blocca Campo →"}
+          {saving ? "Creazione..." : matchType === "MATCH" ? "Crea e lancia wave →" : matchType === "LESSON" ? "Crea lezione →" : "Crea evento →"}
         </button>
       </div>
     </Modal>
@@ -655,13 +655,17 @@ function WeekCalendar({ courtData, weekDays, onCancel, onDeleteUnavailable, toda
                     minWidth: 110,
                   }}>
                     {dayMatches.length === 0 ? (
-                      <div
+                      <button
                         onClick={() => onQuickCreate?.(d, court.id)}
-                        style={{ textAlign: "center", color: C.dim, fontSize: 10, padding: "12px 0", cursor: "pointer", userSelect: "none", transition: "color 0.15s" }}
-                        onMouseEnter={e => e.currentTarget.style.color = C.accent}
-                        onMouseLeave={e => e.currentTarget.style.color = C.dim}
-                        title="Crea partita"
-                      >+</div>
+                        style={{
+                          display: "block", width: "100%", padding: "10px 0",
+                          background: "transparent", border: `1px dashed ${C.dim}`,
+                          borderRadius: 6, cursor: "pointer", color: C.muted,
+                          fontSize: 11, transition: "all 0.15s",
+                        }}
+                        onMouseEnter={e => { e.currentTarget.style.borderColor = C.accent; e.currentTarget.style.color = C.accent; e.currentTarget.style.background = C.accentDim; }}
+                        onMouseLeave={e => { e.currentTarget.style.borderColor = C.dim; e.currentTarget.style.color = C.muted; e.currentTarget.style.background = "transparent"; }}
+                      >+ Nuova</button>
                     ) : (
                       <div style={{ display: "flex", flexDirection: "column", gap: 3, maxHeight: 160, overflowY: "auto" }}>
                         {dayMatches.map(m => <MatchChip key={m.id} match={m} onCancel={onCancel} onDeleteUnavailable={onDeleteUnavailable} />)}
