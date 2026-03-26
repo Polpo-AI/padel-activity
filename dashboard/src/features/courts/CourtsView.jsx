@@ -266,13 +266,18 @@ function CreateMatchModal({ courts, club, token, onClose, onCreated, defaultDate
   const [skillLevel, setSkillLevel] = useState(Math.ceil((club?.skillLevelCount || 3) / 2));
   const [matchType, setMatchType] = useState("MATCH");
   const [duration, setDuration] = useState(club?.matchDuration || 90);
+  // Slot picker (MATCH / LESSON)
   const [slots, setSlots] = useState([]);
   const [selectedSlot, setSelectedSlot] = useState(null);
   const [loadingSlots, setLoadingSlots] = useState(false);
+  // Time range picker (UNAVAILABLE)
+  const [fromHour, setFromHour] = useState("");
+  const [toHour, setToHour] = useState("");
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState("");
 
   const loadSlots = useCallback(async () => {
+    if (matchType === "UNAVAILABLE") return;
     if (!courtId || !date) return;
     setLoadingSlots(true); setSlots([]); setSelectedSlot(null);
     try {
@@ -280,19 +285,33 @@ function CreateMatchModal({ courts, club, token, onClose, onCreated, defaultDate
       setSlots(d.slots || []);
     } catch {}
     finally { setLoadingSlots(false); }
-  }, [courtId, date, duration, token]);
+  }, [courtId, date, duration, matchType, token]);
 
   useEffect(() => { loadSlots(); }, [loadSlots]);
 
   const create = async () => {
-    if (!selectedSlot) return;
     setSaving(true); setErr("");
     try {
-      await api("/matches", token, { method: "POST", body: JSON.stringify({ courtId, startTime: selectedSlot, skillLevel, type: matchType, duration }) });
+      let startTime, dur;
+      if (matchType === "UNAVAILABLE") {
+        if (!fromHour || !toHour) { setErr("Seleziona orario di inizio e fine"); setSaving(false); return; }
+        startTime = new Date(`${date}T${fromHour}:00`).toISOString();
+        const [fh, fm] = fromHour.split(":").map(Number);
+        const [th, tm] = toHour.split(":").map(Number);
+        dur = (th * 60 + tm) - (fh * 60 + fm);
+        if (dur <= 0) { setErr("L'orario di fine deve essere dopo l'inizio"); setSaving(false); return; }
+      } else {
+        if (!selectedSlot) { setErr("Seleziona un orario"); setSaving(false); return; }
+        startTime = selectedSlot;
+        dur = duration;
+      }
+      await api("/matches", token, { method: "POST", body: JSON.stringify({ courtId, startTime, skillLevel, type: matchType, duration: dur }) });
       onCreated(); onClose();
     } catch (e) { setErr(e.message); }
     finally { setSaving(false); }
   };
+
+  const canSubmit = matchType === "UNAVAILABLE" ? (!!fromHour && !!toHour) : !!selectedSlot;
 
   return (
     <Modal title="Nuova partita" onClose={onClose}>
@@ -303,7 +322,7 @@ function CreateMatchModal({ courts, club, token, onClose, onCreated, defaultDate
             { id: "LESSON", label: "👨‍🏫 Lezione" },
             { id: "UNAVAILABLE", label: "⛔ Occupato" }
           ].map(t => (
-            <button key={t.id} onClick={() => setMatchType(t.id)} style={{
+            <button key={t.id} onClick={() => { setMatchType(t.id); setErr(""); }} style={{
               flex: 1, padding: "8px 0", borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: "pointer",
               background: matchType === t.id ? C.surface : "transparent",
               color: matchType === t.id ? C.text : C.muted,
@@ -333,7 +352,7 @@ function CreateMatchModal({ courts, club, token, onClose, onCreated, defaultDate
           </div>
         )}
 
-        {matchType !== "MATCH" && (
+        {matchType === "LESSON" && (
           <div>
             <label style={labelSt}>Durata (minuti)</label>
             <select value={duration} onChange={e => setDuration(parseInt(e.target.value))} style={inputSt}>
@@ -342,37 +361,44 @@ function CreateMatchModal({ courts, club, token, onClose, onCreated, defaultDate
           </div>
         )}
 
-        <div>
-          <label style={labelSt}>Orario</label>
-          {loadingSlots ? (
-            <div style={{ display: "flex", gap: 8, alignItems: "center", padding: "10px 0" }}><Spinner size={14} /><span style={{ fontSize: 12, color: C.muted }}>Carico slot...</span></div>
-          ) : (
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 6, maxHeight: 180, overflowY: "auto" }}>
-              {slots.length === 0 && <div style={{ fontSize: 12, color: C.muted }}>Nessuno slot trovato</div>}
-              {slots.map(s => {
-                const t = fmtTime(s.startTime);
-                const sel = selectedSlot === s.startTime;
-                return (
-                  <button key={s.startTime} disabled={!s.available} onClick={() => setSelectedSlot(s.startTime)}
-                    title={!s.available ? s.reason : ""}
-                    style={{
-                      padding: "6px 12px", borderRadius: 8, fontSize: 12, fontWeight: sel ? 700 : 400,
-                      cursor: s.available ? "pointer" : "not-allowed", border: `1px solid`,
-                      borderColor: !s.available ? C.dim : sel ? C.accent : C.border,
-                      background: !s.available ? C.bg : sel ? C.accentDim : "transparent",
-                      color: !s.available ? C.dim : sel ? C.accent : C.text,
-                      textDecoration: !s.available ? "line-through" : "none",
-                    }}>{t}</button>
-                );
-              })}
-            </div>
-          )}
-        </div>
+        {matchType === "UNAVAILABLE" ? (
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+            <TimePillPicker label="Dalle" value={fromHour} onChange={setFromHour} otherValue={toHour} isStart={true} />
+            <TimePillPicker label="Alle" value={toHour} onChange={setToHour} otherValue={fromHour} isStart={false} />
+          </div>
+        ) : (
+          <div>
+            <label style={labelSt}>Orario</label>
+            {loadingSlots ? (
+              <div style={{ display: "flex", gap: 8, alignItems: "center", padding: "10px 0" }}><Spinner size={14} /><span style={{ fontSize: 12, color: C.muted }}>Carico slot...</span></div>
+            ) : (
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6, maxHeight: 180, overflowY: "auto" }}>
+                {slots.length === 0 && <div style={{ fontSize: 12, color: C.muted }}>Nessuno slot trovato</div>}
+                {slots.map(s => {
+                  const t = fmtTime(s.startTime);
+                  const sel = selectedSlot === s.startTime;
+                  return (
+                    <button key={s.startTime} disabled={!s.available} onClick={() => setSelectedSlot(s.startTime)}
+                      title={!s.available ? s.reason : ""}
+                      style={{
+                        padding: "6px 12px", borderRadius: 8, fontSize: 12, fontWeight: sel ? 700 : 400,
+                        cursor: s.available ? "pointer" : "not-allowed", border: `1px solid`,
+                        borderColor: !s.available ? C.dim : sel ? C.accent : C.border,
+                        background: !s.available ? C.bg : sel ? C.accentDim : "transparent",
+                        color: !s.available ? C.dim : sel ? C.accent : C.text,
+                        textDecoration: !s.available ? "line-through" : "none",
+                      }}>{t}</button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
       </div>
-      {err && <div style={{ fontSize: 12, color: C.cancelled }}>{err}</div>}
-      <div style={{ display: "flex", gap: 10 }}>
+      {err && <div style={{ fontSize: 12, color: C.cancelled, marginTop: 8 }}>{err}</div>}
+      <div style={{ display: "flex", gap: 10, marginTop: 4 }}>
         <button onClick={onClose} style={{ ...btnGhost, flex: 1, padding: "10px 0" }}>Annulla</button>
-        <button onClick={create} disabled={saving || !selectedSlot} style={{ ...btnPrimary, flex: 2, opacity: selectedSlot ? 1 : 0.4 }}>
+        <button onClick={create} disabled={saving || !canSubmit} style={{ ...btnPrimary, flex: 2, opacity: canSubmit ? 1 : 0.4 }}>
           {saving ? "Creazione..." : matchType === "MATCH" ? "Crea e lancia wave →" : matchType === "LESSON" ? "Crea lezione →" : "Crea evento →"}
         </button>
       </div>
