@@ -14,7 +14,11 @@ model Player {
   skillLevel         Float               @default(0)
   reliabilityScore   Float               @default(0)
   lastContactedAt    DateTime?
-  dailyMessagesCount Int                 @default(0)
+  dailyMessagesCount     Int                 @default(0)
+  morningContactsToday   Int                 @default(0)
+  afternoonContactsToday Int                 @default(0)
+  avoidMorning           Boolean             @default(false)
+  avoidAfternoon         Boolean             @default(false)
   active             Boolean             @default(true)
   groupIds           String[]            @default([])
   notes              String?

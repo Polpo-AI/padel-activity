@@ -16,9 +16,9 @@ const maintenanceWorker = new Worker(
 
         if (job.name === 'daily-reset') {
             const result = await prisma.player.updateMany({
-                data: { dailyMessagesCount: 0 },
+                data: { dailyMessagesCount: 0, morningContactsToday: 0, afternoonContactsToday: 0 },
             });
-            logger.info(`Daily reset: cleared dailyMessagesCount for ${result.count} players`);
+            logger.info(`Daily reset: cleared dailyMessagesCount/morningContactsToday/afternoonContactsToday for ${result.count} players`);
         }
 
         if (job.name === 'check-timeouts') {

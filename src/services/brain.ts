@@ -877,9 +877,39 @@ export async function executeAction(
         if (action === 'SAVE_NOTE') {
             if (!params.note || typeof params.note !== 'string') return { success: true };
             try {
+                const note = params.note.trim();
                 const existing = player.notes ? player.notes.trim() : '';
-                const newNotes = existing ? `${existing}; ${params.note.trim()}` : params.note.trim();
-                await prisma.player.update({ where: { id: player.id }, data: { notes: newNotes } });
+                const newNotes = existing ? `${existing}; ${note}` : note;
+
+                // Rileva preferenze di fascia oraria dalla nota e aggiorna i flag strutturati
+                const noteLower = note.toLowerCase();
+                const preferenceFlags: Record<string, boolean> = {};
+                const MORNING_PATTERNS = ['non gioc', 'mattina', 'mattino', 'al mattino', 'la mattina', 'presto', 'morning'];
+                const AFTERNOON_PATTERNS = ['pomeriggio', 'sera', 'afternoon', 'evening', 'dopo pranzo', 'after'];
+
+                const mentionsMorning = MORNING_PATTERNS.some(p => noteLower.includes(p));
+                const mentionsAfternoon = AFTERNOON_PATTERNS.some(p => noteLower.includes(p));
+                const mentionsAvoid = ['evit', 'non vuol', 'non piac', 'non può', 'non riesc', 'problema', 'difficolt', 'preferisce non'].some(p => noteLower.includes(p));
+
+                if (mentionsMorning && mentionsAvoid) preferenceFlags.avoidMorning = true;
+                if (mentionsAfternoon && mentionsAvoid) preferenceFlags.avoidAfternoon = true;
+                // Preferisce solo mattina → implica avoid afternoon
+                if (mentionsMorning && ['prefer', 'solo', 'solament', 'meglio', 'tipicament', 'di solito'].some(p => noteLower.includes(p)) && !mentionsAfternoon) {
+                    preferenceFlags.avoidAfternoon = true;
+                }
+                // Preferisce solo pomeriggio/sera → implica avoid morning
+                if (mentionsAfternoon && ['prefer', 'solo', 'solament', 'meglio', 'tipicament', 'di solito'].some(p => noteLower.includes(p)) && !mentionsMorning) {
+                    preferenceFlags.avoidMorning = true;
+                }
+
+                await prisma.player.update({
+                    where: { id: player.id },
+                    data: { notes: newNotes, ...preferenceFlags },
+                });
+
+                if (Object.keys(preferenceFlags).length > 0) {
+                    logger.info({ playerId: player.id, preferenceFlags }, 'SAVE_NOTE: updated time preference flags');
+                }
             } catch (noteErr) {
                 logger.error({ noteErr, playerId: player.id }, 'SAVE_NOTE failed silently');
             }

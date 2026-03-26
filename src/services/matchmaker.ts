@@ -11,7 +11,7 @@
  */
 
 import { prisma } from './db';
-import { selectPlayersForWave, computeNextWaveDelayMs, getPlayersForRecovery, isNightInRome, msUntil8amRome, humanSendDelayMs } from './scoring';
+import { selectPlayersForWave, computeNextWaveDelayMs, getPlayersForRecovery, isNightInRome, msUntil8amRome, humanSendDelayMs, isMorningMatchInRome } from './scoring';
 import { generateInvitation } from './ai';
 import { simulateTypingAndSend } from './whatsapp';
 import { waveQueue, getRedis } from './queue';
@@ -110,11 +110,15 @@ async function _processWaveInner(matchId: string, waveNumber: number, urgencyMul
         let playersList = [...players];
 
         if (waveNumber === 1 && match.preferredPlayerIds && match.preferredPlayerIds.length > 0) {
+            const isMorningForPreferred = isMorningMatchInRome(match.startTime);
+            const dailyCapForPreferred = match.club?.maxDailyMessages ?? 2;
             const preferred = await prisma.player.findMany({
                 where: {
                     id: { in: match.preferredPlayerIds },
                     active: true,
-                    dailyMessagesCount: { lt: match.club?.maxDailyMessages ?? 2 },
+                    ...(isMorningForPreferred
+                        ? { morningContactsToday: { lt: dailyCapForPreferred }, avoidMorning: false }
+                        : { afternoonContactsToday: { lt: dailyCapForPreferred }, avoidAfternoon: false }),
                 },
             });
 
@@ -226,11 +230,15 @@ async function _processWaveInner(matchId: string, waveNumber: number, urgencyMul
 
         try {
             await simulateTypingAndSend(player.phoneNumber, text);
+            const isMorning = isMorningMatchInRome(match.startTime);
             await prisma.player.update({
                 where: { id: player.id },
                 data: {
                     lastContactedAt: new Date(),
                     dailyMessagesCount: { increment: 1 },
+                    ...(isMorning
+                        ? { morningContactsToday: { increment: 1 } }
+                        : { afternoonContactsToday: { increment: 1 } }),
                 },
             });
         } catch (err) {

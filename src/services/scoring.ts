@@ -168,13 +168,19 @@ export async function selectPlayersForWave(
     const skillMin = match.skillLevel - (match.club?.matchLowerRange ?? 1.0);
     const skillMax = match.skillLevel + (match.club?.matchUpperRange ?? 1.0);
 
+    const isMorning = isMorningMatchInRome(match.startTime);
+    const dailyCap = match.club?.maxDailyMessages ?? 2;
+
     const pool = await prisma.player.findMany({
         where: {
             clubId: match.clubId,
             skillLevel: { gt: 0, gte: skillMin, lte: skillMax },
             gender: targetGender ? targetGender : undefined,
             active: true,
-            dailyMessagesCount: { lt: match.club?.maxDailyMessages ?? 2 },
+            // Time-bucketed cap: check only the relevant half-day counter
+            ...(isMorning
+                ? { morningContactsToday: { lt: dailyCap }, avoidMorning: false }
+                : { afternoonContactsToday: { lt: dailyCap }, avoidAfternoon: false }),
             id: { notIn: excludedIds },
         },
     });
@@ -253,12 +259,16 @@ export async function getPlayersForRecovery(matchId: string): Promise<any[]> {
     const skillMin = match.skillLevel - (match.club?.matchLowerRange ?? 1.0);
     const skillMax = match.skillLevel + (match.club?.matchUpperRange ?? 1.0);
 
+    const isMorning = isMorningMatchInRome(match.startTime);
+
     const pool = await prisma.player.findMany({
         where: {
             clubId: match.clubId,
             skillLevel: { gt: 0, gte: skillMin, lte: skillMax },
             gender: targetGender ? targetGender : undefined,
             active: true,
+            // Recovery ignora il cap giornaliero ma rispetta le preferenze di fascia
+            ...(isMorning ? { avoidMorning: false } : { avoidAfternoon: false }),
             id: { notIn: excludedIds },
         },
     });
@@ -292,6 +302,20 @@ export function computeNextWaveDelayMs(minutesUntilMatch: number): number | null
     if (minutesUntilMatch > 120)  return 25 * 60 * 1000;        // >2h   → ogni 25min
     if (minutesUntilMatch > 60)   return 10 * 60 * 1000;        // >1h   → ogni 10min
     return null;                                                  // <1h   → stop
+}
+
+// ─────────────────────────────────────────────
+// TIME BUCKET — pre/post 14:00 Europe/Rome
+// ─────────────────────────────────────────────
+
+/** true se l'orario del match (in Rome) è prima delle 14:00 */
+export function isMorningMatchInRome(date: Date): boolean {
+    const h = parseInt(
+        new Intl.DateTimeFormat('en-US', { timeZone: 'Europe/Rome', hour: '2-digit', hour12: false })
+            .format(date).replace('24', '0'),
+        10
+    );
+    return h < 14;
 }
 
 // ─────────────────────────────────────────────
