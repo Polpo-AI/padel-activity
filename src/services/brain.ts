@@ -489,8 +489,9 @@ ${slotsAvailability.onlyCoveredSlots.length > 0 ? `\nSolo coperto disponibile a 
 ${slotsAvailability.fullSlots.length > 0 ? `\nSlot completamente occupati (nessun campo libero):\n${slotsAvailability.fullSlots.map(s => `  - ${s}`).join('\n')}` : ''}
 
 COME USARE QUESTA INFO:
+• freeScopertoSlots è una lista di SUGGERIMENTI pre-calcolati a intervalli fissi — NON è una whitelist di orari prenotabili. Se l'utente richiede un orario SPECIFICO (es. "sabato alle 9"), quell'orario è valido anche se non appare nella lista, purché non sia in fullSlots e rientri nell'orario di apertura del circolo.
 • "quando hai disponibilità?" / "quando c'è posto?" → proponi 3-4 slot da freeScopertoSlots in modo conversazionale. Se non ci sono scoperti liberi, proponi quelli con solo coperto.
-• Solo booking (skill test pendente o gruppo proprio): usa freeScopertoSlots per guidare la scelta. Per slot in onlyCoveredSlots il sistema chiederà conferma coperto automaticamente.
+• Se l'utente chiede un orario specifico: controlla SOLO se è in fullSlots (bloccante) o fuori orario apertura. In tutti gli altri casi esegui BOOK_FIELD direttamente senza chiedere conferma disponibilità.
 • Matchmaking (skill > 0): se l'orario richiesto è in fullSlots → NON eseguire BOOK_FIELD. Proponi le "PARTITE APERTE DISPONIBILI" (quasi complete, usa joinMatchId). Messaggio: "Quell'orario è al completo, ma ho queste partite che cercano ancora giocatori — vuoi unirti a una di queste?" Se nessuna va bene → suggerisci slot da freeScopertoSlots per creare una nuova pending.
 • Se l'utente vuole un orario specifico pieno E non vuole alternative → BOOK_FIELD sull'orario più vicino libero da freeScopertoSlots.
 • Se l'utente riceve "tutti i campi occupati" e chiede alternative → mostra le partite quasi complete da "PARTITE APERTE DISPONIBILI" (joinMatchId) oppure slot da freeScopertoSlots per nuova pending.
