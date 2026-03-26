@@ -693,23 +693,24 @@ function WeekCalendar({ courtData, weekDays, onCancel, onDeleteUnavailable, toda
                     borderBottom: ri < courtData.length - 1 ? `1px solid ${C.dim}` : "none",
                     minWidth: 110,
                   }}>
-                    {dayMatches.length === 0 ? (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+                      {dayMatches.length > 0 && (
+                        <div style={{ display: "flex", flexDirection: "column", gap: 3, maxHeight: 160, overflowY: "auto" }}>
+                          {dayMatches.map(m => <MatchChip key={m.id} match={m} onCancel={onCancel} onDeleteUnavailable={onDeleteUnavailable} />)}
+                        </div>
+                      )}
                       <button
                         onClick={() => onQuickCreate?.(d, court.id)}
                         style={{
-                          display: "block", width: "100%", padding: "10px 0",
+                          display: "block", width: "100%", padding: dayMatches.length === 0 ? "10px 0" : "3px 0",
                           background: "transparent", border: `1px dashed ${C.dim}`,
                           borderRadius: 6, cursor: "pointer", color: C.muted,
                           fontSize: 11, transition: "all 0.15s",
                         }}
                         onMouseEnter={e => { e.currentTarget.style.borderColor = C.accent; e.currentTarget.style.color = C.accent; e.currentTarget.style.background = C.accentDim; }}
                         onMouseLeave={e => { e.currentTarget.style.borderColor = C.dim; e.currentTarget.style.color = C.muted; e.currentTarget.style.background = "transparent"; }}
-                      >+ Nuova</button>
-                    ) : (
-                      <div style={{ display: "flex", flexDirection: "column", gap: 3, maxHeight: 160, overflowY: "auto" }}>
-                        {dayMatches.map(m => <MatchChip key={m.id} match={m} onCancel={onCancel} onDeleteUnavailable={onDeleteUnavailable} />)}
-                      </div>
-                    )}
+                      >+</button>
+                    </div>
                   </td>
                 );
               })}
