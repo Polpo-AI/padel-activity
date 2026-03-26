@@ -303,8 +303,9 @@ router.get('/matches/suggest-level', authMiddleware, async (req: Request, res: R
         const dailyCap = club.maxDailyMessages ?? 2;
         const PRIOR = 0.33;
 
-        // Determina fascia oraria per filtrare il cap corretto
+        // Determina fascia oraria e giorno per filtrare il cap e i flag correttamente
         let isMorning = false;
+        let isWeekday = true;
         if (date && time) {
             const matchDate = new Date(`${date}T${time}:00`);
             const hour = parseInt(
@@ -312,17 +313,21 @@ router.get('/matches/suggest-level', authMiddleware, async (req: Request, res: R
                     .format(matchDate).replace('24', '0'), 10
             );
             isMorning = hour < 14;
+            const romeDate = new Date(matchDate.toLocaleString('en-US', { timeZone: 'Europe/Rome' }));
+            const dow = romeDate.getDay();
+            isWeekday = dow >= 1 && dow <= 5;
         }
 
-        // Pool eligibile: attivi, skillLevel > 0, cap fascia non raggiunto, avoid flag rispettato
+        // Pool eligibile: attivi, skillLevel > 0, cap fascia non raggiunto
+        // avoid flags applicati solo nei feriali (nel weekend si gioca anche la mattina)
         const pool = await prisma.player.findMany({
             where: {
                 clubId,
                 active: true,
                 skillLevel: { gt: 0 },
                 ...(isMorning
-                    ? { morningContactsToday: { lt: dailyCap }, avoidMorning: false }
-                    : { afternoonContactsToday: { lt: dailyCap }, avoidAfternoon: false }),
+                    ? { morningContactsToday: { lt: dailyCap }, ...(isWeekday ? { avoidMorning: false } : {}) }
+                    : { afternoonContactsToday: { lt: dailyCap }, ...(isWeekday ? { avoidAfternoon: false } : {}) }),
             },
             select: { skillLevel: true, reliabilityScore: true },
         });

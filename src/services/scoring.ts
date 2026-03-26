@@ -169,6 +169,7 @@ export async function selectPlayersForWave(
     const skillMax = match.skillLevel + (match.club?.matchUpperRange ?? 1.0);
 
     const isMorning = isMorningMatchInRome(match.startTime);
+    const isWeekday = isWeekdayInRome(match.startTime);
     const dailyCap = match.club?.maxDailyMessages ?? 2;
 
     const pool = await prisma.player.findMany({
@@ -177,10 +178,10 @@ export async function selectPlayersForWave(
             skillLevel: { gt: 0, gte: skillMin, lte: skillMax },
             gender: targetGender ? targetGender : undefined,
             active: true,
-            // Time-bucketed cap: check only the relevant half-day counter
+            // Time-bucketed cap + avoid flags (solo feriali — nel weekend si gioca anche la mattina)
             ...(isMorning
-                ? { morningContactsToday: { lt: dailyCap }, avoidMorning: false }
-                : { afternoonContactsToday: { lt: dailyCap }, avoidAfternoon: false }),
+                ? { morningContactsToday: { lt: dailyCap }, ...(isWeekday ? { avoidMorning: false } : {}) }
+                : { afternoonContactsToday: { lt: dailyCap }, ...(isWeekday ? { avoidAfternoon: false } : {}) }),
             id: { notIn: excludedIds },
         },
     });
@@ -260,6 +261,7 @@ export async function getPlayersForRecovery(matchId: string): Promise<any[]> {
     const skillMax = match.skillLevel + (match.club?.matchUpperRange ?? 1.0);
 
     const isMorning = isMorningMatchInRome(match.startTime);
+    const isWeekday = isWeekdayInRome(match.startTime);
 
     const pool = await prisma.player.findMany({
         where: {
@@ -267,8 +269,10 @@ export async function getPlayersForRecovery(matchId: string): Promise<any[]> {
             skillLevel: { gt: 0, gte: skillMin, lte: skillMax },
             gender: targetGender ? targetGender : undefined,
             active: true,
-            // Recovery ignora il cap giornaliero ma rispetta le preferenze di fascia
-            ...(isMorning ? { avoidMorning: false } : { avoidAfternoon: false }),
+            // Recovery ignora il cap ma rispetta avoid flags solo nei feriali
+            ...(isWeekday
+                ? (isMorning ? { avoidMorning: false } : { avoidAfternoon: false })
+                : {}),
             id: { notIn: excludedIds },
         },
     });
@@ -316,6 +320,19 @@ export function isMorningMatchInRome(date: Date): boolean {
         10
     );
     return h < 14;
+}
+
+/** true se il match cade in un giorno feriale (lun-ven) in Rome */
+export function isWeekdayInRome(date: Date): boolean {
+    const day = parseInt(
+        new Intl.DateTimeFormat('en-US', { timeZone: 'Europe/Rome', weekday: 'narrow' })
+            .formatToParts(date).find(p => p.type === 'weekday')?.value === 'S' ? '0' : '1', // trick: use numeric weekday
+        10
+    );
+    // Più semplice: usare getDay() dopo conversione alla data Rome
+    const romeDate = new Date(date.toLocaleString('en-US', { timeZone: 'Europe/Rome' }));
+    const dow = romeDate.getDay(); // 0=Dom, 1=Lun, ..., 6=Sab
+    return dow >= 1 && dow <= 5;
 }
 
 // ─────────────────────────────────────────────
