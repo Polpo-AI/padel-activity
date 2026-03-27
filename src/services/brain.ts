@@ -640,14 +640,6 @@ PRINCIPIO BASE: se c'è ambiguità, assumi l'interpretazione più favorevole all
         } catch { return null; }
     }
 
-    // Prefill: iniziare il turno assistant con '{"' forza Claude a continuare
-    // esclusivamente con JSON — tecnica più affidabile per format enforcement.
-    const PREFILL = '{"';
-
-    function parseWithPrefill(raw: string): ReturnType<typeof extractBrainJson> {
-        return extractBrainJson(PREFILL + raw);
-    }
-
     try {
         const response = await anthropic.messages.create({
             model: 'claude-sonnet-4-6',
@@ -657,32 +649,30 @@ PRINCIPIO BASE: se c'è ambiguità, assumi l'interpretazione più favorevole all
             messages: [
                 ...historyMessages,
                 { role: 'user', content: userMessage },
-                { role: 'assistant', content: PREFILL },
             ],
         });
 
         const content = response.content[0];
         if (content.type === 'text') {
-            const result = parseWithPrefill(content.text);
+            const result = extractBrainJson(content.text.trim());
             if (result) return result;
 
-            // Prefill non è bastato (risposta malformata) — retry a temperatura minima
-            logger.warn({ rawText: content.text.slice(0, 200) }, 'Brain: prefill JSON malformed — retrying at temp=0');
+            // Nessun JSON trovato — retry a temperature=0 con enforcement esplicito
+            logger.warn({ rawText: content.text.slice(0, 200) }, 'Brain: no JSON in response — retrying at temp=0');
             try {
                 const retry = await anthropic.messages.create({
                     model: 'claude-sonnet-4-6',
                     max_tokens: 1024,
                     temperature: 0,
-                    system: systemPrompt,
+                    system: systemPrompt + '\n\n⚠️ FORMATO OBBLIGATORIO: la tua risposta deve essere ESCLUSIVAMENTE un oggetto JSON valido, senza nessun testo prima o dopo. Esempio esatto: {"message":"testo risposta","action":"NONE","params":{}}',
                     messages: [
                         ...historyMessages,
                         { role: 'user', content: userMessage },
-                        { role: 'assistant', content: PREFILL },
                     ],
                 });
                 const rc = retry.content[0];
                 if (rc.type === 'text') {
-                    const retryResult = parseWithPrefill(rc.text);
+                    const retryResult = extractBrainJson(rc.text.trim());
                     if (retryResult) return retryResult;
                     logger.error({ rawText: rc.text.slice(0, 200) }, 'Brain: retry also failed to produce JSON');
                 }
