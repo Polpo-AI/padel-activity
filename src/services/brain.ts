@@ -612,48 +612,83 @@ PRINCIPIO BASE: se c'è ambiguità, assumi l'interpretazione più favorevole all
         mergedHistory.pop();
     }
 
+    const historyMessages = mergedHistory.map(m => ({
+        role: (m.role === 'USER' ? 'user' : 'assistant') as 'user' | 'assistant',
+        content: m.role === 'BOT'
+            ? JSON.stringify({ message: m.content, action: 'NONE', params: {} })
+            : m.content,
+    }));
+
+    function extractBrainJson(text: string) {
+        const start = text.indexOf('{');
+        let end = -1;
+        if (start !== -1) {
+            let depth = 0;
+            for (let i = start; i < text.length; i++) {
+                if (text[i] === '{') depth++;
+                else if (text[i] === '}') { depth--; if (depth === 0) { end = i; break; } }
+            }
+        }
+        if (start === -1 || end === -1) return null;
+        try {
+            const parsed = JSON.parse(text.substring(start, end + 1));
+            return {
+                message: String(parsed.message || '...'),
+                action: (parsed.action || 'NONE') as BrainAction,
+                params: parsed.params || {},
+            };
+        } catch { return null; }
+    }
+
+    // Prefill: iniziare il turno assistant con '{"' forza Claude a continuare
+    // esclusivamente con JSON — tecnica più affidabile per format enforcement.
+    const PREFILL = '{"';
+
+    function parseWithPrefill(raw: string): ReturnType<typeof extractBrainJson> {
+        return extractBrainJson(PREFILL + raw);
+    }
+
     try {
         const response = await anthropic.messages.create({
             model: 'claude-sonnet-4-6',
-            max_tokens: 800,
-            temperature: 0.7,
+            max_tokens: 1024,
+            temperature: 0.4,
             system: systemPrompt,
             messages: [
-                ...mergedHistory.map(m => ({
-                    role: (m.role === 'USER' ? 'user' : 'assistant') as 'user' | 'assistant',
-                    // BOT messages wrappati in JSON: il modello impara il formato corretto dalla history
-                    content: m.role === 'BOT'
-                        ? JSON.stringify({ message: m.content, action: 'NONE', params: {} })
-                        : m.content,
-                })),
+                ...historyMessages,
                 { role: 'user', content: userMessage },
+                { role: 'assistant', content: PREFILL },
             ],
         });
 
         const content = response.content[0];
         if (content.type === 'text') {
-            const text = content.text.trim();
-            const start = text.indexOf('{');
-            // Trova la graffa chiusa che corrisponde alla prima aperta,
-            // tracciando la profondità — evita errori se Claude aggiunge testo dopo il JSON
-            let end = -1;
-            if (start !== -1) {
-                let depth = 0;
-                for (let i = start; i < text.length; i++) {
-                    if (text[i] === '{') depth++;
-                    else if (text[i] === '}') { depth--; if (depth === 0) { end = i; break; } }
+            const result = parseWithPrefill(content.text);
+            if (result) return result;
+
+            // Prefill non è bastato (risposta malformata) — retry a temperatura minima
+            logger.warn({ rawText: content.text.slice(0, 200) }, 'Brain: prefill JSON malformed — retrying at temp=0');
+            try {
+                const retry = await anthropic.messages.create({
+                    model: 'claude-sonnet-4-6',
+                    max_tokens: 1024,
+                    temperature: 0,
+                    system: systemPrompt,
+                    messages: [
+                        ...historyMessages,
+                        { role: 'user', content: userMessage },
+                        { role: 'assistant', content: PREFILL },
+                    ],
+                });
+                const rc = retry.content[0];
+                if (rc.type === 'text') {
+                    const retryResult = parseWithPrefill(rc.text);
+                    if (retryResult) return retryResult;
+                    logger.error({ rawText: rc.text.slice(0, 200) }, 'Brain: retry also failed to produce JSON');
                 }
+            } catch (retryErr: any) {
+                logger.error({ err: retryErr?.message }, 'Brain retry failed');
             }
-            if (start !== -1 && end !== -1) {
-                const parsed = JSON.parse(text.substring(start, end + 1));
-                return {
-                    message: String(parsed.message || '...'),
-                    action: (parsed.action || 'NONE') as BrainAction,
-                    params: parsed.params || {},
-                };
-            }
-            // Risposta AI senza JSON valido — logga per debug
-            logger.warn({ rawText: text.slice(0, 300) }, 'Brain: no JSON in response — using fallback');
         }
     } catch (err: any) {
         logger.error({ err: { message: err?.message, stack: err?.stack?.split('\n').slice(0,3).join(' | ') } }, 'Brain call failed');
