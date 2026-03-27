@@ -64,6 +64,32 @@ const DEFAULT_CLUB_KEY = 'default';
 
 const MAX_RECONNECT_DELAY_MS = 64000;
 const OFFLINE_MSG_WINDOW_MS = 24 * 60 * 60 * 1000;
+const SEND_WAIT_TIMEOUT_MS = 30_000; // attende fino a 30s che il socket torni su
+
+// ─────────────────────────────────────────────
+// WAIT FOR SOCKET — gestisce microinterruzioni WA
+// ─────────────────────────────────────────────
+
+/**
+ * Attende che il socket del club sia disponibile (sock != null).
+ * Gestisce i casi in cui WA si disconnette brevemente e si riconnette
+ * entro pochi secondi (es. rotazione di sessione, microinterruzioni di rete).
+ * Lancia solo se il timeout viene superato.
+ */
+async function waitForSocket(clubId: string | undefined, timeoutMs = SEND_WAIT_TIMEOUT_MS): Promise<ClubSocketState> {
+    const deadline = Date.now() + timeoutMs;
+    let waited = false;
+    while (Date.now() < deadline) {
+        const cs = clubId ? (clubSockets.get(clubId) ?? null) : getSocketForClub(clubId);
+        if (cs?.sock) {
+            if (waited) logger.info({ clubId }, 'Socket came back — sending queued message');
+            return cs;
+        }
+        waited = true;
+        await new Promise(r => setTimeout(r, 1500));
+    }
+    throw new Error(`WhatsApp socket not available${clubId ? ` for club ${clubId}` : ''} after ${timeoutMs}ms`);
+}
 
 // ─────────────────────────────────────────────
 // ROUTING: socket corretto per il club corrente
@@ -378,11 +404,10 @@ export async function sendMessage(jid: string, text: string): Promise<void> {
     }
 
     const clubId = currentClubId();
-    const cs = getSocketForClub(clubId);
-    if (!cs?.sock) throw new Error(`WhatsApp socket not initialized${clubId ? ` for club ${clubId}` : ''}`);
+    const cs = await waitForSocket(clubId);
 
     const formattedJid = formatJid(jid);
-    await cs.sock.sendMessage(formattedJid, { text });
+    await cs.sock!.sendMessage(formattedJid, { text });
 
     try {
         const { prisma } = await import('./db');
@@ -410,10 +435,8 @@ export async function humanSend(
     incomingMsgKey?: proto.IMessageKey
 ): Promise<void> {
     const clubId = currentClubId();
-    const cs = getSocketForClub(clubId);
-    if (!cs?.sock) throw new Error(`WhatsApp socket not initialized${clubId ? ` for club ${clubId}` : ''}`);
-
-    const sock = cs.sock;
+    const cs = await waitForSocket(clubId);
+    const sock = cs.sock!;
     const formattedJid = formatJid(jid);
 
     // Dedup: evita messaggi identici consecutivi
@@ -520,9 +543,8 @@ export async function createGroupAndAddPlayers(
     }
 
     const clubId = currentClubId();
-    const cs = getSocketForClub(clubId);
-    if (!cs?.sock) throw new Error('WhatsApp socket not initialized');
-    const sock = cs.sock;
+    const cs = await waitForSocket(clubId);
+    const sock = cs.sock!;
 
     const validJids = playerJids
         .map(formatJid)
