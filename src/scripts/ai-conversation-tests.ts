@@ -777,6 +777,9 @@ async function testOutOfHours() {
         }
     });
 
+    // Pausa extra: il test 07:00 spesso ritenta il brain (2 API call), serve cooldown
+    await new Promise(r => setTimeout(r, 8000));
+
     await test('orario dopo chiusura (23:30) → rifiuto corretto', async () => {
         const r = await turn(PHONE_HOURS,
             `Tardi stasera alle 23:30, posso giocare?`
