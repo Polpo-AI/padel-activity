@@ -617,13 +617,13 @@ async function runScoringTests() {
         assertEqual(d, 90 * 60 * 1000, '> 6h deve dare 90min');
     });
 
-    await test('computeNextWaveDelayMs(120) = 25min (>2h)', async () => {
-        const d = computeNextWaveDelayMs(120);
+    await test('computeNextWaveDelayMs(121) = 25min (>2h)', async () => {
+        const d = computeNextWaveDelayMs(121);
         assertEqual(d, 25 * 60 * 1000, '> 2h deve dare 25min');
     });
 
-    await test('computeNextWaveDelayMs(45) = 10min (>1h)', async () => {
-        const d = computeNextWaveDelayMs(45);
+    await test('computeNextWaveDelayMs(61) = 10min (>1h)', async () => {
+        const d = computeNextWaveDelayMs(61);
         assertEqual(d, 10 * 60 * 1000, '> 1h deve dare 10min');
     });
 
@@ -702,8 +702,8 @@ async function runWaveSelectionTests() {
         });
         await prisma.matchPlayer.create({ data: { matchId: match.id, playerId: playerSkilled.id } });
 
-        const selected = await selectPlayersForWave(match.id, 3, testClub.waveMultiplier);
-        const selectedIds = selected.map((p: any) => p.id);
+        const result = await selectPlayersForWave(match.id, 3, testClub.waveMultiplier);
+        const selectedIds = result.players.map((p: any) => p.id);
 
         assert(!selectedIds.includes(playerC.id), 'playerC (skill 5.0) non deve essere selezionato');
         assert(!selectedIds.includes(playerSkilled.id), 'playerSkilled (già nel match) non deve essere selezionato');
@@ -723,8 +723,8 @@ async function runWaveSelectionTests() {
         // playerD è active=true (abbiamo impostato in OPT_IN test), quindi lo escludiamo manualmente
         await prisma.player.update({ where: { id: playerD.id }, data: { active: false } });
 
-        const selected = await selectPlayersForWave(match.id, 3, testClub.waveMultiplier);
-        const selectedIds = selected.map((p: any) => p.id);
+        const result = await selectPlayersForWave(match.id, 3, testClub.waveMultiplier);
+        const selectedIds = result.players.map((p: any) => p.id);
         assert(!selectedIds.includes(playerD.id), 'playerD (inactive) non deve essere selezionato');
 
         // ripristina
@@ -744,8 +744,8 @@ async function runWaveSelectionTests() {
         // playerB già invitato con status REJECTED
         await prisma.invitation.create({ data: { matchId: match.id, playerId: playerB.id, status: 'REJECTED' } });
 
-        const selected = await selectPlayersForWave(match.id, 3, testClub.waveMultiplier);
-        const selectedIds = selected.map((p: any) => p.id);
+        const result = await selectPlayersForWave(match.id, 3, testClub.waveMultiplier);
+        const selectedIds = result.players.map((p: any) => p.id);
         assert(!selectedIds.includes(playerB.id), 'playerB (già invitato) non deve essere riselezionato');
 
         // cleanup
