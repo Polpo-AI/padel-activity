@@ -431,6 +431,8 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[], cor
                         await simulateTypingAndSend(jid, `Non trovo "${searchedName}" tra i giocatori iscritti al circolo. Se sei sicuro che sia registrato, scrivimi di nuovo e verifico con il campo!`);
                     }
                 }
+            } else if (result.errorMessage === 'SKILL_TEST_REQUIRED') {
+                await simulateTypingAndSend(jid, 'Per cercare avversari hai bisogno di completare prima lo Skill Test. Il circolo ti contatterà per organizzarlo — nel frattempo puoi prenotare il campo per te e i tuoi amici!');
             } else if (result.errorMessage === 'ALL_COURTS_TAKEN') {
                 // Tutti i campi occupati a quell'orario (skill incompatibile con le partite esistenti)
                 // Cerca partite pending quasi complete da proporre come alternativa
@@ -451,17 +453,17 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[], cor
                 await simulateTypingAndSend(jid, `Ops! ${result.errorMessage} 😕`);
             }
         }
-        // BOOK_FIELD / RESCHEDULE_MATCH: se NO wave (skill <= 0) → scheda completa subito
-        // Se wave partirà → il brain ha già comunicato "sto cercando giocatori";
+        // BOOK_FIELD / RESCHEDULE_MATCH: se NO wave (match LOCKED = prenotazione privata) → scheda completa subito.
+        // Se wave partirà (match OPEN = matchmaking) → il brain ha già comunicato "sto cercando giocatori";
         //   la conferma reale arriva col gruppo WA (handleMatchFilled)
         if ((action === 'BOOK_FIELD' || action === 'RESCHEDULE_MATCH') && result.success && result.matchId) {
             try {
-                const waveWillStart = player && player.skillLevel > 0;
+                const match = await prisma.match.findUnique({
+                    where: { id: result.matchId },
+                    include: { court: true },
+                });
+                const waveWillStart = match?.status === 'OPEN';
                 if (!waveWillStart) {
-                    const match = await prisma.match.findUnique({
-                        where: { id: result.matchId },
-                        include: { court: true },
-                    });
                     if (match?.court) {
                         const { calculateSlotCost } = await import('./pricing');
                         const totalCost = await calculateSlotCost(match.court.id, match.startTime);

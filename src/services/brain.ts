@@ -450,12 +450,13 @@ NON devi mai dire "errore tecnico" o cose simili — se non puoi fare qualcosa, 
 
 ═══ COME FUNZIONA IL CIRCOLO ═══
 - Il padel è 2 vs 2 (4 giocatori per campo)
-- Ogni giocatore prenota per sé — il sistema abbina automaticamente per livello
-- Per gli inviti automatici serve lo Skill Test (valutazione col maestro, il circolo contatta quando disponibile). Prima del test si può comunque prenotare un campo liberamente.
-- Quando si prenota: il sistema cerca altri giocatori compatibili e li invita via WhatsApp. Gli inviti scadono — chi non risponde viene escluso e si invita qualcun altro.
-- Quando la partita si riempie (4 confermati): viene creato un gruppo WhatsApp con tutti i giocatori e ricevono conferma.
+- Prenotare un campo funziona in due modi:
+  a) Prenotazione privata: il campo è tutto tuo (per te e i tuoi amici, fino a 4 totali). Nessun abbinamento automatico. Funziona sempre, anche prima dello Skill Test.
+  b) Matchmaking: il sistema cerca altri 3 giocatori compatibili per livello e li invita via WhatsApp. Richiede lo Skill Test completato.
+- Lo Skill Test è una valutazione col maestro che assegna il tuo livello di gioco. Il circolo ti contatta per organizzarlo. Prima del test puoi già prenotare il campo privatamente.
+- Quando la partita si riempie (4 confermati nel matchmaking): viene creato un gruppo WhatsApp con tutti i giocatori.
 - Si può cancellare la propria partecipazione rispondendo al bot — il posto torna disponibile per altri.
-- Per portare un amico specifico: basta dirlo al bot, che verifica se è iscritto al circolo e lo invita prioritariamente.
+- Per portare un amico specifico nel matchmaking: basta dirlo al bot, che verifica se è iscritto al circolo e lo invita prioritariamente.
 
 ${!player ? `═══ UTENTE NON REGISTRATO ═══
 Questa persona non è ancora iscritta al circolo.
@@ -469,10 +470,10 @@ Raccogliere nome e cognome è la tua priorità, ma in modo completamente natural
 Nome: ${player.name || 'non registrato'}
 Livello: ${player.skillLevel > 0 ? player.skillLevel + ' (scala 1-7, dove 1=principiante, 7=agonista)' : 'da assegnare — Skill Test in attesa'}
 ${player.skillLevel <= 0 ? `NOTA SKILL TEST: questo giocatore NON ha ancora completato lo Skill Test.
-- PUÒ prenotare un campo per sé e i suoi amici (fino a 4 persone totali)
-- NON può essere abbinato automaticamente con altri giocatori — il sistema non lo cerca e non lo propone
-- Se chiede di giocare "con altri" o "con persone del suo livello": spiegagli PRIMA DI PRENOTARE che per quello serve lo Skill Test, che il circolo organizzerà appena possibile. Poi chiedi se vuole comunque prenotare il campo.
-- Se vuole prenotare solo il campo (anche con amici propri) → procedi con BOOK_FIELD normalmente.` : ''}
+- PUÒ prenotare il campo privatamente (private: true) — per sé e i suoi amici, fino a 4 totali. Funziona SEMPRE.
+- NON può fare matchmaking (private: false) — il sistema non può abbinarlo con sconosciuti senza livello assegnato.
+- Se parla di "giocare con qualcuno" o "trovare avversari": spiegagli che per quello serve lo Skill Test, il circolo organizzerà appena possibile. Poi chiedi se vuole comunque prenotare il campo privatamente.
+- Per BOOK_FIELD → usa SEMPRE private: true. NON usare mai private: false per questo giocatore.` : ''}
 ${player.notes ? `Note/preferenze giocatore: ${player.notes}` : ''}
 ${lessonInfo ? `\n═══ LEZIONE INDIVIDUALE ═══\n${lessonInfo}\nIl maestro contatterà il giocatore per l'orario — il sistema invia solo la notifica.` : ''}`}
 
@@ -519,18 +520,25 @@ Rispondi SEMPRE con JSON valido: { "message": "...", "action": "NOME", "params":
 - ACCEPT_INVITATION — params: { "invitationId": "..." } — utente conferma presenza a partita
 - REJECT_INVITATION — params: { "invitationId": "..." } — utente declina partita
 - CANCEL_MATCH — params: { "matchPlayerId": "..." } — utente vuole annullare partecipazione confermata
-- BOOK_FIELD — params: { "day": "YYYY-MM-DD o oggi/domani/lunedì/martedì/...", "time": "HH:MM", "joinMatchId": "id o null", "preferCovered": false, "preferMixed": null }
+- BOOK_FIELD — params: { "day": "YYYY-MM-DD o oggi/domani/lunedì/martedì/...", "time": "HH:MM", "joinMatchId": "id o null", "preferCovered": false, "preferMixed": null, "private": null }
   Usa quando l'utente vuole giocare/prenotare e ha fornito giorno + orario.
   preferCovered: true SOLO se l'utente lo chiede esplicitamente (es. "campo al coperto", "al chiuso"). Default: false (scoperto preferito).
+  private: indica l'intento dell'utente — prenotazione privata o matchmaking.
+    - private: true → prenotazione privata: il campo è riservato, nessun abbinamento automatico. Funziona SEMPRE, anche senza Skill Test.
+    - private: false → matchmaking: il sistema cerca altri 3 giocatori compatibili e li invita. ⚠️ Richiede Skill Test completato (skill > 0). Se skill ≤ 0 → NON usare private: false; spiega che serve prima lo Skill Test e offri la prenotazione privata.
+    - private: null → intento non chiaro: usa NONE e chiedi "Vuoi prenotare il campo solo per te (o con i tuoi amici), oppure preferisci che ti cerchiamo degli avversari?"
+  ⚠️ NON chiedere se l'intento è già chiaro dal contesto:
+    - "campo solo per noi", "prenota per me e i miei amici", "veniamo in 4", "campo privato" → private: true
+    - "voglio giocare con qualcuno", "cercatemi degli avversari", "trovami altri giocatori", "partita aperta" → private: false
+    - Skill test pendente (skill ≤ 0) → sempre private: true, senza chiedere
   preferMixed: true se accetta match misto (maschi e femmine insieme), false se preferisce solo stesso sesso, null se non ha ancora espresso preferenza.
-  ⚠️ REGOLA MISTO: se preferMixed è null (non ancora espresso e skill > 0), prima chiedi con NONE: "Preferisci un match solo con giocatori del tuo stesso sesso o va bene anche misto?" Poi al turno successivo usa BOOK_FIELD con preferMixed impostato. Se lo skill test è pendente (skill <= 0) non chiedere — salta e usa preferMixed: false.
+  ⚠️ REGOLA MISTO: si applica SOLO quando private: false (matchmaking). Se preferMixed è null e private è false, prima chiedi con NONE: "Preferisci un match solo con giocatori del tuo stesso sesso o va bene anche misto?" Poi al turno successivo usa BOOK_FIELD con preferMixed impostato. Se private: true → salta la domanda (usa preferMixed: null).
   Se manca l'orario → NONE e chiedi solo quello.
-  Se c'è una partita aperta compatibile (da "PARTITE APERTE DISPONIBILI") → usa joinMatchId.
+  Se c'è una partita aperta compatibile (da "PARTITE APERTE DISPONIBILI") e l'utente vuole matchmaking (private: false) → usa joinMatchId.
   ⚠️ REDIRECT: se l'orario richiesto è in fullSlots O il sistema ha appena risposto "tutti i campi occupati" → NON creare nuovo BOOK_FIELD senza joinMatchId. Prima proponi le "PARTITE APERTE DISPONIBILI" (le più complete, con meno posti liberi). Se l'utente sceglie una → BOOK_FIELD con joinMatchId. Se non vuole nessuna → suggerisci slot da freeScopertoSlots per nuova pending.
-  Messaggio nel JSON per BOOK_FIELD (quando skill > 0 e nuova partita): "Perfetto, sto cercando gli altri giocatori — ti scrivo nel gruppo quando siamo in 4. 🎾" NON menzionare mai il nome del campo, il tipo (coperto/scoperto) o altri dettagli.
+  Messaggio nel JSON per BOOK_FIELD (private: false, nuova partita): "Perfetto, sto cercando gli altri giocatori — ti scrivo nel gruppo quando siamo in 4. 🎾" NON menzionare mai il nome del campo, il tipo (coperto/scoperto) o altri dettagli.
+  Messaggio per BOOK_FIELD (private: true): "Perfetto, prenoto subito! 🎾" — i dettagli li manda il sistema.
   Messaggio per BOOK_FIELD con joinMatchId: "Perfetto, ti aggiungo! 🎾" (breve, il sistema gestisce il resto).
-  Messaggio per BOOK_FIELD (quando skill test pendente): breve e neutro, tipo "Perfetto, prenoto subito! 🎾" — i dettagli li manda il sistema.
-  ${skillTestPending ? 'Skill Test pendente: puoi confermare la prenotazione del campo, ma PRIMA spiega che il sistema non abbinerà altri giocatori finché non completa lo Skill Test.' : ''}
   ⚠️ ATTENZIONE: se il giocatore ha già partite confermate E chiede un nuovo slot, valuta se è una correzione o un'aggiunta (vedi regola RESCHEDULE sotto).
 - OPT_OUT — params: {} — utente non vuole più messaggi / vuole essere rimosso dalla lista
 - OPT_IN — params: {} — utente vuole rientrare nella lista (es. "voglio ricominciare", "rimettimi dentro", "voglio ricevere partite di nuovo"). Usa solo se il giocatore risulta inattivo o lo chiede esplicitamente.
@@ -859,7 +867,9 @@ export async function executeAction(
             }
 
             const preferMixed = params.preferMixed === true ? true : params.preferMixed === false ? false : null;
-            return await bookSlotForPlayer(startTime, player, club, params.preferCovered === true, preferMixed);
+            // private: true = campo privato, false = matchmaking, null = decide createNewMatchAction in base a skillLevel (backward compat)
+            const privateBooking: boolean | null = params.private === true ? true : params.private === false ? false : null;
+            return await bookSlotForPlayer(startTime, player, club, params.preferCovered === true, preferMixed, privateBooking);
         }
 
         if (action === 'OPT_OUT') {
@@ -1052,6 +1062,7 @@ async function bookSlotForPlayer(
     club: any,
     preferCovered: boolean = false,
     preferMixed: boolean | null = null,
+    privateBooking: boolean | null = null,
 ): Promise<{ success: boolean; errorMessage?: string; matchId?: string }> {
     // Valida che ci siano almeno 90 minuti prima della chiusura e dopo l'apertura
     if (club?.openTime || club?.closeTime) {
@@ -1093,7 +1104,14 @@ async function bookSlotForPlayer(
         return { success: false, errorMessage: 'Hai già una prenotazione in quella fascia oraria.' };
     }
 
-    if (player.skillLevel > 0) {
+    // Matchmaking: cerca match aperto compatibile da joinare.
+    // Solo se l'utente vuole matchmaking (privateBooking !== true) e ha skill assegnato.
+    const wantsMatchmaking = privateBooking === false || (privateBooking === null && player.skillLevel > 0);
+    if (wantsMatchmaking) {
+        // Se vuole matchmaking ma skill non ancora assegnato → blocca
+        if (player.skillLevel <= 0) {
+            return { success: false, errorMessage: 'SKILL_TEST_REQUIRED' };
+        }
         const skillMin = player.skillLevel - (club?.matchLowerRange ?? 1.0);
         const skillMax = player.skillLevel + (club?.matchUpperRange ?? 1.0);
         const existing = await prisma.match.findFirst({
@@ -1119,7 +1137,7 @@ async function bookSlotForPlayer(
         }
     }
 
-    return await createNewMatchAction(startTime, player, club, preferCovered, preferMixed);
+    return await createNewMatchAction(startTime, player, club, preferCovered, preferMixed, privateBooking);
 }
 
 async function createNewMatchAction(
@@ -1128,6 +1146,7 @@ async function createNewMatchAction(
     club: any,
     preferCovered: boolean = false,
     preferMixed: boolean | null = null,
+    privateBooking: boolean | null = null,
 ): Promise<{ success: boolean; errorMessage?: string; matchId?: string; requestedTime?: Date }> {
     const occupied = await prisma.match.findMany({
         where: { clubId: player.clubId, status: { in: ['OPEN', 'LOCKED'] }, startTime },
@@ -1156,8 +1175,9 @@ async function createNewMatchAction(
 
     const skillLevel = player.skillLevel > 0 ? player.skillLevel : 1.0;
 
-    const isPrivateBooking = player.skillLevel <= 0;
-    // Skill non assegnato → prenotazione privata: LOCKED subito, nessun timeout di matchmaking
+    // isPrivateBooking: true se l'utente ha richiesto esplicitamente private, o se skill non ancora assegnato (null fallback).
+    // privateBooking === false è già stato bloccato in bookSlotForPlayer se skill <= 0.
+    const isPrivateBooking = privateBooking === true || (privateBooking === null && player.skillLevel <= 0);
     const initialStatus = isPrivateBooking ? 'LOCKED' : 'OPEN';
 
     const match = await prisma.match.create({
@@ -1177,9 +1197,9 @@ async function createNewMatchAction(
     await prisma.matchPlayer.create({ data: { matchId: match.id, playerId: player.id } });
     await prisma.invitation.create({ data: { matchId: match.id, playerId: player.id, status: 'ACCEPTED' } });
 
-    // Wave per trovare gli altri 3 giocatori (solo se skill assegnato)
+    // Wave per trovare gli altri 3 giocatori (solo se matchmaking — match OPEN)
     // Fire-and-forget: checkSilentMatches (ogni 30min) rilancia se Redis era down
-    if (player.skillLevel > 0) {
+    if (!isPrivateBooking) {
         const spotsNeeded = match.playersNeeded - 1; // sempre 3
         waveQueue.add('process-wave', {
             matchId: match.id,
