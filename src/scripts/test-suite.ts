@@ -914,8 +914,8 @@ async function runDashboardTests() {
                 skillLevel: 3.5,
             }),
         });
-        assert(r.status === 200 || r.status === 201, `Creazione match fallita: ${r.status} — ${await r.text()}`);
-        const body = await r.json();
+        const body = await r.json(); // leggo UNA sola volta
+        assert(r.status === 200 || r.status === 201, `Creazione match fallita: ${r.status} — ${JSON.stringify(body)}`);
         assert(!!body.id, 'Match ID assente nella risposta');
         createdMatchId = body.id;
     });
