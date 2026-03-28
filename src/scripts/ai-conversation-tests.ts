@@ -719,8 +719,10 @@ async function testInvitePreferred() {
             r.action === 'INVITE_PREFERRED',
             `Azione inattesa: ${r.action}`, r.message
         );
-        assert(r.params?.name?.toLowerCase().includes('anna'),
-            `params.name non contiene "anna": ${r.params?.name}`, r.message
+        // Il brain usa params.playerName (non params.name) per INVITE_PREFERRED
+        const playerName = r.params?.playerName || r.params?.name;
+        assert(playerName?.toLowerCase().includes('anna'),
+            `params.playerName non contiene "anna": ${JSON.stringify(r.params)}`, r.message
         );
     });
 
