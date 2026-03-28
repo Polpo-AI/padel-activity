@@ -886,18 +886,18 @@ async function runDashboardTests() {
         assert('fillRate' in body || 'totalMatches' in body || typeof body === 'object', 'stats devono essere un oggetto');
     });
 
-    await test('GET /api/dashboard/matches/suggest-level → 200', async () => {
+    await test('GET /api/dashboard/matches/suggest-level → 200 con {suggestions}', async () => {
         const r = await fetch(`${BASE}/api/dashboard/matches/suggest-level`, { headers: auth() });
         assert(r.status === 200, `Status: ${r.status}`);
         const body = await r.json();
-        assert(Array.isArray(body), 'suggest-level deve restituire array');
+        assert(Array.isArray(body.suggestions), `suggest-level deve avere suggestions array, got: ${JSON.stringify(body)}`);
     });
 
     await test('POST /api/dashboard/matches → 201 crea match', async () => {
-        // Usa 90 giorni + ora insolita per evitare conflitti con dati reali
+        // Usa 365 giorni + ora insolita per evitare conflitti con dati reali
         const futureSlot = new Date();
-        futureSlot.setDate(futureSlot.getDate() + 90);
-        futureSlot.setUTCHours(14, 37, 0, 0); // 14:37 UTC = orario improbabile per conflitti
+        futureSlot.setDate(futureSlot.getDate() + 365);
+        futureSlot.setUTCHours(7, 43, 0, 0); // 07:43 UTC = orario improbabile per conflitti
 
         // Prima recupera un courtId reale dal dashboard
         const courtsR = await fetch(`${BASE}/api/dashboard/courts`, { headers: auth() });
