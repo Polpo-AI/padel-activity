@@ -244,6 +244,16 @@ DATABASE_URL="postgresql://postgres.ildhffoxuufcbvmmqitj:<pw>@aws-1-eu-west-1.po
 **Bug reale:** `npx prisma generate` non era stato eseguito in locale dopo che il VPS aveva aggiunto `clubId` come scalar field su `Match` → il client locale non riconosceva `clubId` → `Unknown argument 'clubId'` a runtime nei test locali.
 **Regola:** dopo ogni `prisma db push` sul VPS che aggiunge/modifica campi, eseguire anche in locale `npx prisma generate` per aggiornare i tipi. Il client locale non si aggiorna automaticamente: è legato allo schema.prisma locale, non al DB remoto.
 
+### 39. AI conversation tests (ai-conversation-tests.ts): eseguire sul VPS, non in locale
+**Regola:** `src/scripts/ai-conversation-tests.ts` simula conversazioni WhatsApp reali chiamando Claude API tramite brain.ts. Deve girare SOLO sul VPS (`ssh root@46.225.212.159 "cd /root/padel-staging && npx tsx src/scripts/ai-conversation-tests.ts"`).
+**Motivi:** (1) Redis non raggiungibile da locale → BullMQ blocca; (2) Schema Prisma diverge tra locale e VPS (es. `Player.name` vs `firstName/lastName`, `openTime` come String vs Int); (3) Rate limit Claude 30k tokens/min — test sequenziali con 2.5s delay/turno e 12s tra gruppi.
+**Comportamenti noti del brain:**
+- Il brain chiede gender preference ("misto o solo donne?") PRIMA di BOOK_FIELD → aggiungere "misto" ai messaggi di prenotazione nei test
+- `INVITE_PREFERRED` usa `params.playerName` (non `params.name`) — l'executeAction cerca il giocatore per nome
+- La conferma campo occupato/coperto è in `messageHandler`, non nel brain — il brain si limita a BOOK_FIELD e non menziona sempre la situazione del campo
+- Il brain a volte risponde in linguaggio naturale (non JSON) → callBrain ha un retry a temp=0; se il retry fallisce (rate limit), restituisce fallback random
+- Ogni telefono di test deve avere una propria storia conversazionale pulita — non riusare lo stesso numero in test diversi o si accumula contesto che confonde il brain
+
 ---
 
 ---
