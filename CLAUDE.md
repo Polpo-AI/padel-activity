@@ -373,7 +373,7 @@ Wave per match di club X:
 | `src/services/whatsapp.ts` | Connessione Baileys, invio messaggi, gestione reconnect, recovery messaggi offline |
 | `src/services/messageHandler.ts` | Routing messaggi: brain per tutti (registrati e non). Dopo BOOK_FIELD invia scheda prenotazione dettagliata |
 | `src/services/brain.ts` | **Cervello AI del bot** — unica chiamata Claude Sonnet con contesto completo → `{ message, action, params }`. Nessuna frase hardcodata |
-| `src/services/inbound-queue.ts` | Debouncing messaggi in entrata (10s per JID), batch processing, recovery dopo crash |
+| `src/services/inbound-queue.ts` | Debouncing messaggi in entrata (60s per JID), batch processing, recovery dopo crash |
 | `src/services/ai.ts` | Wrapper AI: generazione testi inviti, requiresResponse(), inferGender() |
 | `src/services/conversational-manager.ts` | ⚠️ LEGACY — ancora presente ma non più nel path principale. Il brain gestisce tutto |
 
@@ -461,7 +461,7 @@ Tutti in `src/prompts/*.md` — modificabili senza toccare codice TypeScript.
 ```
 WhatsApp message
     ↓
-inbound-queue.ts (debounce 10s, raggruppa batch per JID)
+inbound-queue.ts (debounce 60s, raggruppa batch per JID)
     ↓
 messageHandler._handleBatchInner()
     ├── De-LID: risolve @lid → numero italiano reale
@@ -561,7 +561,7 @@ La dimensione di ogni wave non usa un moltiplicatore fisso, ma accumula giocator
 | Redis primary per stati conversazionali | TTL nativo, sub-ms, no schema migrations |
 | PostgreSQL fallback per stati | Resilienza se Redis crasha |
 | Distributed lock (wave_lock) 15s | Evita double-send in wave parallele |
-| Debounce 10s per JID | WhatsApp spezza messaggi lunghi in più pezzi — li raggruppiamo |
+| Debounce 60s per JID | WhatsApp spezza messaggi lunghi in più pezzi — li raggruppiamo |
 | `type=append` messaggi offline | Baileys emette append al reconnect — recuperati e filtrati con AI (requiresResponse) |
 | De-LID in _handleBatchInner | WhatsApp LID (@lid) ≠ numero telefono — risolto da `remoteJidAlt` |
 | buildRomeTime() | Evita doppia conversione UTC quando l'utente fornisce orario italiano |
