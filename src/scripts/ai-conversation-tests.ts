@@ -133,28 +133,28 @@ async function setup() {
 
     [playerSkilled, playerNew, playerHighSkill] = await Promise.all([
         prisma.player.create({ data: {
-            clubId: testClub.id, firstName: 'Marco', lastName: 'Rossi',
+            clubId: testClub.id, name: 'Marco Rossi',
             phoneNumber: PHONE_SKILLED, skillLevel: 3.5, reliabilityScore: 0.8, active: true,
-        }}),
+        } as any }),
         prisma.player.create({ data: {
-            clubId: testClub.id, firstName: 'Luigi', lastName: 'Verdi',
+            clubId: testClub.id, name: 'Luigi Verdi',
             phoneNumber: PHONE_NEW, skillLevel: -1, reliabilityScore: 0.5, active: true,
-        }}),
+        } as any }),
         prisma.player.create({ data: {
-            clubId: testClub.id, firstName: 'Anna', lastName: 'Bianchi',
+            clubId: testClub.id, name: 'Anna Bianchi',
             phoneNumber: PHONE_HIGH, skillLevel: 5.5, reliabilityScore: 0.9, active: true,
-        }}),
+        } as any }),
     ]);
 
-    // Player opt-out test (ha già optato)
-    await prisma.player.create({ data: {
-        clubId: testClub.id, firstName: 'Carlo', lastName: 'Neri',
+    // Player opt-out test
+    await (prisma.player.create as any)({ data: {
+        clubId: testClub.id, name: 'Carlo Neri',
         phoneNumber: PHONE_OPTOUT, skillLevel: 3.5, reliabilityScore: 0.7, active: true,
     }});
 
     // Player cancel test
-    await prisma.player.create({ data: {
-        clubId: testClub.id, firstName: 'Sofia', lastName: 'Esposito',
+    await (prisma.player.create as any)({ data: {
+        clubId: testClub.id, name: 'Sofia Esposito',
         phoneNumber: PHONE_CANCEL, skillLevel: 3.5, reliabilityScore: 0.75, active: true,
     }});
 
@@ -636,8 +636,8 @@ async function testBookCancelRebook() {
     console.log('\n📋 Test 10: Multi-turno prenota→cancella→riprenota');
 
     // Usa PHONE_AMBIGUOUS per questo test (player dedicato)
-    await prisma.player.create({ data: {
-        clubId: testClub.id, firstName: 'Test', lastName: 'Multiturn',
+    await (prisma.player.create as any)({ data: {
+        clubId: testClub.id, name: 'Test Multiturn',
         phoneNumber: PHONE_AMBIGUOUS, skillLevel: 3.5, reliabilityScore: 0.7, active: true,
     }});
 
