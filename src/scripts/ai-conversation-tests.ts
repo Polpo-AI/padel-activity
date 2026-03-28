@@ -223,6 +223,9 @@ async function conversationTurn(
     process.env.CLUB_ID = clubId;
     const context = await buildBrainContext(phoneJid, phone);
 
+    // Piccola pausa prima di ogni chiamata AI per evitare rate limit burst
+    await new Promise(r => setTimeout(r, 500));
+
     // Chiama il brain AI
     const brainResult = await callBrain(context, userMessage);
 
@@ -770,49 +773,27 @@ async function main() {
 
     await setup();
 
-    // Gruppi paralleli — ogni gruppo ha test con dipendenze interne
-    // tra gruppi non ci sono dipendenze → esecuzione parallela sicura
-    console.log('\n🚀 Avvio test in parallelo (6 gruppi)…');
+    // Esecuzione sequenziale per rispettare il rate limit Claude (30k tokens/min)
+    console.log('\n🚀 Avvio test sequenziali (rate limit Claude: 30k tokens/min)…');
 
-    const [g1, g2, g3, g4, g5, g6] = await Promise.allSettled([
-        // Gruppo 1: utente non registrato + skill=-1
-        (async () => {
-            await testUnregisteredUser();
-            await testSkillMinusOne();
-        })(),
-        // Gruppo 2: reschedule + booking multi-turno
-        (async () => {
-            await testReschedule();
-            await testBookCancelRebook();
-        })(),
-        // Gruppo 3: campo occupato + match pieno
-        (async () => {
-            await testOccupiedField();
-            await testFullMatch();
-        })(),
-        // Gruppo 4: double booking + opt-out
-        (async () => {
-            await testDoubleBooking();
-            await testOptOut();
-        })(),
-        // Gruppo 5: messaggi ambigui + FAQ
-        (async () => {
-            await testAmbiguousMessages();
-            await testFAQPrices();
-        })(),
-        // Gruppo 6: invite preferred + fuori orario
-        (async () => {
-            await testInvitePreferred();
-            await testOutOfHours();
-        })(),
-    ]);
+    const groups = [
+        { name: 'Utente non registrato + skill=-1', fn: async () => { await testUnregisteredUser(); await testSkillMinusOne(); } },
+        { name: 'Reschedule + booking multi-turno', fn: async () => { await testReschedule(); await testBookCancelRebook(); } },
+        { name: 'Campo occupato + match pieno', fn: async () => { await testOccupiedField(); await testFullMatch(); } },
+        { name: 'Double booking + opt-out', fn: async () => { await testDoubleBooking(); await testOptOut(); } },
+        { name: 'Messaggi ambigui + FAQ', fn: async () => { await testAmbiguousMessages(); await testFAQPrices(); } },
+        { name: 'Invite preferred + fuori orario', fn: async () => { await testInvitePreferred(); await testOutOfHours(); } },
+    ];
 
-    // Riporta errori da Promise.allSettled (errori fuori dai singoli test)
-    [g1, g2, g3, g4, g5, g6].forEach((g, i) => {
-        if (g.status === 'rejected') {
-            console.error(`\n💥 Gruppo ${i + 1} ha crashato:`, g.reason);
+    for (const group of groups) {
+        try {
+            await group.fn();
+        } catch (err) {
+            console.error(`\n💥 Gruppo "${group.name}" ha crashato:`, err);
         }
-    });
+        // Pausa tra gruppi per evitare rate limit
+        await new Promise(r => setTimeout(r, 3000));
+    }
 
     await cleanup();
     await prisma.$disconnect();
