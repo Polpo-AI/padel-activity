@@ -269,25 +269,11 @@ router.get('/matches', authMiddleware, async (req: Request, res: Response) => {
     res.json(matches);
 });
 
-router.get('/matches/:id', authMiddleware, async (req: Request, res: Response) => {
-    const clubId = (req as any).clubId;
-    const match = await prisma.match.findFirst({
-        where: { id: req.params.id as string, clubId },
-        include: {
-            court: true,
-            MatchPlayer: { include: { player: true } },
-            invitations: { include: { player: true } },
-        },
-    });
-    if (!match) return res.status(404).json({ error: 'Partita non trovata' });
-    res.json(match);
-});
-
-// ─────────────────────────────────────────────
-// CREA PARTITA → parte wave
 // ─────────────────────────────────────────────
 // SUGGEST OPTIMAL SKILL LEVEL
 // Trova il livello che massimizza sum(EMA) dei giocatori eligibili
+// IMPORTANTE: deve stare PRIMA di /matches/:id per evitare che Express
+// tratti "suggest-level" come un :id parameter
 // ─────────────────────────────────────────────
 
 router.get('/matches/suggest-level', authMiddleware, async (req: Request, res: Response) => {
@@ -354,6 +340,21 @@ router.get('/matches/suggest-level', authMiddleware, async (req: Request, res: R
     } catch (e: any) {
         res.status(500).json({ error: e.message });
     }
+});
+
+// GET singola partita (DOPO suggest-level per evitare conflitti di routing)
+router.get('/matches/:id', authMiddleware, async (req: Request, res: Response) => {
+    const clubId = (req as any).clubId;
+    const match = await prisma.match.findFirst({
+        where: { id: req.params.id as string, clubId },
+        include: {
+            court: true,
+            MatchPlayer: { include: { player: true } },
+            invitations: { include: { player: true } },
+        },
+    });
+    if (!match) return res.status(404).json({ error: 'Partita non trovata' });
+    res.json(match);
 });
 
 // ─────────────────────────────────────────────

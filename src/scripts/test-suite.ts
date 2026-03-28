@@ -894,10 +894,10 @@ async function runDashboardTests() {
     });
 
     await test('POST /api/dashboard/matches → 201 crea match', async () => {
-        // Usa la data di un giorno lontano per non interferire con test esistenti
+        // Usa 90 giorni + ora insolita per evitare conflitti con dati reali
         const futureSlot = new Date();
-        futureSlot.setDate(futureSlot.getDate() + 30);
-        futureSlot.setUTCHours(10, 0, 0, 0);
+        futureSlot.setDate(futureSlot.getDate() + 90);
+        futureSlot.setUTCHours(14, 37, 0, 0); // 14:37 UTC = orario improbabile per conflitti
 
         // Prima recupera un courtId reale dal dashboard
         const courtsR = await fetch(`${BASE}/api/dashboard/courts`, { headers: auth() });
