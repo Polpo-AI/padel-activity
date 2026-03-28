@@ -114,8 +114,8 @@ async function setup() {
         data: {
             id: RUN_ID,
             name: 'Test Club AI',
-            openTime: 8,
-            closeTime: 23,
+            openTime: '08:00',
+            closeTime: '23:30',
             matchLowerRange: 1.5,
             matchUpperRange: 1.5,
             maxDailyMessages: 50,
