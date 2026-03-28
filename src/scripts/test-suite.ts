@@ -37,9 +37,16 @@ function suite(name: string) {
     console.log(`\n📦 ${name}`);
 }
 
+const TEST_TIMEOUT_MS = 12000;
+
 async function test(name: string, fn: () => Promise<void>) {
     try {
-        await fn();
+        await Promise.race([
+            fn(),
+            new Promise<never>((_, reject) =>
+                setTimeout(() => reject(new Error(`Test timeout (>${TEST_TIMEOUT_MS}ms) — Redis potrebbe non essere raggiungibile`)), TEST_TIMEOUT_MS)
+            ),
+        ]);
         console.log(`  ✅ ${name}`);
         passed++;
     } catch (err: any) {
@@ -916,8 +923,9 @@ async function runDashboardTests() {
         });
         const body = await r.json(); // leggo UNA sola volta
         assert(r.status === 200 || r.status === 201, `Creazione match fallita: ${r.status} — ${JSON.stringify(body)}`);
-        assert(!!body.id, 'Match ID assente nella risposta');
-        createdMatchId = body.id;
+        const matchId = body.match?.id ?? body.id;
+        assert(!!matchId, 'Match ID assente nella risposta');
+        createdMatchId = matchId;
     });
 
     await test('POST /api/dashboard/matches/:id/cancel → 200', async () => {

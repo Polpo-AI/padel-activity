@@ -787,12 +787,12 @@ export async function executeAction(
             if (match?.status === 'LOCKED') {
                 await prisma.match.update({ where: { id: mp.matchId }, data: { status: 'OPEN' } });
                 // Wave immediata con urgency x2: manca 1 posto ma invitiamo come se mancassero 2
-                await waveQueue.add('process-wave', {
+                waveQueue.add('process-wave', {
                     matchId: mp.matchId,
                     waveNumber: 1,
                     urgencyMultiplier: 2,
                     scheduledAt: Date.now(),
-                }, { delay: 0 });
+                }, { delay: 0 }).catch(err => logger.warn({ err, matchId: mp.matchId }, 'Wave scheduling failed'));
             }
 
             const { decreaseReliability } = await import('./scoring');
@@ -826,12 +826,12 @@ export async function executeAction(
             } else if (oldMatch?.status === 'LOCKED') {
                 // Match LOCKED con giocatori rimasti → riapri e rilancia wave
                 await prisma.match.update({ where: { id: mp.matchId }, data: { status: 'OPEN' } });
-                await waveQueue.add('process-wave', {
+                waveQueue.add('process-wave', {
                     matchId: mp.matchId,
                     waveNumber: 1,
                     urgencyMultiplier: 2,
                     scheduledAt: Date.now(),
-                }, { delay: 0 });
+                }, { delay: 0 }).catch(err => logger.warn({ err, matchId: mp.matchId }, 'Wave scheduling failed'));
             }
 
             // 3. Prenota nuovo slot — propaga la preferenza coperto/scoperto
@@ -1178,13 +1178,16 @@ async function createNewMatchAction(
     await prisma.invitation.create({ data: { matchId: match.id, playerId: player.id, status: 'ACCEPTED' } });
 
     // Wave per trovare gli altri 3 giocatori (solo se skill assegnato)
+    // Fire-and-forget: checkSilentMatches (ogni 30min) rilancia se Redis era down
     if (player.skillLevel > 0) {
         const spotsNeeded = match.playersNeeded - 1; // sempre 3
-        await waveQueue.add('process-wave', {
+        waveQueue.add('process-wave', {
             matchId: match.id,
             waveNumber: 1,
             limit: spotsNeeded,
-        }, { delay: Math.floor(Math.random() * 60000) + 30000 });
+        }, { delay: Math.floor(Math.random() * 60000) + 30000 }).catch(err =>
+            logger.warn({ err, matchId: match.id }, 'Wave scheduling failed — checkSilentMatches riproverà')
+        );
     }
 
     return { success: true, matchId: match.id };

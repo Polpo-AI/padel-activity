@@ -206,6 +206,44 @@ grep REDIS_PASSWORD .env       # → per redis-cli -a <password>
 **Problema:** `mockRunWithContext.mock.calls` è vuoto anche se il codice viene eseguito → il modulo crea il suo reference al momento dell'import, che può essere diverso dall'oggetto nella closure del test.
 **Fix:** usare `mockRunWithContext.mockImplementation((ctx, fn) => { capturedCtx.push(ctx); return fn(); })` nel `beforeEach` di ogni suite, oppure verificare il comportamento indirettamente (es. verificare che la prima query al DB sia quella corretta).
 
+### 35. `waveQueue.add()` deve essere fire-and-forget, mai awaited
+**Bug reale:** `await waveQueue.add(...)` in `createNewMatchAction` e nei path di cancel/reschedule bloccava indefinitamente quando Redis non era raggiungibile — con `maxRetriesPerRequest: null` ioredis non lancia mai eccezione, aspetta all'infinito. Questo causava hang di booking/cancellazioni.
+**Regola:** tutti i `waveQueue.add()` in `brain.ts` vanno fatti con `.catch()` fire-and-forget, mai `await`. `checkSilentMatches` (ogni 30min) rilancia automaticamente le wave per i match OPEN senza attività.
+```typescript
+// ✅ Corretto
+waveQueue.add('process-wave', { matchId, ... }, { delay: ... })
+    .catch(err => logger.warn({ err, matchId }, 'Wave scheduling failed'));
+
+// ❌ Sbagliato
+await waveQueue.add('process-wave', { matchId, ... }, { delay: ... });
+```
+
+### 36. Express route ordering: rotte specifiche PRIMA di quelle parametriche
+**Bug reale:** `GET /matches/suggest-level` registrata DOPO `GET /matches/:id` → Express trattava la stringa `"suggest-level"` come valore dell'`:id` → sempre 404.
+**Regola:** in Express, registrare SEMPRE le rotte letterali (specifiche) prima delle rotte con parametri (`:id`, `:matchId`, ecc.). Commentare esplicitamente l'ordine quando non è ovvio.
+```typescript
+// ✅ Corretto
+router.get('/matches/suggest-level', ...);   // specifica prima
+router.get('/matches/:id', ...);              // parametrica dopo
+
+// ❌ Sbagliato
+router.get('/matches/:id', ...);              // cattura TUTTO, incluso "suggest-level"
+router.get('/matches/suggest-level', ...);    // MAI raggiunta
+```
+
+### 37. Test suite locale: usa DIRECT_URL (porta 5432), non DATABASE_URL (pgBouncer 6543)
+**Regola:** per eseguire `src/scripts/test-suite.ts` (o altri script che usano Prisma direttamente) in locale, passare sempre `DATABASE_URL` con il valore di `DIRECT_URL_STAGING` (porta 5432). pgBouncer su 6543 non supporta prepared statements.
+```bash
+DATABASE_URL="postgresql://postgres.ildhffoxuufcbvmmqitj:<pw>@aws-1-eu-west-1.pooler.supabase.com:5432/postgres" \
+  DASH_USER=admin_test DASH_PASS=password_test \
+  npx tsx src/scripts/test-suite.ts
+```
+**Nota:** BullMQ con `maxRetriesPerRequest: null` blocca `queue.add()` quando Redis non è raggiungibile da locale — per questo i test che scheduleano wave vanno eseguiti sul VPS, oppure il timeout del test runner (12s) li gestisce come falliti attesi.
+
+### 38. Prisma client locale da rigenerare dopo schema changes sul VPS
+**Bug reale:** `npx prisma generate` non era stato eseguito in locale dopo che il VPS aveva aggiunto `clubId` come scalar field su `Match` → il client locale non riconosceva `clubId` → `Unknown argument 'clubId'` a runtime nei test locali.
+**Regola:** dopo ogni `prisma db push` sul VPS che aggiunge/modifica campi, eseguire anche in locale `npx prisma generate` per aggiornare i tipi. Il client locale non si aggiorna automaticamente: è legato allo schema.prisma locale, non al DB remoto.
+
 ---
 
 ---
