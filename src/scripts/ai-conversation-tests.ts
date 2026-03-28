@@ -102,6 +102,7 @@ const PHONE_UNKNOWN   = `390000${RUN_ID.slice(-6)}04`; // non registrato
 const PHONE_OPTOUT    = `390000${RUN_ID.slice(-6)}05`;
 const PHONE_CANCEL    = `390000${RUN_ID.slice(-6)}06`;
 const PHONE_AMBIGUOUS = `390000${RUN_ID.slice(-6)}07`;
+const PHONE_HOURS     = `390000${RUN_ID.slice(-6)}08`; // dedicato test orari
 
 function jid(phone: string): string {
     return `${phone}@s.whatsapp.net`;
@@ -156,6 +157,12 @@ async function setup() {
     await (prisma.player.create as any)({ data: {
         clubId: testClub.id, name: 'Sofia Esposito',
         phoneNumber: PHONE_CANCEL, skillLevel: 3.5, reliabilityScore: 0.75, active: true,
+    }});
+
+    // Player dedicato test orari (non ha storia conversazionale)
+    await (prisma.player.create as any)({ data: {
+        clubId: testClub.id, name: 'Luca Orari',
+        phoneNumber: PHONE_HOURS, skillLevel: 3.5, reliabilityScore: 0.8, active: true,
     }});
 
     console.log('  Club, campi e giocatori creati.\n');
@@ -752,7 +759,7 @@ async function testOutOfHours() {
     console.log('\n📋 Test 12: Orario fuori apertura');
 
     await test('orario prima apertura (07:00) → rifiuto corretto', async () => {
-        const r = await turn(PHONE_SKILLED,
+        const r = await turn(PHONE_HOURS,
             `Posso prenotare domani mattina alle 7, presto?`
         );
         if (r.action === 'BOOK_FIELD') {
@@ -771,7 +778,7 @@ async function testOutOfHours() {
     });
 
     await test('orario dopo chiusura (23:30) → rifiuto corretto', async () => {
-        const r = await turn(PHONE_SKILLED,
+        const r = await turn(PHONE_HOURS,
             `Tardi stasera alle 23:30, posso giocare?`
         );
         if (r.action === 'BOOK_FIELD') {
