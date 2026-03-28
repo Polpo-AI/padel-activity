@@ -490,7 +490,7 @@ async function testDoubleBooking() {
 
     await test('tenta doppia prenotazione ±30min → AI segnala conflitto', async () => {
         const r = await turn(PHONE_CANCEL,
-            `Prenota per ${futureDay(3)} alle 9:15, mi serve un campo`
+            `Prenota per ${futureDay(3)} alle 9:15, misto, mi serve un campo`
         );
         // Deve segnalare che ha già una prenotazione
         assertContainsAny(r.message,
