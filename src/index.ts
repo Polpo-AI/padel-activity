@@ -29,10 +29,12 @@ import { maintenanceQueue, checkSilentMatches, checkRedisHealth } from './servic
 import { checkDbHealth } from './services/db';
 import { notifyAdminCritical } from './utils/notify-admin';
 
-// Workers
+// Workers — tutti nel processo principale che ha il socket WA
+// padel-worker-staging NON deve consumare queste code (non ha WA)
 import './workers/wave.worker';
 import './workers/recovery.worker';
 import './workers/maintenance.worker';
+import './workers/reminder.worker';
 
 // Registra batch handler
 import './services/messageHandler';

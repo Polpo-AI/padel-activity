@@ -541,7 +541,7 @@ Rispondi SEMPRE con JSON valido: { "message": "...", "action": "NOME", "params":
   MAI creare una partita con wave quando l'utente ha già indicato persone specifiche con cui vuole giocare.
 - SAVE_NOTE — params: { "note": "..." } — utente esprime una preferenza, abitudine o richiesta speciale (es. "voglio sempre giocare al coperto", "preferisco il mattino", "non mi piace la terra rossa"). Riassumi in una frase breve e salva. Puoi combinare con NONE per rispondere anche in modo conversazionale — in quel caso usa SAVE_NOTE e metti la risposta nel campo "message".
 - REQUEST_LESSON — params: { "day": "opzionale", "time": "opzionale" } — utente chiede di prenotare una lezione con il maestro. Rispondi con conferma che hai avvisato il maestro + durata + costo. Il maestro li contatterà per l'orario esatto.
-- RESCHEDULE_MATCH — params: { "matchPlayerId": "...", "newDay": "YYYY-MM-DD o oggi/domani/lunedì/...", "newTime": "HH:MM" } — utente vuole spostare una partita confermata. Cancella quella vecchia e prenota il nuovo slot. Messaggio breve tipo "Fatto! Ho spostato la tua partita 🎾" — i dettagli arrivano subito dopo.
+- RESCHEDULE_MATCH — params: { "matchPlayerId": "...", "newDay": "YYYY-MM-DD o oggi/domani/lunedì/...", "newTime": "HH:MM", "preferCovered": true/false } — utente vuole spostare una partita confermata. Cancella quella vecchia e prenota il nuovo slot. Se l'utente chiede esplicitamente il coperto → preferCovered: true. Messaggio breve tipo "Fatto! Ho spostato la tua partita 🎾" — i dettagli arrivano subito dopo.
 - FAQ_REQUEST — params: { "question": "testo esatto della domanda" } — usa SOLO quando l'utente fa una domanda sul circolo (orari speciali, regole particolari, eventi, iniziative) a cui NON puoi rispondere con le informazioni disponibili.
   ⛔ NON usare FAQ_REQUEST per: stato della partita, quante persone mancano, chi è già confermato — queste info sono nella sezione PARTITE CONFERMATE sopra, rispondi direttamente.
   ⛔ NON usare FAQ_REQUEST se la risposta è già nella sezione FAQ DEL CIRCOLO sopra — quelle le hai già, rispondi direttamente.
@@ -834,8 +834,9 @@ export async function executeAction(
                 }, { delay: 0 });
             }
 
-            // 3. Prenota nuovo slot
-            return await bookSlotForPlayer(startTime, player, club, false, null);
+            // 3. Prenota nuovo slot — propaga la preferenza coperto/scoperto
+            const preferCovered = params.preferCovered === true;
+            return await bookSlotForPlayer(startTime, player, club, preferCovered, null);
         }
 
         if (action === 'REQUEST_LESSON') {
@@ -1156,6 +1157,8 @@ async function createNewMatchAction(
     const skillLevel = player.skillLevel > 0 ? player.skillLevel : 1.0;
 
     const isPrivateBooking = player.skillLevel <= 0;
+    // Skill non assegnato → prenotazione privata: LOCKED subito, nessun timeout di matchmaking
+    const initialStatus = isPrivateBooking ? 'LOCKED' : 'OPEN';
 
     const match = await prisma.match.create({
         data: {
@@ -1166,7 +1169,7 @@ async function createNewMatchAction(
             isMixed: preferMixed === true,
             allowMixedLevels: club?.allowMixedLevels ?? false,
             playersNeeded: 4,
-            status: 'OPEN',
+            status: initialStatus,
             isPrivateBooking,
         },
     });

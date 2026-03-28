@@ -1,15 +1,12 @@
 import dotenv from 'dotenv';
 import pino from 'pino';
 
-import './workers/wave.worker';
-import './workers/reminder.worker';
-import './workers/maintenance.worker';
-import './workers/recovery.worker';
-
 dotenv.config();
 const logger = pino({ level: 'info' });
 
-logger.info('🚀 Padel Bot Workers started — wave | reminder | maintenance | recovery');
+// I worker sono stati spostati in index.ts (hanno bisogno del socket WA).
+// Questo processo è mantenuto per compatibilità systemd ma non registra worker.
+logger.info('padel-worker: i job sono processati da padel-staging (socket WA incluso).');
 
 process.on('uncaughtException', (err) => {
     logger.error({ err }, 'Uncaught Exception in Worker process');
