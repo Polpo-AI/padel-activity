@@ -120,7 +120,7 @@ async function setup() {
             adminPhone: '390000000000',
             matchLowerRange: 1.0,
             matchUpperRange: 1.0,
-            waveMultiplier: 1.5,
+            waveMultiplier: 2,
             maxDailyMessages: 3,
         },
     });
@@ -161,6 +161,7 @@ async function setup() {
 }
 
 async function cleanup() {
+    if (!testClub?.id) { console.log('\n🧹 Cleanup saltato (setup non completato).'); return; }
     console.log('\n🧹 Cleanup dati test…');
     await prisma.invitation.deleteMany({ where: { match: { clubId: testClub.id } } });
     await prisma.matchFeedback.deleteMany({ where: { match: { clubId: testClub.id } } });
