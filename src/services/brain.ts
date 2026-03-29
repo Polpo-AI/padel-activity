@@ -57,28 +57,39 @@ export async function buildBrainContext(jid: string, phoneNumber: string): Promi
         : await prisma.club.findFirst();
 
     const phoneVariants = [phoneNumber, '+' + phoneNumber, phoneNumber.replace(/^\+/, '')];
-    const player = await prisma.player.findFirst({
-        where: { phoneNumber: { in: phoneVariants }, clubId: club?.id },
-    });
+    const now_ = new Date();
+    const in10Days_ = new Date(now_.getTime() + 10 * 24 * 60 * 60 * 1000);
+    const since = new Date(now_.getTime() - 24 * 60 * 60 * 1000);
 
-    const since = new Date(Date.now() - 24 * 60 * 60 * 1000); // ultime 24h
-    const recentMessages = await prisma.whatsAppMessage.findMany({
-        where: { chatId: jid, timestamp: { gte: since } },
-        orderBy: { timestamp: 'desc' },
-        take: 30, // cap di sicurezza
-    });
-
-    const courts = await prisma.court.findMany({
-        where: { clubId: club?.id, active: true },
-        include: { prices: true },
-        orderBy: { name: 'asc' },
-    });
-
-    const faqs = club?.id ? await prisma.faq.findMany({
-        where: { clubId: club.id, answer: { not: null } },
-        orderBy: { createdAt: 'desc' },
-        take: 30,
-    }) : [];
+    // Parallelizza le query indipendenti
+    const [player, recentMessages, courts, faqs, upcomingForAvail] = await Promise.all([
+        prisma.player.findFirst({
+            where: { phoneNumber: { in: phoneVariants }, clubId: club?.id },
+        }),
+        prisma.whatsAppMessage.findMany({
+            where: { chatId: jid, timestamp: { gte: since } },
+            orderBy: { timestamp: 'desc' },
+            take: 30,
+        }),
+        prisma.court.findMany({
+            where: { clubId: club?.id, active: true },
+            include: { prices: true },
+            orderBy: { name: 'asc' },
+        }),
+        club?.id ? prisma.faq.findMany({
+            where: { clubId: club.id, answer: { not: null } },
+            orderBy: { createdAt: 'desc' },
+            take: 30,
+        }) : Promise.resolve([]),
+        prisma.match.findMany({
+            where: {
+                clubId: club?.id,
+                status: { in: ['OPEN', 'LOCKED'] },
+                startTime: { gte: now_, lte: in10Days_ },
+            },
+            select: { startTime: true, courtId: true, court: { select: { isCovered: true } } },
+        }),
+    ]);
 
     const isAdmin = !!(club?.adminPhone &&
         phoneNumber.replace(/\D/g, '') === club.adminPhone.replace(/\D/g, ''));
@@ -88,21 +99,21 @@ export async function buildBrainContext(jid: string, phoneNumber: string): Promi
     let availableMatches: any[] = [];
 
     if (player) {
-        pendingInvitations = await prisma.invitation.findMany({
-            where: { playerId: player.id, status: 'PENDING', match: { status: 'OPEN' } },
-            include: { match: { include: { court: true, MatchPlayer: { where: { leftAt: null } } } } },
-            orderBy: { sentAt: 'asc' },
-        });
+        // Parallelizza le query dipendenti dal player
+        const skillMin = player.skillLevel > 0 ? player.skillLevel - (club?.matchLowerRange ?? 1.0) : 0;
+        const skillMax = player.skillLevel > 0 ? player.skillLevel + (club?.matchUpperRange ?? 1.0) : 0;
 
-        confirmedMatches = await prisma.matchPlayer.findMany({
-            where: { playerId: player.id, leftAt: null, noShow: false, match: { status: { in: ['OPEN', 'LOCKED'] } } },
-            include: { match: { include: { court: true, MatchPlayer: { where: { leftAt: null } } } } },
-        });
-
-        if (player.skillLevel > 0) {
-            const skillMin = player.skillLevel - (club?.matchLowerRange ?? 1.0);
-            const skillMax = player.skillLevel + (club?.matchUpperRange ?? 1.0);
-            availableMatches = await prisma.match.findMany({
+        const [inv, conf, avail] = await Promise.all([
+            prisma.invitation.findMany({
+                where: { playerId: player.id, status: 'PENDING', match: { status: 'OPEN' } },
+                include: { match: { include: { court: true, MatchPlayer: { where: { leftAt: null } } } } },
+                orderBy: { sentAt: 'asc' },
+            }),
+            prisma.matchPlayer.findMany({
+                where: { playerId: player.id, leftAt: null, noShow: false, match: { status: { in: ['OPEN', 'LOCKED'] } } },
+                include: { match: { include: { court: true, MatchPlayer: { where: { leftAt: null } } } } },
+            }),
+            player.skillLevel > 0 ? prisma.match.findMany({
                 where: {
                     clubId: club?.id,
                     status: 'OPEN',
@@ -118,30 +129,23 @@ export async function buildBrainContext(jid: string, phoneNumber: string): Promi
                 include: { court: true, MatchPlayer: { where: { leftAt: null } } },
                 orderBy: { startTime: 'asc' },
                 take: 8,
-            });
-            // Ordina per completezza decrescente (quasi piene prima = migliori per redirect)
-            availableMatches.sort((a: any, b: any) => {
-                const spotsA = a.playersNeeded - a.MatchPlayer.length;
-                const spotsB = b.playersNeeded - b.MatchPlayer.length;
-                return spotsA - spotsB; // 1 posto libero prima, 3 dopo
-            });
-        }
+            }) : Promise.resolve([]),
+        ]);
+
+        pendingInvitations = inv;
+        confirmedMatches = conf;
+        availableMatches = avail;
+
+        // Ordina per completezza decrescente (quasi piene prima = migliori per redirect)
+        availableMatches.sort((a: any, b: any) => {
+            const spotsA = a.playersNeeded - a.MatchPlayer.length;
+            const spotsB = b.playersNeeded - b.MatchPlayer.length;
+            return spotsA - spotsB;
+        });
     }
 
     // Slot availability: compute full/only-covered slots (next 10 days) + free scoperto slots (next 7 days)
-    const now_ = new Date();
-    const in10Days_ = new Date(now_.getTime() + 10 * 24 * 60 * 60 * 1000);
     const scopertoCourtIds = courts.filter((c: any) => !c.isCovered).map((c: any) => c.id) as string[];
-
-    // Query: all matches next 10 days (for full/only-covered) + occupied scoperto (for free scoperto)
-    const upcomingForAvail = await prisma.match.findMany({
-        where: {
-            clubId: club?.id,
-            status: { in: ['OPEN', 'LOCKED'] },
-            startTime: { gte: now_, lte: in10Days_ },
-        },
-        select: { startTime: true, courtId: true, court: { select: { isCovered: true } } },
-    });
 
     const totalCourts = courts.length;
     const totalScoperto = scopertoCourtIds.length;
@@ -512,7 +516,8 @@ ${!player ? `═══ AZIONI DISPONIBILI ═══
 Rispondi SEMPRE con JSON valido: { "message": "...", "action": "NOME", "params": {...} }
 
 - NONE — risposta conversazionale: info sul circolo, prezzi, come funziona, qualsiasi cosa che non richieda registrazione
-- REGISTER_PLAYER — params: { "name": "Nome Cognome" } — registra il nuovo giocatore. Usa SOLO quando hai nome E cognome certi. Il messaggio deve essere un breve benvenuto caldo nel circolo, spiegare che può già prenotare campi e che verranno contattati per lo Skill Test.
+- REGISTER_PLAYER — params: { "name": "Nome Cognome" } — registra il nuovo giocatore. Usa SOLO quando hai nome E cognome certi. Il messaggio deve essere SOLO un breve benvenuto caldo nel circolo, spiegando che può già prenotare campi e che verranno contattati per lo Skill Test.
+  ⛔ MAI promettere o accennare a prenotazioni nel messaggio di REGISTER_PLAYER, anche se l'utente aveva espresso l'intenzione di prenotare. La prenotazione avverrà nel turno successivo — prima registriamo, poi prenotiamo.
   Quando hai solo il nome e chiedi il cognome, spiega brevemente il motivo: "per salvare il tuo contatto e proporti partite future ho bisogno anche del cognome".` : `═══ AZIONI DISPONIBILI ═══
 Rispondi SEMPRE con JSON valido: { "message": "...", "action": "NOME", "params": {...} }
 
