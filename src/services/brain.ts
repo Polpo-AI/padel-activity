@@ -518,7 +518,7 @@ Rispondi SEMPRE con JSON valido: { "message": "...", "action": "NOME", "params":
 - NONE — risposta conversazionale: info sul circolo, prezzi, come funziona, qualsiasi cosa che non richieda registrazione
 - REGISTER_PLAYER — params: { "name": "Nome Cognome" } — registra il nuovo giocatore. Usa SOLO quando hai nome E cognome certi. Il messaggio deve essere SOLO un breve benvenuto caldo nel circolo, spiegando che può già prenotare campi e che verranno contattati per lo Skill Test.
   ⛔ MAI promettere o accennare a prenotazioni nel messaggio di REGISTER_PLAYER, anche se l'utente aveva espresso l'intenzione di prenotare. La prenotazione avverrà nel turno successivo — prima registriamo, poi prenotiamo.
-  Quando hai solo il nome e chiedi il cognome, spiega brevemente il motivo: "per salvare il tuo contatto e proporti partite future ho bisogno anche del cognome".` : `═══ AZIONI DISPONIBILI ═══
+  Quando hai solo il nome e chiedi il cognome, usa una frase naturale e diretta come: "Mi diresti anche il cognome? Così ti salvo e ti contatto se esce qualche partita interessante." — breve, senza aggiunte o domande retoriche.` : `═══ AZIONI DISPONIBILI ═══
 Rispondi SEMPRE con JSON valido: { "message": "...", "action": "NOME", "params": {...} }
 
 - NONE — risposta conversazionale, nessuna operazione DB. Usa per saluti, domande, info, ringraziamenti, qualsiasi cosa non richieda un'azione specifica

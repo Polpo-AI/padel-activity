@@ -453,6 +453,60 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[], cor
                 await simulateTypingAndSend(jid, `Ops! ${result.errorMessage} 😕`);
             }
         }
+        // REGISTER_PLAYER riuscito → re-call brain con il player ora registrato per catturare
+        // qualsiasi intento di prenotazione espresso prima della registrazione.
+        if (action === 'REGISTER_PLAYER' && result.success) {
+            try {
+                const newCtx = await buildBrainContext(jid, phoneNumber);
+                if (newCtx.player) {
+                    const { message: msg2, action: action2, params: params2 } = await callBrain(
+                        newCtx,
+                        combinedText || '(messaggio senza testo)',
+                    );
+                    if (action2 !== 'NONE' && action2 !== 'REGISTER_PLAYER' && action2 !== 'FAQ_REQUEST') {
+                        const result2 = await executeAction(action2, params2, newCtx.player, club, phoneNumber);
+                        // Manda la scheda se è un booking andato a buon fine
+                        if ((action2 === 'BOOK_FIELD' || action2 === 'RESCHEDULE_MATCH') && result2.success && result2.matchId) {
+                            const match2 = await prisma.match.findUnique({
+                                where: { id: result2.matchId },
+                                include: { court: true },
+                            });
+                            if (match2?.status !== 'OPEN' && match2?.court) {
+                                const { calculateSlotCost } = await import('./pricing');
+                                const totalCost = await calculateSlotCost(match2.court.id, match2.startTime);
+                                const pricePerPerson = totalCost > 0 ? (totalCost / 4).toFixed(2) : null;
+                                const racketPrice = (club as any)?.racketPrice != null ? `${(club as any).racketPrice}€` : null;
+                                const timeStr = match2.startTime.toLocaleString('it-IT', {
+                                    timeZone: 'Europe/Rome', weekday: 'long', day: 'numeric',
+                                    month: 'long', hour: '2-digit', minute: '2-digit',
+                                });
+                                const courtType = match2.court.isCovered ? '🏟️ coperto' : '☀️ all\'aperto';
+                                const clubLocation = [club?.address, club?.city].filter(Boolean).join(' — ');
+                                const lines = [
+                                    `📋 *Prenotazione confermata*`,
+                                    `📅 ${timeStr}`,
+                                    `🎾 ${match2.court.name} (${courtType})`,
+                                    pricePerPerson ? `💶 ${pricePerPerson}€ a persona` : null,
+                                    racketPrice ? `🎾 Noleggio racchetta: ${racketPrice}/persona` : null,
+                                    clubLocation ? `📍 ${clubLocation}` : null,
+                                ].filter(Boolean);
+                                await simulateTypingAndSend(jid, lines.join('\n'));
+                            } else if (match2?.status === 'OPEN') {
+                                // Matchmaking avviato: il brain ha già inviato "sto cercando giocatori" nel msg2
+                                // Mandiamo solo msg2 se non è stato già inviato come booking confirm
+                                await simulateTypingAndSend(jid, msg2);
+                            }
+                        } else if (!result2.success && result2.errorMessage) {
+                            await simulateTypingAndSend(jid, `Sei registrato! Per prenotare scrivimi giorno e orario 🎾`);
+                        }
+                    }
+                }
+            } catch (err) {
+                logger.warn({ err }, 'Re-call brain after REGISTER_PLAYER failed — ignored');
+            }
+            return;
+        }
+
         // BOOK_FIELD / RESCHEDULE_MATCH: se NO wave (match LOCKED = prenotazione privata) → scheda completa subito.
         // Se wave partirà (match OPEN = matchmaking) → il brain ha già comunicato "sto cercando giocatori";
         //   la conferma reale arriva col gruppo WA (handleMatchFilled)
