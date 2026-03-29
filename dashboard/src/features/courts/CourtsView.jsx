@@ -629,7 +629,7 @@ function DayDetailModal({ date, courts, onCancel, onClose }) {
   const dateLabel = new Date(date + "T12:00").toLocaleDateString("it-IT", { weekday: "long", day: "numeric", month: "long" });
   const allMatches = courts.flatMap(c =>
     (c.matches || [])
-      .filter(m => matchDay(m.startTime) === date)
+      .filter(m => matchDay(m.startTime) === date && m.status !== 'CANCELLED')
       .map(m => ({ ...m, courtName: c.name }))
   ).sort((a, b) => new Date(a.startTime) - new Date(b.startTime));
 
@@ -731,7 +731,7 @@ function WeekCalendar({ courtData, weekDays, onCancel, onDeleteUnavailable, toda
                 </button>
               </td>
               {weekDays.map((d, ci) => {
-                const dayMatches = (court.matches || []).filter(m => matchDay(m.startTime) === d);
+                const dayMatches = (court.matches || []).filter(m => matchDay(m.startTime) === d && m.status !== 'CANCELLED');
                 const isToday = d === todayStr;
                 return (
                   <td key={d} style={{
