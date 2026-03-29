@@ -490,6 +490,7 @@ function MatchChip({ match, onCancel, onDeleteUnavailable }) {
     else onCancel(match.id);
   };
 
+  const isCancelled = match.status === 'CANCELLED';
   return (
     <div
       onMouseEnter={() => setHovered(true)}
@@ -499,6 +500,8 @@ function MatchChip({ match, onCancel, onDeleteUnavailable }) {
         border: `1px solid ${isUnavail ? C.border : color + "40"}`,
         borderRadius: 6,
         padding: "4px 6px",
+        opacity: isCancelled ? 0.45 : 1,
+        textDecoration: isCancelled ? 'line-through' : 'none',
       }}>
       <div style={{ display: "flex", alignItems: "center", gap: 3 }}>
         <span style={{ fontSize: 9 }}>{typeIcon}</span>
@@ -569,8 +572,9 @@ function MatchCard({ match, onCancel }) {
   const pending = match.invitations?.length || 0;
   const spotsLeft = match.playersNeeded - confirmed.length;
 
+  const isCancelled = match.status === 'CANCELLED';
   return (
-    <div style={{ background: C.bg, border: `1px solid ${C.dim}`, borderRadius: 10, padding: "12px 14px", display: "flex", flexDirection: "column", gap: 10 }}>
+    <div style={{ background: C.bg, border: `1px solid ${isCancelled ? C.cancelled + '40' : C.dim}`, borderRadius: 10, padding: "12px 14px", display: "flex", flexDirection: "column", gap: 10, opacity: isCancelled ? 0.6 : 1 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
         <div>
           <div style={{ fontSize: 15, fontWeight: 700, color: C.text }}>
@@ -629,7 +633,7 @@ function DayDetailModal({ date, courts, onCancel, onClose }) {
   const dateLabel = new Date(date + "T12:00").toLocaleDateString("it-IT", { weekday: "long", day: "numeric", month: "long" });
   const allMatches = courts.flatMap(c =>
     (c.matches || [])
-      .filter(m => matchDay(m.startTime) === date && m.status !== 'CANCELLED')
+      .filter(m => matchDay(m.startTime) === date)
       .map(m => ({ ...m, courtName: c.name }))
   ).sort((a, b) => new Date(a.startTime) - new Date(b.startTime));
 
@@ -731,7 +735,7 @@ function WeekCalendar({ courtData, weekDays, onCancel, onDeleteUnavailable, toda
                 </button>
               </td>
               {weekDays.map((d, ci) => {
-                const dayMatches = (court.matches || []).filter(m => matchDay(m.startTime) === d && m.status !== 'CANCELLED');
+                const dayMatches = (court.matches || []).filter(m => matchDay(m.startTime) === d);
                 const isToday = d === todayStr;
                 return (
                   <td key={d} style={{
