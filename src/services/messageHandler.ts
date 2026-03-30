@@ -459,9 +459,18 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[], cor
             try {
                 const newCtx = await buildBrainContext(jid, phoneNumber);
                 if (newCtx.player) {
+                    // Cerca nella history l'ultima richiesta significativa dell'utente
+                    // (prima della registrazione) per dare al brain il contesto corretto
+                    const prevUserMsg = newCtx.recentMessages
+                        .filter((m: any) => m.role === 'USER')
+                        .slice(2) // salta "De Cupis" e il nome
+                        .find((m: any) => m.content && m.content.trim().length > 3);
+                    const reCallText = prevUserMsg?.content
+                        ?? '(registrazione appena completata — controlla se c\'era un intento pendente nella conversazione e gestiscilo)';
+
                     const { message: msg2, action: action2, params: params2 } = await callBrain(
                         newCtx,
-                        combinedText || '(messaggio senza testo)',
+                        reCallText,
                     );
                     if (action2 !== 'NONE' && action2 !== 'REGISTER_PLAYER' && action2 !== 'FAQ_REQUEST') {
                         const result2 = await executeAction(action2, params2, newCtx.player, club, phoneNumber);
