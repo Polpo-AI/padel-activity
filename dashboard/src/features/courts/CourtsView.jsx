@@ -514,7 +514,7 @@ function MatchChip({ match, onCancel, onDeleteUnavailable }) {
           {match.title}
         </div>
       )}
-      {sub && (
+      {sub && !(hovered && bookerName) && (
         <div style={{ fontSize: 9, color: C.muted, marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
           {sub}
         </div>

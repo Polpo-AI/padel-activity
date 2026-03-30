@@ -725,24 +725,34 @@ export async function executeAction(
         const name = (params.name || '').trim();
         if (!name || !name.includes(' ')) return { success: true }; // nome incompleto, continua conversazione
         if (!club?.id || !phoneNumber) return { success: true };
-        const { inferGender } = await import('./ai');
-        const firstName = name.split(' ')[0];
-        const gender = await inferGender(firstName).catch(() => 'UNKNOWN' as const);
-        await prisma.player.create({
-            data: {
-                phoneNumber: phoneNumber.replace(/\D/g, ''),
-                name,
-                clubId: club.id,
-                skillLevel: -1,
-                gender,
-                active: true,
-            },
-        });
-        if (club.adminPhone) {
-            const { notifyAdmin } = await import('../utils/notify-admin');
-            notifyAdmin(`🆕 Nuovo giocatore registrato: ${name} (${phoneNumber})`).catch(() => {});
+        try {
+            const { inferGender } = await import('./ai');
+            const firstName = name.split(' ')[0];
+            const gender = await inferGender(firstName).catch(() => 'UNKNOWN' as const);
+            await prisma.player.create({
+                data: {
+                    phoneNumber: phoneNumber.replace(/\D/g, ''),
+                    name,
+                    clubId: club.id,
+                    skillLevel: -1,
+                    gender,
+                    active: true,
+                },
+            });
+            if (club.adminPhone) {
+                const { notifyAdmin } = await import('../utils/notify-admin');
+                notifyAdmin(`🆕 Nuovo giocatore registrato: ${name} (${phoneNumber})`).catch(() => {});
+            }
+            return { success: true };
+        } catch (regErr: any) {
+            // P2002 = unique constraint: player già registrato (race condition o doppio messaggio)
+            if (regErr?.code === 'P2002') {
+                logger.warn({ phoneNumber, clubId: club.id }, 'REGISTER_PLAYER: player already exists, treating as success');
+                return { success: true };
+            }
+            logger.error({ regErr, phoneNumber }, 'REGISTER_PLAYER failed');
+            return { success: false, errorMessage: 'Registrazione non riuscita. Riprova tra poco.' };
         }
-        return { success: true };
     }
 
     try {
@@ -780,6 +790,30 @@ export async function executeAction(
 
             const { increaseReliability } = await import('./scoring');
             await increaseReliability(player.id).catch(() => {});
+
+            // Notifica progressiva: informa gli altri giocatori già confermati se la partita non è ancora LOCKED
+            const updatedMatch = await prisma.match.findUnique({
+                where: { id: inv.matchId },
+                include: { MatchPlayer: { where: { leftAt: null }, include: { player: true }, orderBy: { joinedAt: 'asc' } } },
+            });
+            if (updatedMatch) {
+                if (updatedMatch.status === 'OPEN') {
+                    // Partita ancora aperta — notifica gli altri giocatori già dentro
+                    const newName = (player.name || 'Un giocatore').split(' ')[0];
+                    const confirmedCount = updatedMatch.MatchPlayer.length;
+                    const others = updatedMatch.MatchPlayer.filter(mp => mp.playerId !== player.id);
+                    if (others.length > 0) {
+                        const { simulateTypingAndSend } = await import('./whatsapp');
+                        const msg = `${newName} si è unito! Siete ${confirmedCount}/${updatedMatch.playersNeeded} 🎾 Mancano ancora ${updatedMatch.playersNeeded - confirmedCount}.`;
+                        for (const mp of others) {
+                            simulateTypingAndSend(mp.player.phoneNumber, msg).catch(() => {});
+                        }
+                    }
+                }
+                // Se LOCKED: messageHandler chiamerà handleMatchFilled — restituiamo matchId per segnalarlo
+                return { success: true, matchId: updatedMatch.status === 'LOCKED' ? inv.matchId : undefined };
+            }
+
             return { success: true };
         }
 
@@ -799,14 +833,22 @@ export async function executeAction(
 
             const match = await prisma.match.findUnique({ where: { id: mp.matchId } });
             if (match?.status === 'LOCKED') {
-                await prisma.match.update({ where: { id: mp.matchId }, data: { status: 'OPEN' } });
-                // Wave immediata con urgency x2: manca 1 posto ma invitiamo come se mancassero 2
-                waveQueue.add('process-wave', {
-                    matchId: mp.matchId,
-                    waveNumber: 1,
-                    urgencyMultiplier: 2,
-                    scheduledAt: Date.now(),
-                }, { delay: 0 }).catch(err => logger.warn({ err, matchId: mp.matchId }, 'Wave scheduling failed'));
+                if (match.isPrivateBooking) {
+                    // Prenotazione privata: il campo era riservato per questo player → libera il slot
+                    await prisma.match.update({
+                        where: { id: mp.matchId },
+                        data: { status: 'CANCELLED', cancelledAt: new Date(), cancelledReason: 'PLAYER_CANCELLED' },
+                    });
+                } else {
+                    // Matchmaking LOCKED: manca 1 giocatore → riapri e rilancia wave con urgenza
+                    await prisma.match.update({ where: { id: mp.matchId }, data: { status: 'OPEN' } });
+                    waveQueue.add('process-wave', {
+                        matchId: mp.matchId,
+                        waveNumber: 1,
+                        urgencyMultiplier: 2,
+                        scheduledAt: Date.now(),
+                    }, { delay: 0 }).catch(err => logger.warn({ err, matchId: mp.matchId }, 'Wave scheduling failed'));
+                }
             }
 
             const { decreaseReliability } = await import('./scoring');
@@ -837,8 +879,8 @@ export async function executeAction(
                     where: { id: mp.matchId },
                     data: { status: 'CANCELLED', cancelledAt: new Date(), cancelledReason: 'RESCHEDULED' },
                 });
-            } else if (oldMatch?.status === 'LOCKED') {
-                // Match LOCKED con giocatori rimasti → riapri e rilancia wave
+            } else if (oldMatch?.status === 'LOCKED' && !oldMatch.isPrivateBooking) {
+                // Matchmaking LOCKED con giocatori rimasti → riapri e rilancia wave
                 await prisma.match.update({ where: { id: mp.matchId }, data: { status: 'OPEN' } });
                 waveQueue.add('process-wave', {
                     matchId: mp.matchId,
@@ -854,11 +896,15 @@ export async function executeAction(
         }
 
         if (action === 'REQUEST_LESSON') {
-            if (club?.adminAlternativePhone) {
+            const contactPhone = club?.adminAlternativePhone || club?.adminPhone;
+            if (contactPhone) {
                 const { simulateTypingAndSend } = await import('./whatsapp');
                 const dayPart = params.day ? ` (richiesta: ${params.day}${params.time ? ' alle ' + params.time : ''})` : '';
                 const msg = `🎾 Richiesta lezione da ${player.name || player.phoneNumber} (${player.phoneNumber})${dayPart}. Contattalo per confermare orario.`;
-                simulateTypingAndSend(`${club.adminAlternativePhone}@s.whatsapp.net`, msg).catch(() => {});
+                simulateTypingAndSend(`${contactPhone}@s.whatsapp.net`, msg).catch(() => {});
+            } else {
+                logger.warn({ playerId: player.id, clubId: club?.id }, 'REQUEST_LESSON: nessun contatto configurato per il circolo');
+                return { success: false, errorMessage: 'LESSON_NO_CONTACT' };
             }
             return { success: true };
         }
@@ -891,8 +937,10 @@ export async function executeAction(
         }
 
         if (action === 'INVITE_PREFERRED') {
-            const preferred = await findPlayerFuzzy(params.playerName || '', player.clubId);
-            if (!preferred) return { success: false, errorMessage: `PLAYER_NOT_FOUND:${params.playerName || ''}` };
+            const playerName = (params.playerName || '').trim();
+            if (!playerName) return { success: false, errorMessage: 'PLAYER_NOT_FOUND:' };
+            const preferred = await findPlayerFuzzy(playerName, player.clubId);
+            if (!preferred) return { success: false, errorMessage: `PLAYER_NOT_FOUND:${playerName}` };
             // Store as preferred player (no-op for now, matchmaker handles it)
             return { success: true };
         }
@@ -960,7 +1008,10 @@ export async function executeAction(
         }
     } catch (err: any) {
         logger.error({ err, action, params }, 'executeAction failed');
-        return { success: false, errorMessage: err.message || 'Errore imprevisto.' };
+        // Non esporre errori tecnici Prisma all'utente
+        const isPrismaError = err?.code?.startsWith?.('P') || err?.name === 'PrismaClientKnownRequestError' || err?.name === 'PrismaClientUnknownRequestError';
+        const userMessage = isPrismaError ? 'Errore interno. Riprova tra poco.' : (err.message || 'Errore imprevisto.');
+        return { success: false, errorMessage: userMessage };
     }
 
     return { success: true };
@@ -1168,14 +1219,23 @@ async function createNewMatchAction(
 
     if (!freeCourt) return { success: false, errorMessage: 'ALL_COURTS_TAKEN', requestedTime: startTime };
 
-    // Fix #4: se l'utente NON ha richiesto il coperto ma l'unico campo libero è coperto, chiedi conferma
+    // Se l'utente NON ha richiesto il coperto ma l'unico campo libero è coperto, chiedi conferma
     if (!preferCovered && freeCourt.isCovered) {
         const scopertoCount = await prisma.court.count({
             where: { clubId: player.clubId, active: true, isCovered: false },
         });
         if (scopertoCount > 0) {
-            // Ci sono campi scoperti nel circolo, ma sono tutti occupati a quell'orario
             return { success: false, errorMessage: 'ONLY_COVERED_AVAILABLE', requestedTime: startTime };
+        }
+    }
+
+    // Check simmetrico: ha chiesto coperto ma l'unico campo libero è scoperto
+    if (preferCovered && !freeCourt.isCovered) {
+        const copertoCount = await prisma.court.count({
+            where: { clubId: player.clubId, active: true, isCovered: true },
+        });
+        if (copertoCount > 0) {
+            return { success: false, errorMessage: 'ONLY_UNCOVERED_AVAILABLE', requestedTime: startTime };
         }
     }
 

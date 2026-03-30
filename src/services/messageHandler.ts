@@ -334,6 +334,58 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[], cor
         }
     }
 
+    // ─── PENDING UNCOVERED CONFIRMATION ───
+    // Speculare a pending_covered: ha chiesto coperto ma solo scoperto è libero
+    {
+        const redis = getRedis();
+        const pendingUncoveredRaw = await redis.get(`state:pending_uncovered:${jid}`);
+        if (pendingUncoveredRaw && combinedText) {
+            const lower = combinedText.toLowerCase().trim();
+            const isYes = /^(s[iì]|yes|ok|certo|va bene|esatto|perfetto|dai|sì|si)/.test(lower);
+            const isNo = /^(no|nope|non|neanche|lascia perdere|cancella)/.test(lower);
+            if (isYes || isNo) {
+                await redis.del(`state:pending_uncovered:${jid}`);
+                if (isYes) {
+                    const { action: pendingAction, params: pendingParams } = JSON.parse(pendingUncoveredRaw);
+                    const { executeAction } = await import('./brain');
+                    const brainPlayer = player || await prisma.player.findFirst({
+                        where: { phoneNumber: { in: phoneVariants }, clubId: resolvedClubId ? resolvedClubId : { not: '' } }
+                    });
+                    const result = await executeAction(pendingAction, { ...pendingParams, preferCovered: false }, brainPlayer, club, phoneNumber);
+                    if (result.success && result.matchId) {
+                        const { calculateSlotCost } = await import('./pricing');
+                        const match = await prisma.match.findUnique({ where: { id: result.matchId }, include: { court: true } });
+                        if (match?.court) {
+                            const totalCost = await calculateSlotCost(match.court.id, match.startTime);
+                            const pricePerPerson = totalCost > 0 ? (totalCost / 4).toFixed(2) : null;
+                            const timeStr = match.startTime.toLocaleString('it-IT', {
+                                timeZone: 'Europe/Rome', weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit',
+                            });
+                            const clubLocation = [club?.address, club?.city].filter(Boolean).join(' — ');
+                            await simulateTypingAndSend(jid, 'Perfetto, prenoto il campo scoperto! ☀️');
+                            const lines = [
+                                `📋 *Dettagli prenotazione*`,
+                                `📅 ${timeStr}`,
+                                `🎾 ${match.court.name} (☀️ all'aperto)`,
+                                pricePerPerson ? `💶 ${pricePerPerson}€ a persona` : null,
+                                clubLocation ? `📍 ${clubLocation}` : null,
+                            ].filter(Boolean);
+                            await simulateTypingAndSend(jid, lines.join('\n'));
+                        } else {
+                            await simulateTypingAndSend(jid, 'Perfetto, sei dentro! ☀️');
+                        }
+                    } else if (result.errorMessage) {
+                        await simulateTypingAndSend(jid, 'Ok, nessun problema! Dimmi se vuoi provare un altro orario. 🎾');
+                    }
+                } else {
+                    await simulateTypingAndSend(jid, 'Ok, nessun problema! Dimmi se vuoi provare un altro orario. 🎾');
+                }
+                return;
+            }
+            await redis.del(`state:pending_uncovered:${jid}`);
+        }
+    }
+
     // ─── BRAIN ───
     conversationalPhase.set(getCorrelationId() || correlationId, true);
 
@@ -405,6 +457,21 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[], cor
                 await simulateTypingAndSend(jid, baseMsg + altMsg);
                 return;
             }
+            if (result.errorMessage === 'ONLY_UNCOVERED_AVAILABLE') {
+                const redis = getRedis();
+                await redis.set(
+                    `state:pending_uncovered:${jid}`,
+                    JSON.stringify({ action, params }),
+                    'EX', 300,
+                );
+                const variants = [
+                    'A quell\'orario i campi coperti sono tutti occupati. Posso prenotarti un campo all\'aperto? ☀️',
+                    'Per quell\'orario ho solo campo scoperto libero. Ti va bene? ☀️',
+                    'I coperti sono tutti presi a quell\'orario. Prenoto all\'aperto? ☀️',
+                ];
+                await simulateTypingAndSend(jid, variants[Math.floor(Math.random() * variants.length)]);
+                return;
+            }
             if (result.errorMessage.startsWith('PLAYER_NOT_FOUND:')) {
                 const searchedName = result.errorMessage.split(':').slice(1).join(':').trim();
                 const redis = getRedis();
@@ -431,6 +498,12 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[], cor
                         await simulateTypingAndSend(jid, `Non trovo "${searchedName}" tra i giocatori iscritti al circolo. Se sei sicuro che sia registrato, scrivimi di nuovo e verifico con il campo!`);
                     }
                 }
+            } else if (result.errorMessage === 'MATCH_CLOSED') {
+                await simulateTypingAndSend(jid, 'Questa partita non è più disponibile — è stata chiusa o completata. Vuoi che cerchi un altro slot? 🎾');
+            } else if (result.errorMessage === 'MATCH_FULL') {
+                await simulateTypingAndSend(jid, 'Purtroppo questa partita si è appena riempita! Dimmi un altro orario e ti trovo posto 🎾');
+            } else if (result.errorMessage === 'LESSON_NO_CONTACT') {
+                await simulateTypingAndSend(jid, 'Per le lezioni ti chiedo di contattare direttamente la segreteria del circolo — saranno loro a confermarti orario e disponibilità!');
             } else if (result.errorMessage === 'SKILL_TEST_REQUIRED') {
                 await simulateTypingAndSend(jid, 'Per cercare avversari hai bisogno di completare prima lo Skill Test. Il circolo ti contatterà per organizzarlo — nel frattempo puoi prenotare il campo per te e i tuoi amici!');
             } else if (result.errorMessage === 'ALL_COURTS_TAKEN') {
@@ -501,7 +574,19 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[], cor
                                 await simulateTypingAndSend(jid, msg2);
                             }
                         } else if (!result2.success && result2.errorMessage) {
-                            await simulateTypingAndSend(jid, `Sei registrato! Per prenotare scrivimi giorno e orario 🎾`);
+                            if (result2.errorMessage === 'ONLY_COVERED_AVAILABLE') {
+                                const redis = getRedis();
+                                await redis.set(
+                                    `state:pending_covered:${jid}`,
+                                    JSON.stringify({ action: action2, params: { ...params2, preferCovered: true } }),
+                                    'EX', 300,
+                                );
+                                await simulateTypingAndSend(jid, 'Sei registrato! Per quell\'orario ho solo il coperto disponibile, ti va bene? 🏟️');
+                            } else if (result2.errorMessage === 'ALL_COURTS_TAKEN') {
+                                await simulateTypingAndSend(jid, 'Sei registrato! Purtroppo tutti i campi sono occupati a quell\'orario — dimmi un orario alternativo e trovo subito qualcosa 🎾');
+                            } else {
+                                await simulateTypingAndSend(jid, 'Sei registrato! Per prenotare scrivimi giorno e orario 🎾');
+                            }
                         }
                     }
                 }
@@ -509,6 +594,18 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[], cor
                 logger.warn({ err }, 'Re-call brain after REGISTER_PLAYER failed — ignored');
             }
             return;
+        }
+
+        // ACCEPT_INVITATION: se il match è diventato LOCKED (4° giocatore) → crea gruppo WA
+        if (action === 'ACCEPT_INVITATION' && result.success && result.matchId) {
+            try {
+                const filledMatch = await prisma.match.findUnique({ where: { id: result.matchId } });
+                if (filledMatch?.status === 'LOCKED' && !filledMatch.groupId) {
+                    await handleMatchFilled(result.matchId, filledMatch.startTime);
+                }
+            } catch (err) {
+                logger.error({ err, matchId: result.matchId }, 'handleMatchFilled after ACCEPT_INVITATION failed');
+            }
         }
 
         // BOOK_FIELD / RESCHEDULE_MATCH: se NO wave (match LOCKED = prenotazione privata) → scheda completa subito.
@@ -576,6 +673,12 @@ export async function handleMatchFilled(matchId: string, startTime: Date): Promi
     
     if (!match) {
         logger.error({ matchId }, 'Match not found in handleMatchFilled');
+        return;
+    }
+
+    // Guard idempotenza: se il gruppo è già stato creato non procedere
+    if (match.groupId) {
+        logger.warn({ matchId, groupId: match.groupId }, 'handleMatchFilled: group already exists, skipping');
         return;
     }
 
