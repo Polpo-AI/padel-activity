@@ -459,14 +459,9 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[], cor
             try {
                 const newCtx = await buildBrainContext(jid, phoneNumber);
                 if (newCtx.player) {
-                    // Cerca l'ultimo messaggio utente significativo PRIMA di nome+cognome
-                    // recentMessages è ASC, quindi prendiamo tutti i messaggi utente
-                    // esclusi gli ultimi 2 (nome e cognome), poi prendiamo l'ultimo
-                    const allUserMsgs = newCtx.recentMessages.filter((m: any) => m.role === 'USER');
-                    const prevUserMsgs = allUserMsgs.slice(0, -2); // rimuove nome e cognome (gli ultimi 2)
-                    const prevUserMsg = [...prevUserMsgs].reverse().find((m: any) => m.content && m.content.trim().length > 5);
-                    const reCallText = prevUserMsg?.content
-                        ?? '(registrazione appena completata — controlla se c\'era un intento pendente nella conversazione e gestiscilo)';
+                    // Messaggio sintetico: il brain ha la cronologia completa,
+                    // sa da solo se c'era un intento pendente (es. prenotazione)
+                    const reCallText = '(registrazione completata — controlla la conversazione e se c\'era un intento pendente eseguilo, altrimenti rispondi NONE)';
 
                     const { message: msg2, action: action2, params: params2 } = await callBrain(
                         newCtx,
