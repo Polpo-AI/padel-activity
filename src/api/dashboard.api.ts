@@ -113,8 +113,14 @@ router.get('/club', authMiddleware, async (req: Request, res: Response) => {
 
 router.patch('/club', authMiddleware, async (req: Request, res: Response) => {
     const clubId = (req as any).clubId;
-    const { name, skillLevelCount, aiTone, botName, maxDailyMessages, skillTestCost, skillTestDuration,
-            openTime, closeTime, matchDuration } = req.body;
+    const {
+        name, city, address, adminPhone, adminAlternativePhone,
+        botName, aiTone, maxDailyMessages, racketPrice,
+        openTime, closeTime, matchDuration, deadlineMinutesBeforeMatch,
+        skillLevelCount, matchLowerRange, matchUpperRange,
+        allowMixedLevels, allowMixedGenderMatchmaking, waveMultiplier,
+        skillTestCost, skillTestDuration,
+    } = req.body;
     const confirm = req.query.confirm === 'true';
 
     try {
@@ -151,19 +157,31 @@ router.patch('/club', authMiddleware, async (req: Request, res: Response) => {
             }
         }
 
+        const def = (v: any) => v !== undefined ? v : undefined;
         const updated = await prisma.club.update({
             where: { id: clubId },
             data: {
-                name: name !== undefined ? name : undefined,
-                skillLevelCount: skillLevelCount !== undefined ? parseInt(skillLevelCount) : undefined,
-                aiTone: aiTone !== undefined ? aiTone : undefined,
-                botName: botName !== undefined ? botName : undefined,
-                maxDailyMessages: maxDailyMessages !== undefined ? parseInt(maxDailyMessages) : undefined,
-                skillTestCost: skillTestCost !== undefined ? parseFloat(skillTestCost) : undefined,
-                skillTestDuration: skillTestDuration !== undefined ? parseInt(skillTestDuration) : undefined,
-                openTime: openTime !== undefined ? openTime : undefined,
-                closeTime: closeTime !== undefined ? closeTime : undefined,
-                matchDuration: matchDuration !== undefined ? parseInt(matchDuration) : undefined,
+                name:                       def(name),
+                city:                       def(city),
+                address:                    def(address),
+                adminPhone:                 def(adminPhone),
+                adminAlternativePhone:      def(adminAlternativePhone),
+                botName:                    def(botName),
+                aiTone:                     def(aiTone),
+                maxDailyMessages:           maxDailyMessages !== undefined ? parseInt(maxDailyMessages) : undefined,
+                racketPrice:                racketPrice !== undefined ? parseFloat(racketPrice) : undefined,
+                openTime:                   def(openTime),
+                closeTime:                  def(closeTime),
+                matchDuration:              matchDuration !== undefined ? parseInt(matchDuration) : undefined,
+                deadlineMinutesBeforeMatch: deadlineMinutesBeforeMatch !== undefined ? parseInt(deadlineMinutesBeforeMatch) : undefined,
+                skillLevelCount:            skillLevelCount !== undefined ? parseInt(skillLevelCount) : undefined,
+                matchLowerRange:            matchLowerRange !== undefined ? parseFloat(matchLowerRange) : undefined,
+                matchUpperRange:            matchUpperRange !== undefined ? parseFloat(matchUpperRange) : undefined,
+                allowMixedLevels:           allowMixedLevels !== undefined ? Boolean(allowMixedLevels) : undefined,
+                allowMixedGenderMatchmaking: allowMixedGenderMatchmaking !== undefined ? Boolean(allowMixedGenderMatchmaking) : undefined,
+                waveMultiplier:             waveMultiplier !== undefined ? parseInt(waveMultiplier) : undefined,
+                skillTestCost:              skillTestCost !== undefined ? parseFloat(skillTestCost) : undefined,
+                skillTestDuration:          skillTestDuration !== undefined ? parseInt(skillTestDuration) : undefined,
             },
         });
         res.json(updated);
