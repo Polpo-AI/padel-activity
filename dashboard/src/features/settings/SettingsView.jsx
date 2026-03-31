@@ -11,7 +11,7 @@ const EMPTY = {
   openTime: "08:00", closeTime: "23:30", matchDuration: 90, deadlineMinutesBeforeMatch: 60,
   // Matchmaking
   skillLevelCount: 3, matchLowerRange: 1.0, matchUpperRange: 1.0,
-  allowMixedLevels: false, allowMixedGenderMatchmaking: false, waveMultiplier: 3,
+  waveMultiplier: 3,
   // Skill test
   skillTestCost: 0, skillTestDuration: 60,
 };
@@ -82,8 +82,6 @@ export default function SettingsView({ token, club, onClubUpdate }) {
         skillLevelCount: d.skillLevelCount ?? 3,
         matchLowerRange: d.matchLowerRange ?? 1.0,
         matchUpperRange: d.matchUpperRange ?? 1.0,
-        allowMixedLevels: d.allowMixedLevels ?? false,
-        allowMixedGenderMatchmaking: d.allowMixedGenderMatchmaking ?? false,
         waveMultiplier: d.waveMultiplier ?? 3,
         skillTestCost: d.skillTestCost ?? 0,
         skillTestDuration: d.skillTestDuration ?? 60,
@@ -209,14 +207,6 @@ export default function SettingsView({ token, club, onClubUpdate }) {
           </F>
           <F label="Wave multiplier" hint="Quante persone vengono invitate per posto libero">
             <input type="number" min={1} max={10} value={form.waveMultiplier} onChange={f("waveMultiplier", parseInt)} style={inputSt} />
-          </F>
-        </Grid>
-        <Grid>
-          <F label="Livelli misti nella stessa partita">
-            <Toggle value={form.allowMixedLevels} onChange={v => setForm(p => ({ ...p, allowMixedLevels: v }))} />
-          </F>
-          <F label="Matchmaking misto maschi/femmine">
-            <Toggle value={form.allowMixedGenderMatchmaking} onChange={v => setForm(p => ({ ...p, allowMixedGenderMatchmaking: v }))} />
           </F>
         </Grid>
       </Section>

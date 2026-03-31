@@ -18,7 +18,6 @@ async function main() {
       closeTime: '23:30',
       matchDuration: 90,
       skillLevelCount: 3,
-      allowMixedLevels: true,
       mixedLevelRange: 1,
       waveMultiplier: 3,
       deadlineMinutesBeforeMatch: 60,

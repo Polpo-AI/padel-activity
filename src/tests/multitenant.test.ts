@@ -387,7 +387,6 @@ describe('Multi-club: messaggi da club diversi mantengono clubId separati', () =
                 name: `Club ${where.id}`,
                 botName: 'Bot',
                 adminPhone: null,
-                allowMixedLevels: false,
                 maxDailyMessages: 2,
             })),
         };

@@ -58,7 +58,6 @@ model Match {
   endTime           DateTime?
   skillLevel        Float
   isMixed           Boolean       @default(false)
-  allowMixedLevels  Boolean       @default(false)
   playersNeeded     Int           @default(4)
   status            MatchStatus   @default(OPEN)
   preferredPlayerIds String[]     @default([])
@@ -134,8 +133,6 @@ model Club {
   adminAlternativePhone      String?
   waveMultiplier             Int      @default(3)
   deadlineMinutesBeforeMatch Int      @default(60)
-  allowMixedLevels           Boolean  @default(false)
-  allowMixedGenderMatchmaking Boolean  @default(false)
   mixedLevelRange            Int      @default(1)
   matchUpperRange            Float    @default(1.0)
   matchLowerRange            Float    @default(1.0)

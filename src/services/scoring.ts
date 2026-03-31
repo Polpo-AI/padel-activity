@@ -149,7 +149,7 @@ export async function selectPlayersForWave(
 
     // 1. GENDER RESTRICTION (Always same sex unless club allows mixed)
     let targetGender: any = null;
-    if (!match.club?.allowMixedGenderMatchmaking) {
+    if (!match.isMixed) {
         const participants = match.MatchPlayer.map(mp => mp.player).filter(Boolean);
         if (participants.length > 0) {
             const genders = Array.from(new Set(participants.map(p => p.gender)));
@@ -242,7 +242,7 @@ export async function getPlayersForRecovery(matchId: string): Promise<any[]> {
     if (!match) return [];
 
     let targetGender: any = null;
-    if (!match.club?.allowMixedGenderMatchmaking) {
+    if (!match.isMixed) {
         const participants = match.MatchPlayer.map(mp => mp.player).filter(Boolean);
         if (participants.length > 0) {
             const genders = Array.from(new Set(participants.map(p => p.gender)));

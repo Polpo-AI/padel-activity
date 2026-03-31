@@ -496,22 +496,6 @@
       </div>
     </div>
 
-    <div class="toggle-row" onclick="toggleSwitch('allowMixedLevels')">
-      <div class="toggle-info">
-        <div class="toggle-name">Partite miste tra livelli</div>
-        <div class="toggle-hint">Permette a giocatori di livelli adiacenti di giocare insieme</div>
-      </div>
-      <div class="toggle-switch" id="toggle-allowMixedLevels"></div>
-    </div>
-
-    <div class="toggle-row" onclick="toggleSwitch('allowMixedGender')">
-      <div class="toggle-info">
-        <div class="toggle-name">Partite miste maschi/femmine</div>
-        <div class="toggle-hint">Se disabilitato, il bot separa automaticamente per genere</div>
-      </div>
-      <div class="toggle-switch" id="toggle-allowMixedGender"></div>
-    </div>
-
     <hr class="divider" />
     <div class="section-label">Soglie temporali</div>
 
@@ -635,7 +619,6 @@ const STATE = {
   matchDuration: 90, timezone: 'Europe/Rome',
   courts: [{ name: 'Campo 1', covered: false }],
   skillLevelCount: 3, skillRange: 1.0,
-  allowMixedLevels: false, allowMixedGender: false,
   deadlineMinutes: 60, skillTestDuration: 60, skillTestCost: 0,
   waveMultiplier: 3, maxDailyMessages: 2, aiTone: '',
   dashUsername: '', dashPassword: '',
@@ -775,13 +758,13 @@ function getCourts() {
 }
 
 // ─── Toggles ──────────────────────────────────
-const toggleState = { allowMixedLevels: false, allowMixedGender: false };
+const toggleState = {};
 
 function toggleSwitch(key) {
   toggleState[key] = !toggleState[key];
   const el = document.getElementById(`toggle-${key}`);
   el.className = 'toggle-switch' + (toggleState[key] ? ' on' : '');
-  STATE[key === 'allowMixedGender' ? 'allowMixedGender' : key] = toggleState[key];
+  STATE[key] = toggleState[key];
 }
 
 // ─── Password strength ────────────────────────
@@ -816,7 +799,6 @@ function buildSummary() {
     { k: 'Campi',            v: courts.map(c => `${c.name}${c.covered ? ' 🏠' : ' ☀️'}`).join(', '), full: true },
     { k: 'Livelli',          v: STATE.skillLevelCount },
     { k: 'Range skill',      v: `±${STATE.skillRange}` },
-    { k: 'Livelli misti',    v: STATE.allowMixedLevels ? 'Sì' : 'No' },
     { k: 'Wave ×',           v: STATE.waveMultiplier },
     { k: 'Max msg/giorno',   v: STATE.maxDailyMessages },
     { k: 'Deadline',         v: `${STATE.deadlineMinutes} min prima` },
@@ -849,8 +831,6 @@ function buildJson() {
     skillLevelCount: STATE.skillLevelCount,
     matchLowerRange: STATE.skillRange,
     matchUpperRange: STATE.skillRange,
-    allowMixedLevels: STATE.allowMixedLevels,
-    allowMixedGenderMatchmaking: STATE.allowMixedGender,
     waveMultiplier: STATE.waveMultiplier,
     maxDailyMessages: STATE.maxDailyMessages,
     deadlineMinutesBeforeMatch: STATE.deadlineMinutes,

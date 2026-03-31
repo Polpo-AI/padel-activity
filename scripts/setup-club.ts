@@ -54,11 +54,7 @@ async function main() {
     console.log('🏆 CONFIGURAZIONE LIVELLI');
     const skillLevelCount = await askInt('\nQuanti livelli di bravura hai? (3 = Principiante/Intermedio/Avanzato, 5 = scala completa)', 3);
 
-    const allowMixedLevels = await askBool('\nVuoi permettere partite miste tra livelli adiacenti?');
-    let mixedLevelRange = 1;
-    if (allowMixedLevels) {
-        mixedLevelRange = await askInt('Quanti livelli adiacenti possono giocare insieme?', 1);
-    }
+    const mixedLevelRange = 1;
 
     // ── Wave ───────────────────────────────────
     console.log('\n━'.repeat(40));
@@ -89,7 +85,6 @@ async function main() {
     console.log(`  Admin ALT WA:   ${adminAlternativePhone || 'non configurato'}`);
     console.log(`  Campi (${courtCount}):     ${courts.join(', ')}`);
     console.log(`  Livelli:        ${skillLevelCount}`);
-    console.log(`  Livelli misti:  ${allowMixedLevels ? `sì (±${mixedLevelRange})` : 'no'}`);
     console.log(`  Wave ×:         ${waveMultiplier}`);
     console.log(`  Deadline:       ${deadlineMinutesBeforeMatch} min prima`);
     console.log(`  Dashboard user: ${dashboardUsername}`);
@@ -113,7 +108,6 @@ async function main() {
             closeTime,
             matchDuration,
             skillLevelCount,
-            allowMixedLevels,
             mixedLevelRange,
             waveMultiplier,
             deadlineMinutesBeforeMatch,

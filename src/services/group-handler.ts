@@ -60,7 +60,6 @@ export async function handleGroupParticipantUpdate(update: {
         welcomeMessage: undefined,
         askAvailability: false,
         askTimePreference: false,
-        allowMixedLevels: false,
         maxDailyMessages: 2,
         notifyAdminOnNewPlayer: !!club.adminPhone,
     };

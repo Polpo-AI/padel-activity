@@ -50,8 +50,6 @@ router.post('/club', requireSetupSecret, async (req, res) => {
             matchDuration,
             courts,            // { name: string, covered: boolean }[]
             skillLevelCount,
-            allowMixedLevels,
-            allowMixedGenderMatchmaking,
             mixedLevelRange,
             matchUpperRange,
             matchLowerRange,
@@ -105,8 +103,6 @@ router.post('/club', requireSetupSecret, async (req, res) => {
                 closeTime: closeTime || '23:30',
                 matchDuration: Number(matchDuration) || 90,
                 skillLevelCount: Number(skillLevelCount) || 3,
-                allowMixedLevels: Boolean(allowMixedLevels),
-                allowMixedGenderMatchmaking: Boolean(allowMixedGenderMatchmaking),
                 mixedLevelRange: Number(mixedLevelRange) || 1,
                 matchUpperRange: Number(matchUpperRange) || 1.0,
                 matchLowerRange: Number(matchLowerRange) || 1.0,

@@ -39,7 +39,6 @@ export interface ClubOnboardingConfig {
     askAvailability: boolean;           // chiedi giorni preferiti?
     askTimePreference: boolean;         // chiedi orario preferito?
     vcfKeyword?: string;                // keyword per filtro rubrica (es. "Padel")
-    allowMixedLevels: boolean;          // invita livelli misti?
     maxDailyMessages: number;           // default 2
     notifyAdminOnNewPlayer: boolean;
 }

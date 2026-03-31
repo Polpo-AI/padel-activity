@@ -1240,7 +1240,6 @@ async function createNewMatchAction(
             startTime,
             skillLevel,
             isMixed: preferMixed === true,
-            allowMixedLevels: club?.allowMixedLevels ?? false,
             playersNeeded: 4,
             status: initialStatus,
             isPrivateBooking,

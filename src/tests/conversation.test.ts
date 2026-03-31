@@ -65,7 +65,6 @@ const MOCK_CLUB = {
     aiToneDesc: null,
     adminPhone: null,
     adminAlternativePhone: null,
-    allowMixedLevels: false,
     maxDailyMessages: 3,
     matchLowerRange: 1.0,
     matchUpperRange: 1.0,
@@ -158,7 +157,7 @@ describe('Onboarding flow', () => {
         redisStore.set(`state:onboarding:${TEST_JID}`, {
             value: JSON.stringify({
                 step: 'AWAITING_NAME',
-                data: { config: { ...MOCK_CLUB, botName: 'Francesca', clubId: 'club-1', askAvailability: false, askTimePreference: false, skipLevel: true, notifyAdminOnNewPlayer: false, allowMixedLevels: false, maxDailyMessages: 3 } },
+                data: { config: { ...MOCK_CLUB, botName: 'Francesca', clubId: 'club-1', askAvailability: false, askTimePreference: false, skipLevel: true, notifyAdminOnNewPlayer: false, maxDailyMessages: 3 } },
                 expiresAt: new Date(Date.now() + 3600000),
             }),
         });
@@ -182,7 +181,7 @@ describe('Onboarding flow', () => {
         redisStore.set(`state:onboarding:${TEST_JID}`, {
             value: JSON.stringify({
                 step: 'AWAITING_NAME',
-                data: { config: { botName: 'Francesca', clubId: 'club-1', askAvailability: false, askTimePreference: false, skipLevel: true, notifyAdminOnNewPlayer: false, allowMixedLevels: false, maxDailyMessages: 3 } },
+                data: { config: { botName: 'Francesca', clubId: 'club-1', askAvailability: false, askTimePreference: false, skipLevel: true, notifyAdminOnNewPlayer: false, maxDailyMessages: 3 } },
                 expiresAt: new Date(Date.now() + 3600000),
             }),
         });
@@ -206,7 +205,7 @@ describe('Onboarding flow', () => {
             value: JSON.stringify({
                 step: 'AWAITING_NAME',
                 data: {
-                    config: { botName: 'Francesca', clubId: 'club-1', aiTone: 'entusiasta', askAvailability: false, askTimePreference: false, skipLevel: true, notifyAdminOnNewPlayer: false, allowMixedLevels: false, maxDailyMessages: 3 },
+                    config: { botName: 'Francesca', clubId: 'club-1', aiTone: 'entusiasta', askAvailability: false, askTimePreference: false, skipLevel: true, notifyAdminOnNewPlayer: false, maxDailyMessages: 3 },
                     resolvedPhone: TEST_PHONE,
                 },
                 expiresAt: new Date(Date.now() + 3600000),
