@@ -1113,6 +1113,200 @@ router.post('/prices', authMiddleware, async (req: Request, res: Response) => {
 });
 
 // ─────────────────────────────────────────────
+// FAQ — Knowledge Base Management
+// NOTE: specific routes (/analyze, /merge) BEFORE parametric (/:id)
+// ─────────────────────────────────────────────
+
+router.get('/faqs', authMiddleware, async (req: Request, res: Response) => {
+    const clubId = (req as any).clubId as string;
+    try {
+        const faqs = await prisma.faq.findMany({
+            where: { clubId },
+            orderBy: [
+                // pending (answer=null) first, then by createdAt desc
+                { answer: 'asc' },
+                { createdAt: 'desc' },
+            ],
+        });
+        // Sort: null answers first (pending), then answered
+        const pending = faqs.filter(f => f.answer === null);
+        const answered = faqs.filter(f => f.answer !== null);
+        res.json([...pending, ...answered]);
+    } catch (e: any) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+router.post('/faqs/analyze', authMiddleware, async (req: Request, res: Response) => {
+    const clubId = (req as any).clubId as string;
+    const { question, answer } = req.body || {};
+
+    if (!question || !answer) {
+        return res.status(400).json({ error: 'question e answer richiesti' });
+    }
+
+    try {
+        const existingFaqs = await prisma.faq.findMany({
+            where: { clubId, answer: { not: null } },
+            select: { id: true, question: true, answer: true },
+        });
+
+        const { analyzeFaq } = await import('../services/faq-manager');
+        const decision = await analyzeFaq(
+            String(question),
+            String(answer),
+            existingFaqs.map(f => ({ id: f.id, question: f.question, answer: f.answer! }))
+        );
+        res.json(decision);
+    } catch (e: any) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+router.post('/faqs', authMiddleware, async (req: Request, res: Response) => {
+    const clubId = (req as any).clubId as string;
+    const { question, answer, askedBy } = req.body || {};
+
+    if (!question) {
+        return res.status(400).json({ error: 'question richiesta' });
+    }
+
+    try {
+        const faq = await prisma.faq.create({
+            data: {
+                clubId,
+                question: String(question),
+                answer: answer ? String(answer) : null,
+                askedBy: askedBy ? String(askedBy) : null,
+            },
+        });
+        res.status(201).json(faq);
+    } catch (e: any) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+router.post('/faqs/merge', authMiddleware, async (req: Request, res: Response) => {
+    const clubId = (req as any).clubId as string;
+    const { keepId, deleteId, mergedQuestion, mergedAnswer } = req.body || {};
+
+    if (!keepId || !deleteId || !mergedQuestion || !mergedAnswer) {
+        return res.status(400).json({ error: 'keepId, deleteId, mergedQuestion, mergedAnswer richiesti' });
+    }
+
+    try {
+        // Verify both FAQs belong to this club
+        const keepFaq = await prisma.faq.findFirst({ where: { id: String(keepId), clubId } });
+        const deleteFaq = await prisma.faq.findFirst({ where: { id: String(deleteId), clubId } });
+
+        if (!keepFaq) return res.status(404).json({ error: 'FAQ da mantenere non trovata' });
+        if (!deleteFaq) return res.status(404).json({ error: 'FAQ da eliminare non trovata' });
+
+        const [updated] = await prisma.$transaction([
+            prisma.faq.update({
+                where: { id: String(keepId) },
+                data: {
+                    question: String(mergedQuestion),
+                    answer: String(mergedAnswer),
+                },
+            }),
+            prisma.faq.delete({ where: { id: String(deleteId) } }),
+        ]);
+
+        res.json(updated);
+    } catch (e: any) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+router.put('/faqs/:id', authMiddleware, async (req: Request, res: Response) => {
+    const clubId = (req as any).clubId as string;
+    const { id } = req.params;
+    const { question, answer } = req.body || {};
+
+    try {
+        const faq = await prisma.faq.findFirst({ where: { id, clubId } });
+        if (!faq) return res.status(404).json({ error: 'FAQ non trovata' });
+
+        const updated = await prisma.faq.update({
+            where: { id },
+            data: {
+                ...(question !== undefined ? { question: String(question) } : {}),
+                ...(answer !== undefined ? { answer: answer === null ? null : String(answer) } : {}),
+            },
+        });
+        res.json(updated);
+    } catch (e: any) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+router.delete('/faqs/:id', authMiddleware, async (req: Request, res: Response) => {
+    const clubId = (req as any).clubId as string;
+    const { id } = req.params;
+
+    try {
+        const faq = await prisma.faq.findFirst({ where: { id, clubId } });
+        if (!faq) return res.status(404).json({ error: 'FAQ non trovata' });
+
+        await prisma.faq.delete({ where: { id } });
+        res.json({ success: true });
+    } catch (e: any) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+router.post('/faqs/:id/answer', authMiddleware, async (req: Request, res: Response) => {
+    const clubId = (req as any).clubId as string;
+    const { id } = req.params;
+    const { answer, notifyPlayer } = req.body || {};
+
+    if (!answer) {
+        return res.status(400).json({ error: 'answer richiesta' });
+    }
+
+    try {
+        const faq = await prisma.faq.findFirst({ where: { id, clubId } });
+        if (!faq) return res.status(404).json({ error: 'FAQ non trovata' });
+
+        // Run AI analysis before saving (dashboard uses this for warnings)
+        const existingFaqs = await prisma.faq.findMany({
+            where: { clubId, answer: { not: null }, id: { not: id } },
+            select: { id: true, question: true, answer: true },
+        });
+        const { analyzeFaq } = await import('../services/faq-manager');
+        const decision = await analyzeFaq(
+            faq.question,
+            String(answer),
+            existingFaqs.map(f => ({ id: f.id, question: f.question, answer: f.answer! }))
+        );
+
+        // Save the answer
+        const updated = await prisma.faq.update({
+            where: { id },
+            data: { answer: String(answer) },
+        });
+
+        // Notify player via WhatsApp if requested
+        if (notifyPlayer && faq.askedBy) {
+            const askedBy = faq.askedBy;
+            const { simulateTypingAndSend } = await import('../services/whatsapp');
+            const { runWithContext } = await import('../utils/request-context');
+            runWithContext({ clubId }, () =>
+                simulateTypingAndSend(
+                    `${askedBy}@s.whatsapp.net`,
+                    `Risposta alla tua domanda: "${faq.question}"\n\n${answer}`
+                ).catch(() => {})
+            );
+        }
+
+        res.json({ decision, faq: updated });
+    } catch (e: any) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// ─────────────────────────────────────────────
 // SYSTEM HEALTH
 // ─────────────────────────────────────────────
 
