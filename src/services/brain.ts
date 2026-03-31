@@ -333,7 +333,8 @@ export async function callBrain(
             const statusLabel = mp.match.status === 'LOCKED'
                 ? `campo pieno (${confirmed}/${needed})`
                 : `${confirmed}/${needed} confermati, mancano ${free}`;
-            return `  - ${mp.match.court?.name || 'Campo'} – ${fmtDatetime(mp.match.startTime)} – ${statusLabel} [matchPlayerId:${mp.id}]`;
+            const courtType = mp.match.court?.isCovered ? '🏟️ coperto' : '☀️ scoperto';
+            return `  - ${mp.match.court?.name || 'Campo'} (${courtType}) – ${fmtDatetime(mp.match.startTime)} – ${statusLabel} [matchPlayerId:${mp.id}]`;
         }).join('\n')
         : '  nessuno';
 
@@ -1009,7 +1010,7 @@ export async function executeAction(
     } catch (err: any) {
         logger.error({ err, action, params }, 'executeAction failed');
         // Non esporre errori tecnici Prisma all'utente
-        const isPrismaError = err?.code?.startsWith?.('P') || err?.name === 'PrismaClientKnownRequestError' || err?.name === 'PrismaClientUnknownRequestError';
+        const isPrismaError = err?.code?.startsWith?.('P') || err?.name === 'PrismaClientKnownRequestError' || err?.name === 'PrismaClientUnknownRequestError' || err?.name === 'PrismaClientValidationError';
         const userMessage = isPrismaError ? 'Errore interno. Riprova tra poco.' : (err.message || 'Errore imprevisto.');
         return { success: false, errorMessage: userMessage };
     }
