@@ -526,7 +526,7 @@ Rispondi SEMPRE con JSON valido: { "message": "...", "action": "NOME", "params":
 - NONE — risposta conversazionale, nessuna operazione DB. Usa per saluti, domande, info, ringraziamenti, qualsiasi cosa non richieda un'azione specifica
 - ACCEPT_INVITATION — params: { "invitationId": "..." } — utente conferma presenza a partita
 - REJECT_INVITATION — params: { "invitationId": "..." } — utente declina partita
-- CANCEL_MATCH — params: { "matchPlayerId": "..." } — utente vuole annullare partecipazione confermata
+- CANCEL_MATCH — params: { "matchPlayerId": "..." } — utente vuole annullare partecipazione confermata. ⚠️ matchPlayerId DEVE essere copiato esattamente dal tag [matchPlayerId:...] in PARTITE CONFERMATE. Se non trovi NESSUNA partita confermata → NONE e chiedi quale partita vuole cancellare.
 - BOOK_FIELD — params: { "day": "YYYY-MM-DD o oggi/domani/lunedì/martedì/...", "time": "HH:MM", "joinMatchId": "id o null", "preferCovered": false, "preferMixed": null, "private": null }
   Usa quando l'utente vuole giocare/prenotare e ha fornito giorno + orario.
   preferCovered: true SOLO se l'utente lo chiede esplicitamente (es. "campo al coperto", "al chiuso"). Default: false (scoperto preferito).
@@ -556,7 +556,7 @@ Rispondi SEMPRE con JSON valido: { "message": "...", "action": "NOME", "params":
   MAI creare una partita con wave quando l'utente ha già indicato persone specifiche con cui vuole giocare.
 - SAVE_NOTE — params: { "note": "..." } — utente esprime una preferenza, abitudine o richiesta speciale (es. "voglio sempre giocare al coperto", "preferisco il mattino", "non mi piace la terra rossa"). Riassumi in una frase breve e salva. Puoi combinare con NONE per rispondere anche in modo conversazionale — in quel caso usa SAVE_NOTE e metti la risposta nel campo "message".
 - REQUEST_LESSON — params: { "day": "opzionale", "time": "opzionale" } — utente chiede di prenotare una lezione con il maestro. Rispondi con conferma che hai avvisato il maestro + durata + costo. Il maestro li contatterà per l'orario esatto.
-- RESCHEDULE_MATCH — params: { "matchPlayerId": "...", "newDay": "YYYY-MM-DD o oggi/domani/lunedì/...", "newTime": "HH:MM", "preferCovered": true/false } — utente vuole spostare una partita confermata. Cancella quella vecchia e prenota il nuovo slot. Se l'utente chiede esplicitamente il coperto → preferCovered: true. Messaggio breve tipo "Fatto! Ho spostato la tua partita 🎾" — i dettagli arrivano subito dopo.
+- RESCHEDULE_MATCH — params: { "matchPlayerId": "...", "newDay": "YYYY-MM-DD o oggi/domani/lunedì/...", "newTime": "HH:MM", "preferCovered": true/false } — utente vuole spostare una partita confermata. Cancella quella vecchia e prenota il nuovo slot. Se l'utente chiede esplicitamente il coperto → preferCovered: true. Messaggio breve tipo "Fatto! Ho spostato la tua partita 🎾" — i dettagli arrivano subito dopo. ⚠️ matchPlayerId DEVE essere copiato esattamente dal tag [matchPlayerId:...] in PARTITE CONFERMATE. Se non trovi NESSUNA partita confermata → NONE e chiedi quale partita vuole spostare.
 - FAQ_REQUEST — params: { "question": "testo esatto della domanda" } — usa SOLO quando l'utente fa una domanda sul circolo (orari speciali, regole particolari, eventi, iniziative) a cui NON puoi rispondere con le informazioni disponibili.
   ⛔ NON usare FAQ_REQUEST per: stato della partita, quante persone mancano, chi è già confermato — queste info sono nella sezione PARTITE CONFERMATE sopra, rispondi direttamente.
   ⛔ NON usare FAQ_REQUEST se la risposta è già nella sezione FAQ DEL CIRCOLO sopra — quelle le hai già, rispondi direttamente.
@@ -827,6 +827,9 @@ export async function executeAction(
         }
 
         if (action === 'CANCEL_MATCH') {
+            if (!params?.matchPlayerId || typeof params.matchPlayerId !== 'string') {
+                return { success: false, errorMessage: 'Non riesco a identificare la partita. Quale partita vuoi cancellare?' };
+            }
             const mp = await prisma.matchPlayer.findUnique({ where: { id: params.matchPlayerId } });
             if (!mp) return { success: false, errorMessage: 'Partecipazione non trovata.' };
 
@@ -858,6 +861,9 @@ export async function executeAction(
         }
 
         if (action === 'RESCHEDULE_MATCH') {
+            if (!params?.matchPlayerId || typeof params.matchPlayerId !== 'string') {
+                return { success: false, errorMessage: 'Non riesco a identificare la partita. Quale partita vuoi spostare?' };
+            }
             const startTime = parseBookingDateTime(params.newDay, params.newTime);
             if (!startTime) return { success: false, errorMessage: 'Orario non valido.' };
 
