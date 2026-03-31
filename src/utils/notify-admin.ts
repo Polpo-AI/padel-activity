@@ -27,11 +27,11 @@ export async function notifyAdmin(
     key: string = 'generic',
     adminPhone?: string,
     clubName?: string
-): Promise<void> {
+): Promise<boolean> {
     const lastSent = notificationCooldowns.get(key) || 0;
     if (Date.now() - lastSent < COOLDOWN_MS) {
         logger.debug({ key }, 'Admin notification suppressed (cooldown)');
-        return;
+        return false;
     }
 
     let phone = adminPhone;
@@ -48,17 +48,17 @@ export async function notifyAdmin(
                 name = club?.name ?? undefined;
             } else {
                 logger.warn({ key }, 'notifyAdmin called without adminPhone in multi-tenant mode');
-                return;
+                return false;
             }
         } catch (err) {
             logger.error({ err }, 'Failed to resolve admin phone');
-            return;
+            return false;
         }
     }
 
     if (!phone) {
         logger.warn('No admin phone configured');
-        return;
+        return false;
     }
 
     try {
@@ -68,15 +68,17 @@ export async function notifyAdmin(
         const contextClubId = getClubId();
         if (getConnectionStatus(contextClubId) !== 'open') {
             logger.warn({ key, contextClubId }, 'Cannot send admin notification: WhatsApp not connected');
-            return;
+            return false;
         }
 
         const adminJid = `${phone.replace(/\D/g, '')}@s.whatsapp.net`;
         await sendMessage(adminJid, `🚨 *${name ?? 'Padel Bot'} — Alert*\n\n${message}`);
         notificationCooldowns.set(key, Date.now());
         logger.info({ key }, 'Admin notification sent');
+        return true;
     } catch (err) {
         logger.error({ err }, 'Failed to send admin notification');
+        return false;
     }
 }
 

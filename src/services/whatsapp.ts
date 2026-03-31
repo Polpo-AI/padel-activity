@@ -272,17 +272,34 @@ async function _doConnect(key: string, state: ClubSocketState): Promise<void> {
             state.status = 'open';
             state.lastHeartbeatOk = Date.now();
 
-            // Notifica admin startup (non-blocking)
+            // Notifica admin startup + retry FAQ pending (non-blocking)
             setTimeout(async () => {
                 try {
                     const { prisma } = await import('./db');
                     const club = key === DEFAULT_CLUB_KEY
                         ? await prisma.club.findFirst({ where: { adminPhone: { not: null } } })
-                        : await prisma.club.findUnique({ where: { id: key }, select: { adminPhone: true, name: true } });
+                        : await prisma.club.findUnique({ where: { id: key }, select: { adminPhone: true, name: true, id: true } });
 
                     if (club?.adminPhone) {
                         const adminJid = `${club.adminPhone.replace(/\D/g, '')}@s.whatsapp.net`;
                         await _sendRaw(state, adminJid, '🤖 *Bot riavviato — connesso.*');
+
+                        // Retry FAQ domande in attesa non inviate (WA era disconnessa)
+                        try {
+                            const { getRedis } = await import('./queue');
+                            const redis = getRedis();
+                            const clubId = (club as any).id || key;
+                            const pendingFaq = await redis.get(`faq:pending_question:${clubId}`);
+                            if (pendingFaq) {
+                                const { question, askedBy } = JSON.parse(pendingFaq);
+                                const msg = `🚨 *${club.name ?? 'Padel Bot'} — Alert*\n\n❓ ${askedBy || 'Un giocatore'} ha chiesto:\n"${question}"\n\nRispondi qui per salvare la tua risposta come FAQ.`;
+                                await _sendRaw(state, adminJid, msg);
+                                await redis.del(`faq:pending_question:${clubId}`);
+                                logger.info({ clubId, question }, 'Pending FAQ sent to admin after reconnect');
+                            }
+                        } catch (faqErr) {
+                            logger.warn({ faqErr }, 'Failed to send pending FAQ on reconnect');
+                        }
                     }
                 } catch (err) {
                     logger.error({ err, clubId: key }, 'Failed to send startup notification');
