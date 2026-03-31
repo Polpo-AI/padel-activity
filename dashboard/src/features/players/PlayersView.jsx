@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { C, api, inputSt, btnPrimary, btnGhost, labelSt } from "../../shared/config";
 import Spinner from "../../shared/Spinner";
 import Toast from "../../shared/Toast";
@@ -230,11 +230,18 @@ function AddPlayerModal({ token, onClose, onCreated }) {
 
 // ─── PlayersView ──────────────────────────────
 
+const SORT_DEFAULTS = { name: "asc", skillLevel: "desc", reliabilityScore: "desc", lastContactedAt: "desc" };
+
 export default function PlayersView({ token, club }) {
   const [players, setPlayers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [filterActive, setFilterActive] = useState("all");
+  const [filterNoSkill, setFilterNoSkill] = useState(false);
+  const [skillMin, setSkillMin] = useState("");
+  const [skillMax, setSkillMax] = useState("");
+  const [sortBy, setSortBy] = useState("name");
+  const [sortDir, setSortDir] = useState("asc");
   const [selectedPlayer, setSelectedPlayer] = useState(null);
   const [showAddPlayer, setShowAddPlayer] = useState(false);
   const [togglePhone, setTogglePhone] = useState("");
@@ -255,6 +262,71 @@ export default function PlayersView({ token, club }) {
 
   useEffect(() => { const t = setTimeout(load, 300); return () => clearTimeout(t); }, [load]);
 
+  // ─── Client-side filter + sort ───────────────
+
+  const filtered = useMemo(() => {
+    let list = [...players];
+
+    if (filterNoSkill) list = list.filter(p => p.skillLevel <= 0);
+    if (skillMin !== "") list = list.filter(p => p.skillLevel >= parseFloat(skillMin));
+    if (skillMax !== "") list = list.filter(p => p.skillLevel <= parseFloat(skillMax));
+
+    list.sort((a, b) => {
+      let va, vb;
+      if (sortBy === "name") {
+        va = (a.name || "").toLowerCase();
+        vb = (b.name || "").toLowerCase();
+      } else if (sortBy === "skillLevel") {
+        va = a.skillLevel;
+        vb = b.skillLevel;
+      } else if (sortBy === "reliabilityScore") {
+        va = a.reliabilityScore || 0.33;
+        vb = b.reliabilityScore || 0.33;
+      } else if (sortBy === "lastContactedAt") {
+        va = a.lastContactedAt ? new Date(a.lastContactedAt).getTime() : 0;
+        vb = b.lastContactedAt ? new Date(b.lastContactedAt).getTime() : 0;
+      }
+      if (va < vb) return sortDir === "asc" ? -1 : 1;
+      if (va > vb) return sortDir === "asc" ? 1 : -1;
+      return 0;
+    });
+
+    return list;
+  }, [players, filterNoSkill, skillMin, skillMax, sortBy, sortDir]);
+
+  const toggleSort = (field) => {
+    if (sortBy === field) {
+      setSortDir(d => d === "asc" ? "desc" : "asc");
+    } else {
+      setSortBy(field);
+      setSortDir(SORT_DEFAULTS[field] || "asc");
+    }
+  };
+
+  // ─── Export CSV ──────────────────────────────
+
+  const exportCsv = () => {
+    const rows = [
+      ["Nome", "Telefono", "Livello", "Affidabilità %", "Stato", "Ultimo contatto"],
+      ...filtered.map(p => [
+        p.name || "",
+        p.phoneNumber,
+        p.skillLevel > 0 ? p.skillLevel : "N/A",
+        ((p.reliabilityScore || 0.33) * 100).toFixed(0) + "%",
+        p.active ? "Attivo" : "Disattivato",
+        p.lastContactedAt ? new Date(p.lastContactedAt).toLocaleDateString("it-IT") : "Mai",
+      ]),
+    ];
+    const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(";")).join("\n");
+    const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = "giocatori.csv"; a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  // ─── Helpers ─────────────────────────────────
+
   const handleToggle = async () => {
     if (!togglePhone.trim()) return;
     setToggleLoading(true); setToggleErr(""); setToggleResult(null);
@@ -267,8 +339,37 @@ export default function PlayersView({ token, club }) {
 
   const rateColor = r => r >= 0.6 ? C.open : r >= 0.3 ? C.warning : C.cancelled;
 
+  const fmtDate = (d) => {
+    if (!d) return "mai";
+    const dt = new Date(d);
+    const diffDays = Math.floor((Date.now() - dt.getTime()) / 86400000);
+    if (diffDays === 0) return "oggi";
+    if (diffDays === 1) return "ieri";
+    if (diffDays < 7) return `${diffDays}g fa`;
+    if (diffDays < 30) return `${Math.floor(diffDays / 7)}sett fa`;
+    return dt.toLocaleDateString("it-IT", { day: "numeric", month: "short" });
+  };
+
+  const totalActive = players.filter(p => p.active).length;
+  const noSkillCount = players.filter(p => p.skillLevel <= 0).length;
+
+  const SortIcon = ({ field }) =>
+    sortBy !== field
+      ? <span style={{ color: C.dim, marginLeft: 3, fontSize: 9 }}>↕</span>
+      : <span style={{ color: C.accent, marginLeft: 3, fontSize: 9 }}>{sortDir === "asc" ? "↑" : "↓"}</span>;
+
+  const ColHeader = ({ field, label }) => (
+    <span onClick={() => toggleSort(field)} style={{ cursor: "pointer", userSelect: "none", display: "inline-flex", alignItems: "center" }}>
+      {label}<SortIcon field={field} />
+    </span>
+  );
+
+  const COLS = "2fr 1.3fr 0.6fr 0.9fr 0.85fr 0.55fr";
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+
+      {/* ── Attiva/Disattiva per numero ── */}
       <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: 20, display: "flex", flexDirection: "column", gap: 12 }}>
         <div style={{ fontSize: 13, fontWeight: 600, color: C.text }}>Attiva / Disattiva per numero</div>
         <div style={{ display: "flex", gap: 10 }}>
@@ -287,40 +388,106 @@ export default function PlayersView({ token, club }) {
         )}
       </div>
 
-      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
-        <input value={search} onChange={e => setSearch(e.target.value)}
-          placeholder="Cerca per nome o numero..." style={{ ...inputSt, flex: 1, minWidth: 200 }} />
-        {["all", "active", "inactive"].map(f => (
-          <button key={f} onClick={() => setFilterActive(f)} style={{
-            ...btnGhost, whiteSpace: "nowrap",
-            background: filterActive === f ? C.accentDim : "transparent",
-            color: filterActive === f ? C.accent : C.muted,
-            borderColor: filterActive === f ? `${C.accent}40` : C.border,
-          }}>
-            {f === "all" ? "Tutti" : f === "active" ? "✅ Attivi" : "🚫 Disattivati"}
-          </button>
-        ))}
-        <button onClick={() => setShowAddPlayer(true)} style={{ ...btnPrimary, whiteSpace: "nowrap" }}>
-          + Aggiungi
-        </button>
+      {/* ── Stats bar ── */}
+      <div style={{ display: "flex", gap: 16, fontSize: 12, color: C.muted, flexWrap: "wrap" }}>
+        <span><strong style={{ color: C.text }}>{players.length}</strong> totali</span>
+        <span style={{ color: C.dim }}>·</span>
+        <span><strong style={{ color: C.open }}>{totalActive}</strong> attivi</span>
+        {noSkillCount > 0 && <>
+          <span style={{ color: C.dim }}>·</span>
+          <span
+            onClick={() => setFilterNoSkill(v => !v)}
+            style={{ cursor: "pointer", textDecoration: filterNoSkill ? "underline" : "none" }}
+          >
+            <strong style={{ color: C.warning }}>{noSkillCount}</strong> senza livello
+          </span>
+        </>}
+        {filtered.length !== players.length && <>
+          <span style={{ color: C.dim }}>·</span>
+          <span><strong style={{ color: C.accent }}>{filtered.length}</strong> visibili</span>
+        </>}
       </div>
 
+      {/* ── Barra ricerca + filtri + azioni ── */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+          <input value={search} onChange={e => setSearch(e.target.value)}
+            placeholder="Cerca per nome o numero..." style={{ ...inputSt, flex: 1, minWidth: 180 }} />
+
+          {[
+            { id: "all", label: "Tutti" },
+            { id: "active", label: "Attivi" },
+            { id: "inactive", label: "Disattivati" },
+          ].map(f => (
+            <button key={f.id} onClick={() => { setFilterActive(f.id); setFilterNoSkill(false); }} style={{
+              ...btnGhost, whiteSpace: "nowrap",
+              background: filterActive === f.id && !filterNoSkill ? C.accentDim : "transparent",
+              color: filterActive === f.id && !filterNoSkill ? C.accent : C.muted,
+              borderColor: filterActive === f.id && !filterNoSkill ? `${C.accent}40` : C.border,
+            }}>
+              {f.label}
+            </button>
+          ))}
+
+          <button onClick={() => { setFilterNoSkill(v => !v); setFilterActive("all"); }} style={{
+            ...btnGhost, whiteSpace: "nowrap",
+            background: filterNoSkill ? `${C.warning}20` : "transparent",
+            color: filterNoSkill ? C.warning : C.muted,
+            borderColor: filterNoSkill ? `${C.warning}50` : C.border,
+          }}>
+            Senza livello
+          </button>
+
+          <button onClick={() => setShowAddPlayer(true)} style={{ ...btnPrimary, whiteSpace: "nowrap" }}>+ Aggiungi</button>
+          <button onClick={exportCsv} title="Esporta lista filtrata come CSV" style={{ ...btnGhost, whiteSpace: "nowrap", fontSize: 11 }}>↓ CSV</button>
+        </div>
+
+        {/* Range livello */}
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <span style={{ fontSize: 11, color: C.muted, whiteSpace: "nowrap" }}>Livello:</span>
+          <input type="number" step="0.5" min="1" max="7" value={skillMin}
+            onChange={e => setSkillMin(e.target.value)}
+            placeholder="da" style={{ ...inputSt, width: 64, fontSize: 12, padding: "5px 8px" }} />
+          <span style={{ fontSize: 11, color: C.dim }}>–</span>
+          <input type="number" step="0.5" min="1" max="7" value={skillMax}
+            onChange={e => setSkillMax(e.target.value)}
+            placeholder="a" style={{ ...inputSt, width: 64, fontSize: 12, padding: "5px 8px" }} />
+          {(skillMin !== "" || skillMax !== "") && (
+            <button onClick={() => { setSkillMin(""); setSkillMax(""); }} style={{ ...btnGhost, fontSize: 11, padding: "4px 10px" }}>
+              ✕ reset
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* ── Tabella ── */}
       {loading ? (
-        <div style={{ display: "flex", gap: 10, alignItems: "center", padding: 20 }}><Spinner /><span style={{ color: C.muted, fontSize: 13 }}>Caricamento...</span></div>
+        <div style={{ display: "flex", gap: 10, alignItems: "center", padding: 20 }}>
+          <Spinner /><span style={{ color: C.muted, fontSize: 13 }}>Caricamento...</span>
+        </div>
       ) : (
         <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, overflow: "hidden" }}>
-          <div style={{ display: "grid", gridTemplateColumns: "2fr 1.5fr 0.6fr 0.8fr 0.7fr 0.7fr", padding: "10px 16px", borderBottom: `1px solid ${C.border}`, fontSize: 10, color: C.muted, textTransform: "uppercase", letterSpacing: "0.1em" }}>
-            <span>Nome</span><span>Telefono</span><span>Liv.</span><span>Affidabilità</span><span>Oggi</span><span>Stato</span>
+          {/* Header */}
+          <div style={{ display: "grid", gridTemplateColumns: COLS, padding: "10px 16px", borderBottom: `1px solid ${C.border}`, fontSize: 10, color: C.muted, textTransform: "uppercase", letterSpacing: "0.1em" }}>
+            <ColHeader field="name" label="Nome" />
+            <span>Telefono</span>
+            <ColHeader field="skillLevel" label="Liv." />
+            <ColHeader field="reliabilityScore" label="Affidabilità" />
+            <ColHeader field="lastContactedAt" label="Contattato" />
+            <span>Stato</span>
           </div>
 
-          {players.length === 0 && <div style={{ padding: 32, textAlign: "center", color: C.muted, fontSize: 13 }}>Nessun giocatore trovato</div>}
+          {filtered.length === 0 && (
+            <div style={{ padding: 32, textAlign: "center", color: C.muted, fontSize: 13 }}>Nessun giocatore trovato</div>
+          )}
 
-          {players.map((p, i) => {
+          {filtered.map((p, i) => {
             const rate = p.reliabilityScore || 0.33;
             return (
               <div key={p.id} onClick={() => setSelectedPlayer(p.id)} style={{
-                display: "grid", gridTemplateColumns: "2fr 1.5fr 0.6fr 0.8fr 0.7fr 0.7fr",
-                padding: "11px 16px", borderBottom: i < players.length - 1 ? `1px solid ${C.border}` : "none",
+                display: "grid", gridTemplateColumns: COLS,
+                padding: "11px 16px",
+                borderBottom: i < filtered.length - 1 ? `1px solid ${C.border}` : "none",
                 fontSize: 12, color: C.text, alignItems: "center", cursor: "pointer",
                 background: !p.active ? `${C.cancelled}05` : "transparent",
                 transition: "background 0.1s",
@@ -328,21 +495,32 @@ export default function PlayersView({ token, club }) {
                 onMouseEnter={e => e.currentTarget.style.background = C.surfaceHover}
                 onMouseLeave={e => e.currentTarget.style.background = !p.active ? `${C.cancelled}05` : "transparent"}
               >
-                <span style={{ color: p.active ? C.text : C.muted }}>{p.name || <span style={{ color: C.dim }}>—</span>}</span>
+                <span style={{ color: p.active ? C.text : C.muted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {p.name || <span style={{ color: C.dim }}>—</span>}
+                </span>
                 <span style={{ color: C.muted, fontFamily: "monospace", fontSize: 11 }}>{p.phoneNumber}</span>
-                <span style={{ display: "inline-flex", width: 24, height: 24, alignItems: "center", justifyContent: "center", borderRadius: 6, background: C.accentDim, color: C.accent, fontSize: 11, fontWeight: 700 }}>{p.skillLevel}</span>
-                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                  <div style={{ flex: 1, height: 4, background: C.dim, borderRadius: 2, overflow: "hidden", maxWidth: 60 }}>
+                <span style={{
+                  display: "inline-flex", width: 28, height: 22, alignItems: "center", justifyContent: "center",
+                  borderRadius: 6,
+                  background: p.skillLevel > 0 ? C.accentDim : `${C.warning}20`,
+                  color: p.skillLevel > 0 ? C.accent : C.warning,
+                  fontSize: 11, fontWeight: 700,
+                }}>
+                  {p.skillLevel > 0 ? p.skillLevel : "—"}
+                </span>
+                <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                  <div style={{ flex: 1, height: 4, background: C.dim, borderRadius: 2, overflow: "hidden", maxWidth: 48 }}>
                     <div style={{ height: "100%", width: `${rate * 100}%`, background: rateColor(rate), borderRadius: 2 }} />
                   </div>
-                  <span style={{ fontSize: 10, color: rateColor(rate), minWidth: 28 }}>{(rate * 100).toFixed(0)}%</span>
+                  <span style={{ fontSize: 10, color: rateColor(rate), minWidth: 26 }}>{(rate * 100).toFixed(0)}%</span>
                 </div>
-                <span style={{ color: C.muted, fontSize: 10, display: "flex", flexDirection: "column", gap: 1 }}>
-                  <span title="Mattina (pre 14:00)">{p.morningContactsToday ?? 0}☀</span>
-                  <span title="Pomeriggio/sera (post 14:00)">{p.afternoonContactsToday ?? 0}🌙</span>
+                <span style={{ fontSize: 11, color: p.lastContactedAt ? C.muted : C.dim }}>
+                  {fmtDate(p.lastContactedAt)}
                 </span>
                 <span style={{ fontSize: 10, fontWeight: 600 }}>
-                  {p.active ? <span style={{ color: C.open }}>● attivo</span> : <span style={{ color: C.cancelled }}>● off</span>}
+                  {p.active
+                    ? <span style={{ color: C.open }}>● attivo</span>
+                    : <span style={{ color: C.cancelled }}>● off</span>}
                 </span>
               </div>
             );

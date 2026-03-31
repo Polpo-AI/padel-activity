@@ -876,8 +876,8 @@ router.get('/players', authMiddleware, async (req: Request, res: Response) => {
 
     const players = await prisma.player.findMany({
         where,
-        orderBy: [{ reliabilityScore: 'desc' }, { name: 'asc' }],
-        take: 100,
+        orderBy: [{ name: 'asc' }],
+        take: 500,
     });
 
     res.json(players);
