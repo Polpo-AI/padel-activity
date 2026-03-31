@@ -554,7 +554,8 @@ Rispondi SEMPRE con JSON valido: { "message": "...", "action": "NOME", "params":
   ⛔ ECCEZIONE 1: se il giocatore ha GIÀ una partita confermata e menziona un amico che "viene con lui" — NON usare INVITE_PREFERRED. Il campo è già prenotato, chi portano è affar loro. Rispondi che possono venire in quanti vogliono (fino a 4 totali).
   ⛔ ECCEZIONE 2: se l'utente parla di "amici", "compagni" o "persone" in modo GENERICO (es. "vengo con degli amici", "siamo un gruppo", "veniamo in 4") SENZA nomi specifici → NON usare INVITE_PREFERRED. Usa BOOK_FIELD direttamente — il campo tiene fino a 4 giocatori e il sistema gestisce il resto.
   MAI creare una partita con wave quando l'utente ha già indicato persone specifiche con cui vuole giocare.
-- SAVE_NOTE — params: { "note": "..." } — utente esprime una preferenza, abitudine o richiesta speciale (es. "voglio sempre giocare al coperto", "preferisco il mattino", "non mi piace la terra rossa"). Riassumi in una frase breve e salva. Puoi combinare con NONE per rispondere anche in modo conversazionale — in quel caso usa SAVE_NOTE e metti la risposta nel campo "message".
+- SAVE_NOTE — params: { "note": "..." } — utente esprime una preferenza PERMANENTE o abitudine generale (es. "voglio *sempre* giocare al coperto", "di solito preferisco il mattino", "non mi piace la terra rossa"). Riassumi in una frase breve e salva. Puoi combinare con NONE per rispondere anche in modo conversazionale — in quel caso usa SAVE_NOTE e metti la risposta nel campo "message".
+  ⚠️ NON usare SAVE_NOTE quando l'utente sta chiedendo qualcosa di specifico per la prenotazione in corso (es. "vorrei il coperto" in risposta a una prenotazione → usa BOOK_FIELD o RESCHEDULE_MATCH con preferCovered:true, NON SAVE_NOTE). SAVE_NOTE è solo per preferenze dichiarate in modo esplicito e generale, non per richieste contestuali.
 - REQUEST_LESSON — params: { "day": "opzionale", "time": "opzionale" } — utente chiede di prenotare una lezione con il maestro. Rispondi con conferma che hai avvisato il maestro + durata + costo. Il maestro li contatterà per l'orario esatto.
 - RESCHEDULE_MATCH — params: { "matchPlayerId": "...", "newDay": "YYYY-MM-DD o oggi/domani/lunedì/...", "newTime": "HH:MM", "preferCovered": true/false } — utente vuole spostare una partita confermata. Cancella quella vecchia e prenota il nuovo slot. Se l'utente chiede esplicitamente il coperto → preferCovered: true. Messaggio breve tipo "Fatto! Ho spostato la tua partita 🎾" — i dettagli arrivano subito dopo. ⚠️ matchPlayerId DEVE essere copiato esattamente dal tag [matchPlayerId:...] in PARTITE CONFERMATE. Se non trovi NESSUNA partita confermata → NONE e chiedi quale partita vuole spostare.
 - FAQ_REQUEST — params: { "question": "testo esatto della domanda" } — usa SOLO quando l'utente fa una domanda sul circolo (orari speciali, regole particolari, eventi, iniziative) a cui NON puoi rispondere con le informazioni disponibili.
@@ -792,30 +793,9 @@ export async function executeAction(
             const { increaseReliability } = await import('./scoring');
             await increaseReliability(player.id).catch(() => {});
 
-            // Notifica progressiva: informa gli altri giocatori già confermati se la partita non è ancora LOCKED
-            const updatedMatch = await prisma.match.findUnique({
-                where: { id: inv.matchId },
-                include: { MatchPlayer: { where: { leftAt: null }, include: { player: true }, orderBy: { joinedAt: 'asc' } } },
-            });
-            if (updatedMatch) {
-                if (updatedMatch.status === 'OPEN') {
-                    // Partita ancora aperta — notifica gli altri giocatori già dentro
-                    const newName = (player.name || 'Un giocatore').split(' ')[0];
-                    const confirmedCount = updatedMatch.MatchPlayer.length;
-                    const others = updatedMatch.MatchPlayer.filter(mp => mp.playerId !== player.id);
-                    if (others.length > 0) {
-                        const { simulateTypingAndSend } = await import('./whatsapp');
-                        const msg = `${newName} si è unito! Siete ${confirmedCount}/${updatedMatch.playersNeeded} 🎾 Mancano ancora ${updatedMatch.playersNeeded - confirmedCount}.`;
-                        for (const mp of others) {
-                            simulateTypingAndSend(mp.player.phoneNumber, msg).catch(() => {});
-                        }
-                    }
-                }
-                // Se LOCKED: messageHandler chiamerà handleMatchFilled — restituiamo matchId per segnalarlo
-                return { success: true, matchId: updatedMatch.status === 'LOCKED' ? inv.matchId : undefined };
-            }
-
-            return { success: true };
+            // Se LOCKED: messageHandler chiamerà handleMatchFilled — restituiamo matchId per segnalarlo
+            const updatedMatch = await prisma.match.findUnique({ where: { id: inv.matchId }, select: { status: true } });
+            return { success: true, matchId: updatedMatch?.status === 'LOCKED' ? inv.matchId : undefined };
         }
 
         if (action === 'REJECT_INVITATION') {
