@@ -473,7 +473,7 @@ function MatchChip({ match, onCancel, onDeleteUnavailable }) {
   const isUnavail = match.type === "UNAVAILABLE";
   const color = isUnavail ? C.muted : (colorMap[match.status] || C.muted);
   const typeIcon = match.type === "LESSON" ? "👨‍🏫" : isUnavail ? "⛔" : match.isPrivateBooking ? "🔒" : "🎾";
-  const canDelete = (match.status === "OPEN" && match.type === "MATCH") || isUnavail;
+  const canDelete = (match.status === "OPEN" || match.status === "LOCKED") || isUnavail;
 
   const bookerName = match.isPrivateBooking
     ? (() => { const b = match.MatchPlayer?.find(mp => !mp.leftAt); return b?.player?.name || b?.player?.phoneNumber?.slice(-4) || null; })()
@@ -618,7 +618,7 @@ function MatchCard({ match, onCancel }) {
         ))}
       </div>
 
-      {match.status === "OPEN" && (
+      {(match.status === "OPEN" || match.status === "LOCKED") && (
         <button onClick={() => onCancel(match.id)} style={{ ...btnGhost, fontSize: 11, color: C.cancelled, borderColor: `${C.cancelled}30` }}>
           Cancella
         </button>
