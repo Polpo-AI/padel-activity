@@ -52,7 +52,7 @@ function Toggle({ value, onChange, labelOn = "Sì", labelOff = "No" }) {
 }
 
 function Grid({ children }) {
-  return <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>{children}</div>;
+  return <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, alignItems: "end" }}>{children}</div>;
 }
 
 export default function SettingsView({ token, club, onClubUpdate }) {
