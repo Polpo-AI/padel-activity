@@ -290,7 +290,6 @@ describe('matchmaker.processWave: imposta clubId nel context', () => {
                 club: {
                     id: CLUB_A,
                     maxDailyMessages: 3,
-                    waveMultiplier: 3,
                     matchLowerRange: 1.0,
                     matchUpperRange: 1.0,
                 },

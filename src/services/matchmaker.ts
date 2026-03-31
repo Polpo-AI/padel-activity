@@ -109,7 +109,6 @@ async function _processWaveInner(matchId: string, waveNumber: number, urgencyMul
         const { players, targetCount } = await selectPlayersForWave(
             matchId,
             spotsNeeded,
-            match.club?.waveMultiplier ?? 3
         );
 
         let playersList = [...players];

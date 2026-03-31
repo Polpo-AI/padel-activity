@@ -131,7 +131,6 @@ model Club {
   aiTone                     String?
   adminPhone                 String?
   adminAlternativePhone      String?
-  waveMultiplier             Int      @default(3)
   deadlineMinutesBeforeMatch Int      @default(60)
   mixedLevelRange            Int      @default(1)
   matchUpperRange            Float    @default(1.0)

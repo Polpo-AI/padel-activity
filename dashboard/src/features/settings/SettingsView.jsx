@@ -11,7 +11,6 @@ const EMPTY = {
   openTime: "08:00", closeTime: "23:30", matchDuration: 90, deadlineMinutesBeforeMatch: 60,
   // Matchmaking
   skillLevelCount: 3, matchLowerRange: 1.0, matchUpperRange: 1.0,
-  waveMultiplier: 3,
   // Skill test
   skillTestCost: 0, skillTestDuration: 60,
 };
@@ -82,7 +81,6 @@ export default function SettingsView({ token, club, onClubUpdate }) {
         skillLevelCount: d.skillLevelCount ?? 3,
         matchLowerRange: d.matchLowerRange ?? 1.0,
         matchUpperRange: d.matchUpperRange ?? 1.0,
-        waveMultiplier: d.waveMultiplier ?? 3,
         skillTestCost: d.skillTestCost ?? 0,
         skillTestDuration: d.skillTestDuration ?? 60,
       });
@@ -204,9 +202,6 @@ export default function SettingsView({ token, club, onClubUpdate }) {
           </F>
           <F label="Numero livelli skill (2–7)">
             <input type="number" min={2} max={7} value={form.skillLevelCount} onChange={f("skillLevelCount", parseInt)} style={inputSt} />
-          </F>
-          <F label="Wave multiplier" hint="Quante persone vengono invitate per posto libero">
-            <input type="number" min={1} max={10} value={form.waveMultiplier} onChange={f("waveMultiplier", parseInt)} style={inputSt} />
           </F>
         </Grid>
       </Section>

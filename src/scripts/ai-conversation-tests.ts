@@ -120,7 +120,6 @@ async function setup() {
             matchLowerRange: 1.5,
             matchUpperRange: 1.5,
             maxDailyMessages: 50,
-            waveMultiplier: 2,
             city: 'Roma',
             address: 'Via Test 1',
             adminPhone: '390000000099',

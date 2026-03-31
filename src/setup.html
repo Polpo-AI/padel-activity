@@ -530,10 +530,6 @@
 
     <div class="field-row">
       <div>
-        <label>Moltiplicatore wave<span class="label-hint">posti × X = persone da contattare</span></label>
-        <input type="number" id="waveMultiplier" value="3" min="1" max="10" />
-      </div>
-      <div>
         <label>Max messaggi/giorno<span class="label-hint">per giocatore</span></label>
         <input type="number" id="maxDailyMessages" value="2" min="1" max="5" />
       </div>
@@ -620,7 +616,7 @@ const STATE = {
   courts: [{ name: 'Campo 1', covered: false }],
   skillLevelCount: 3, skillRange: 1.0,
   deadlineMinutes: 60, skillTestDuration: 60, skillTestCost: 0,
-  waveMultiplier: 3, maxDailyMessages: 2, aiTone: '',
+  maxDailyMessages: 2, aiTone: '',
   dashUsername: '', dashPassword: '',
 };
 
@@ -707,7 +703,6 @@ function collectStep(step) {
     STATE.skillTestCost = parseFloat(v('skillTestCost')) || 0;
   }
   if (step === 4) {
-    STATE.waveMultiplier = parseInt(v('waveMultiplier')) || 3;
     STATE.maxDailyMessages = parseInt(v('maxDailyMessages')) || 2;
     STATE.aiTone = v('aiTone');
   }
@@ -799,7 +794,6 @@ function buildSummary() {
     { k: 'Campi',            v: courts.map(c => `${c.name}${c.covered ? ' 🏠' : ' ☀️'}`).join(', '), full: true },
     { k: 'Livelli',          v: STATE.skillLevelCount },
     { k: 'Range skill',      v: `±${STATE.skillRange}` },
-    { k: 'Wave ×',           v: STATE.waveMultiplier },
     { k: 'Max msg/giorno',   v: STATE.maxDailyMessages },
     { k: 'Deadline',         v: `${STATE.deadlineMinutes} min prima` },
     { k: 'Dashboard user',   v: STATE.dashUsername },
@@ -831,7 +825,6 @@ function buildJson() {
     skillLevelCount: STATE.skillLevelCount,
     matchLowerRange: STATE.skillRange,
     matchUpperRange: STATE.skillRange,
-    waveMultiplier: STATE.waveMultiplier,
     maxDailyMessages: STATE.maxDailyMessages,
     deadlineMinutesBeforeMatch: STATE.deadlineMinutes,
     skillTestDuration: STATE.skillTestDuration,

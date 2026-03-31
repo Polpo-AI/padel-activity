@@ -19,7 +19,6 @@ async function main() {
       matchDuration: 90,
       skillLevelCount: 3,
       mixedLevelRange: 1,
-      waveMultiplier: 3,
       deadlineMinutesBeforeMatch: 60,
       aiTone: 'Sei il bot amichevole del Padel Staging Club. Sii estremamente conciso e professionale.',
       dashboardUsername: 'admin',

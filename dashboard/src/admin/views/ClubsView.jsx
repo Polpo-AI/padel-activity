@@ -11,7 +11,6 @@ function EditModal({ club, token, onClose, onSaved }) {
     name: club.name || "",
     city: club.city || "",
     address: club.address || "",
-    waveMultiplier: club.waveMultiplier ?? 3,
     matchLowerRange: club.matchLowerRange ?? 1,
     matchUpperRange: club.matchUpperRange ?? 1,
     maxDailyMessages: club.maxDailyMessages ?? 2,
@@ -52,7 +51,6 @@ function EditModal({ club, token, onClose, onSaved }) {
         {field("city", "Città")}
         {field("address", "Indirizzo")}
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-          {field("waveMultiplier", "Wave mult.", "number", 0.5)}
           {field("maxDailyMessages", "Max msg/giorno", "number", 1)}
           {field("matchLowerRange", "Range abilità −", "number", 0.5)}
           {field("matchUpperRange", "Range abilità +", "number", 0.5)}
@@ -112,7 +110,6 @@ export default function ClubsView({ token }) {
                     ["Partite (30gg)", c.matchesThisMonth],
                     ["Fill rate (30gg)", `${Math.round((c.fillRate || 0) * 100)}%`],
                     ["Max msg/gg", c.maxDailyMessages],
-                    ["Wave mult.", c.waveMultiplier],
                   ].map(([label, val]) => (
                     <div key={label} style={{ display: "flex", flexDirection: "column", gap: 3 }}>
                       <span style={{ fontSize: 10, color: C.muted, textTransform: "uppercase", letterSpacing: "0.08em" }}>{label}</span>

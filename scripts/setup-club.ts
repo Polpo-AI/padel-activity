@@ -59,7 +59,6 @@ async function main() {
     // ── Wave ───────────────────────────────────
     console.log('\n━'.repeat(40));
     console.log('📡 CONFIGURAZIONE WAVE');
-    const waveMultiplier = await askInt('\nMoltiplicatore wave (posti_mancanti × X = persone da contattare)', 3);
     const deadlineMinutesBeforeMatch = await askInt('Minuti prima della partita oltre cui si cancella se non è piena', 60);
 
     // ── Tono AI ────────────────────────────────
@@ -85,7 +84,6 @@ async function main() {
     console.log(`  Admin ALT WA:   ${adminAlternativePhone || 'non configurato'}`);
     console.log(`  Campi (${courtCount}):     ${courts.join(', ')}`);
     console.log(`  Livelli:        ${skillLevelCount}`);
-    console.log(`  Wave ×:         ${waveMultiplier}`);
     console.log(`  Deadline:       ${deadlineMinutesBeforeMatch} min prima`);
     console.log(`  Dashboard user: ${dashboardUsername}`);
 
@@ -109,7 +107,6 @@ async function main() {
             matchDuration,
             skillLevelCount,
             mixedLevelRange,
-            waveMultiplier,
             deadlineMinutesBeforeMatch,
             aiTone,
             dashboardUsername,

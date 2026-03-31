@@ -136,7 +136,6 @@ async function filterExcluded(players: any[]): Promise<any[]> {
 export async function selectPlayersForWave(
     matchId: string,
     spotsNeeded: number,
-    clubWaveMultiplier: number = 3
 ): Promise<{ players: any[]; targetCount: number }> {
     const match = await prisma.match.findUnique({
         where: { id: matchId },

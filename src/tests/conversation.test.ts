@@ -68,7 +68,6 @@ const MOCK_CLUB = {
     maxDailyMessages: 3,
     matchLowerRange: 1.0,
     matchUpperRange: 1.0,
-    waveMultiplier: 3,
     skillTestCost: 30,
     skillTestDuration: 60,
     openTime: '08:00',

@@ -116,7 +116,7 @@ router.patch('/club', authMiddleware, async (req: Request, res: Response) => {
         name, city, address, adminPhone, adminAlternativePhone,
         botName, aiTone, maxDailyMessages, racketPrice,
         openTime, closeTime, matchDuration, deadlineMinutesBeforeMatch,
-        skillLevelCount, matchLowerRange, matchUpperRange, waveMultiplier,
+        skillLevelCount, matchLowerRange, matchUpperRange,
         skillTestCost, skillTestDuration,
     } = req.body;
     const confirm = req.query.confirm === 'true';
@@ -175,7 +175,7 @@ router.patch('/club', authMiddleware, async (req: Request, res: Response) => {
                 skillLevelCount:            skillLevelCount !== undefined ? parseInt(skillLevelCount) : undefined,
                 matchLowerRange:            matchLowerRange !== undefined ? parseFloat(matchLowerRange) : undefined,
                 matchUpperRange:            matchUpperRange !== undefined ? parseFloat(matchUpperRange) : undefined,
-                waveMultiplier:             waveMultiplier !== undefined ? parseInt(waveMultiplier) : undefined,
+
                 skillTestCost:              skillTestCost !== undefined ? parseFloat(skillTestCost) : undefined,
                 skillTestDuration:          skillTestDuration !== undefined ? parseInt(skillTestDuration) : undefined,
             },

@@ -122,9 +122,9 @@ class Conv {
           rateLimited: false,
         };
         this.turns.push(r);
-        console.log(`  USER: ${userMsg.substring(0, 80)}`);
-        console.log(`  BOT  [${brain.action}]: ${brain.message.substring(0, 120)}`);
-        if (actionResult) console.log(`  RESULT: ${JSON.stringify(actionResult).substring(0, 100)}`);
+        console.log(`  USER: ${userMsg}`);
+        console.log(`  BOT  [${brain.action}]: ${brain.message}`);
+        if (actionResult) console.log(`  RESULT: ${JSON.stringify(actionResult, null, 2)}`);
         return r;
       } catch (e: any) {
         const is429 = e.message?.includes('429') || e.message?.includes('rate_limit');
@@ -135,7 +135,7 @@ class Conv {
           continue;
         }
         const errMsg = is429 ? 'RATE_LIMIT' : e.message;
-        console.log(`  ERROR: ${errMsg.substring(0, 80)}`);
+        console.log(`  ERROR: ${errMsg}`);
         if (!is429) this.errors.push(`API error on: "${userMsg.substring(0, 50)}"`);
         const r: TurnResult = { userMsg, botMsg: '[ERROR]', action: 'ERROR', params: {}, actionResult: null, rateLimited: is429 };
         this.turns.push(r);

@@ -127,7 +127,6 @@ async function setup() {
             adminPhone: '390000000000',
             matchLowerRange: 1.0,
             matchUpperRange: 1.0,
-            waveMultiplier: 2,
             maxDailyMessages: 3,
         },
     });
@@ -709,7 +708,7 @@ async function runWaveSelectionTests() {
         });
         await prisma.matchPlayer.create({ data: { matchId: match.id, playerId: playerSkilled.id } });
 
-        const result = await selectPlayersForWave(match.id, 3, testClub.waveMultiplier);
+        const result = await selectPlayersForWave(match.id, 3);
         const selectedIds = result.players.map((p: any) => p.id);
 
         assert(!selectedIds.includes(playerC.id), 'playerC (skill 5.0) non deve essere selezionato');
@@ -730,7 +729,7 @@ async function runWaveSelectionTests() {
         // playerD è active=true (abbiamo impostato in OPT_IN test), quindi lo escludiamo manualmente
         await prisma.player.update({ where: { id: playerD.id }, data: { active: false } });
 
-        const result = await selectPlayersForWave(match.id, 3, testClub.waveMultiplier);
+        const result = await selectPlayersForWave(match.id, 3);
         const selectedIds = result.players.map((p: any) => p.id);
         assert(!selectedIds.includes(playerD.id), 'playerD (inactive) non deve essere selezionato');
 
@@ -751,7 +750,7 @@ async function runWaveSelectionTests() {
         // playerB già invitato con status REJECTED
         await prisma.invitation.create({ data: { matchId: match.id, playerId: playerB.id, status: 'REJECTED' } });
 
-        const result = await selectPlayersForWave(match.id, 3, testClub.waveMultiplier);
+        const result = await selectPlayersForWave(match.id, 3);
         const selectedIds = result.players.map((p: any) => p.id);
         assert(!selectedIds.includes(playerB.id), 'playerB (già invitato) non deve essere riselezionato');
 
