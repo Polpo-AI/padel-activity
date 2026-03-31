@@ -14,7 +14,7 @@ import pino from 'pino';
 
 const logger = pino({ level: 'info' });
 
-export const PRIOR = 0.33;
+export const PRIOR = 0.33; // fallback EMA per giocatori legacy con reliabilityScore=0 nel DB
 const ALPHA = 0.15;
 const LAST_MINUTE_BONUS = 1.3;
 const LAST_MINUTE_THRESHOLD_MIN = 120;
@@ -33,8 +33,7 @@ export async function updateShowUpRate(
     const player = await prisma.player.findUnique({ where: { id: playerId } });
     if (!player) return;
 
-    // reliabilityScore = 0 su giocatori nuovi: trattiamo come prior
-    const currentRate = player.reliabilityScore === 0 ? PRIOR : player.reliabilityScore;
+    const currentRate = player.reliabilityScore;
 
     let eventValue = showed ? 1.0 : 0.0;
     if (showed && minutesUntilMatchWhenInvited <= LAST_MINUTE_THRESHOLD_MIN) {
@@ -122,8 +121,6 @@ export async function processMatchOutcomes(matchId: string): Promise<void> {
 async function filterExcluded(players: any[]): Promise<any[]> {
     const result: any[] = [];
     for (const p of players) {
-        // Nuovi utenti (score=0) passano sempre — non hanno abbastanza storia
-        if (p.reliabilityScore === 0) { result.push(p); continue; }
         if (p.reliabilityScore >= EXCLUSION_THRESHOLD) { result.push(p); continue; }
         // Score basso — controlla quanti inviti ha ricevuto
         const invCount = await prisma.invitation.count({ where: { playerId: p.id } });
@@ -212,7 +209,7 @@ export async function selectPlayersForWave(
 
     for (let i = 0; i < sortedEligible.length; i++) {
         const player = sortedEligible[i];
-        const ema = player.reliabilityScore === 0 ? PRIOR : player.reliabilityScore;
+        const ema = player.reliabilityScore;
         currentEmaSum += ema;
         targetCount++;
         
@@ -410,7 +407,7 @@ export async function getPlayerStats(playerId: string) {
         totalInvitations,
         totalShowed,
         totalNoShow,
-        showUpRate: player?.reliabilityScore === 0 ? PRIOR : (player?.reliabilityScore ?? PRIOR),
+        showUpRate: player?.reliabilityScore ?? 0.33,
     };
 }
 

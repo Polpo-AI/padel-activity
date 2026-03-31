@@ -343,7 +343,7 @@ router.get('/matches/suggest-level', authMiddleware, async (req: Request, res: R
             const eligible = pool.filter(p =>
                 p.skillLevel >= level - lowerRange && p.skillLevel <= level + upperRange
             );
-            const emaSum = eligible.reduce((sum, p) => sum + (p.reliabilityScore === 0 ? PRIOR : p.reliabilityScore), 0);
+            const emaSum = eligible.reduce((sum, p) => sum + (p.reliabilityScore || PRIOR), 0);
             return { level, playerCount: eligible.length, emaSum: parseFloat(emaSum.toFixed(2)) };
         });
 

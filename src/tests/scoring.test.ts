@@ -74,7 +74,7 @@ describe('updateShowUpRate — formula EMA', () => {
         (prisma.player.update as any).mockResolvedValue({});
     });
 
-    it('giocatore nuovo (score=0): usa PRIOR come base', async () => {
+    it('giocatore legacy (score=0 nel DB): usa PRIOR come base', async () => {
         (prisma.player.findUnique as any).mockResolvedValue({ id: 'p1', reliabilityScore: 0 });
 
         await updateShowUpRate('p1', true, 360);

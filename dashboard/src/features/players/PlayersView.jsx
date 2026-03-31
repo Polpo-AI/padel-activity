@@ -36,7 +36,7 @@ function PlayerProfile({ playerId, token, onClose, onUpdated, skillLevelCount = 
   if (loading) return <Modal title="Profilo giocatore" onClose={onClose}><Spinner /></Modal>;
   if (!player) return null;
 
-  const showRate = player.reliabilityScore === 0 ? 0.33 : player.reliabilityScore;
+  const showRate = player.reliabilityScore || 0.33;
   const rateColor = showRate >= 0.6 ? C.open : showRate >= 0.3 ? C.warning : C.cancelled;
 
   return (
@@ -316,7 +316,7 @@ export default function PlayersView({ token, club }) {
           {players.length === 0 && <div style={{ padding: 32, textAlign: "center", color: C.muted, fontSize: 13 }}>Nessun giocatore trovato</div>}
 
           {players.map((p, i) => {
-            const rate = p.reliabilityScore === 0 ? 0.33 : p.reliabilityScore;
+            const rate = p.reliabilityScore || 0.33;
             return (
               <div key={p.id} onClick={() => setSelectedPlayer(p.id)} style={{
                 display: "grid", gridTemplateColumns: "2fr 1.5fr 0.6fr 0.8fr 0.7fr 0.7fr",

@@ -737,6 +737,7 @@ export async function executeAction(
                     name,
                     clubId: club.id,
                     skillLevel: -1,
+                    reliabilityScore: 0.33,
                     gender,
                     active: true,
                 },
