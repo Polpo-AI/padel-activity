@@ -72,6 +72,7 @@ export async function notifyMatchCancelled(matchId: string, clubId: string): Pro
         playerCount: confirmed.length,
         originalMatchId: matchId,
         originalStartTime: match.startTime,
+        originalSkillLevel: match.skillLevel ?? 0,
         reason: 'CANCELLED',
     });
 }

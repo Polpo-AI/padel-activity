@@ -761,6 +761,7 @@ Scrivi solo il messaggio.`;
                 playerCount: 1,
                 originalMatchId: matchId,
                 originalStartTime: startTime,
+                originalSkillLevel: match?.skillLevel ?? 0,
                 reason: 'SLOT_TAKEN',
                 clubId: match?.clubId || '',
             });

@@ -48,6 +48,7 @@ export interface RedirectGroup {
     playerCount: number;            // quanti sono in totale
     originalMatchId: string;
     originalStartTime: Date;
+    originalSkillLevel: number;     // skill level della partita originale — usato per filtrare P1/P2
     reason: 'CANCELLED' | 'UNFILLED' | 'SLOT_TAKEN' | 'POOL_EXHAUSTED' | 'CANCELLATION';
     clubId: string;                 // ✅ FIX J: obbligatorio per isolamento multi-tenant
 }
@@ -63,7 +64,8 @@ export async function redirectGroup(group: RedirectGroup): Promise<void> {
         group.playerCount,
         group.originalStartTime,
         group.originalMatchId,
-        group.clubId  // ✅ FIX J
+        group.clubId,
+        group.originalSkillLevel,
     );
 
     const message = buildRedirectMessage(group, options);
@@ -101,7 +103,8 @@ export async function findRedirectOptions(
     playerCount: number,
     referenceTime: Date,
     excludeMatchId: string,
-    clubId: string           // ✅ FIX J: filtra sempre per club
+    clubId: string,          // ✅ FIX J: filtra sempre per club
+    originalSkillLevel: number = 0,
 ): Promise<RedirectOption[]> {
     const options: RedirectOption[] = [];
 
@@ -110,13 +113,27 @@ export async function findRedirectOptions(
     const dayStart = new Date(referenceTime.getTime() - REDIRECT_WINDOW_DAYS * 24 * 60 * 60 * 1000);
     const dayEnd = new Date(referenceTime.getTime() + REDIRECT_WINDOW_DAYS * 24 * 60 * 60 * 1000);
 
+    // Carica i range di skill del club per filtrare le partite compatibili
+    const club = await prisma.club.findUnique({
+        where: { id: clubId },
+        select: { matchLowerRange: true, matchUpperRange: true },
+    });
+    const lowerRange = club?.matchLowerRange ?? 1.0;
+    const upperRange = club?.matchUpperRange ?? 1.0;
+    const skillMin = originalSkillLevel > 0 ? originalSkillLevel - lowerRange : undefined;
+    const skillMax = originalSkillLevel > 0 ? originalSkillLevel + upperRange : undefined;
+
     // ✅ FIX J: filtra per clubId — nessuna partita cross-club
+    // P1/P2: solo partite nel range di skill compatibile con la partita originale
     const openMatches = await prisma.match.findMany({
         where: {
             clubId,
             id: { not: excludeMatchId },
             status: 'OPEN',
             startTime: { gte: windowStart, lte: windowEnd },
+            ...(skillMin !== undefined && skillMax !== undefined ? {
+                skillLevel: { gte: skillMin, lte: skillMax },
+            } : {}),
         },
         include: { MatchPlayer: true, court: true },
         orderBy: { startTime: 'asc' },
