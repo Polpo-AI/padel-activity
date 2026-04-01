@@ -938,17 +938,21 @@ export async function executeAction(
             if (question && club?.id) {
                 const redis = getRedis();
                 const faqKey = `faq:pending_question:${club.id}`;
-                // Salva in Redis prima — se WA offline, il retry al reconnect la invierà
-                await redis.set(faqKey, JSON.stringify({ question, askedBy: player?.name || player?.phoneNumber }), 'EX', 7 * 24 * 3600);
+                // Salva in Redis — include playerJid per poter rispondere all'utente dopo
+                // NON cancellare dopo l'invio: handleAdminFaqFlow dipende da questa chiave per
+                // ricevere e inoltrare la risposta dell'admin all'utente originale.
+                await redis.set(faqKey, JSON.stringify({
+                    question,
+                    askedBy: player?.name || player?.phoneNumber,
+                    playerJid: jid,
+                }), 'EX', 7 * 24 * 3600);
                 const { notifyAdmin } = await import('../utils/notify-admin');
-                const sent = await notifyAdmin(
-                    `❓ ${player?.name || player?.phoneNumber} ha chiesto:\n"${question}"\n\nRispondi qui per salvare la tua risposta come FAQ.`,
+                await notifyAdmin(
+                    `❓ ${player?.name || player?.phoneNumber} ha chiesto:\n"${question}"\n\nRispondi qui per salvare la tua risposta come FAQ e inoltrarla all'utente.`,
                     `faq_pending_${question.substring(0, 20)}`,
                     club?.adminPhone,
                     club?.name,
-                ).catch(() => false);
-                // Se inviata con successo, rimuovi dalla coda (il retry al reconnect non la rimanda)
-                if (sent) await redis.del(faqKey).catch(() => {});
+                ).catch(() => {});
             }
             return { success: true };
         }

@@ -64,7 +64,7 @@ export async function handleAdminFaqFlow(text: string, club: any, jid: string): 
     // ── Stato 1: admin ha già visto la proposta di salvataggio e deve confermare sì/no
     const confirmRaw = await redis.get(`faq:awaiting_save_confirm:${clubId}`);
     if (confirmRaw) {
-        const { question, answer, askedBy } = JSON.parse(confirmRaw);
+        const { question, answer, askedBy, playerJid } = JSON.parse(confirmRaw);
         const affirmative = /^(s[iì]|yes|ok|va bene|certo|giusto|esatto|salvala?|conferm)/i.test(text.trim());
         const negative = /^(no|nope|non salvare|non va bene|sbagliato|lascia perdere|skip)/i.test(text.trim());
 
@@ -90,27 +90,32 @@ export async function handleAdminFaqFlow(text: string, club: any, jid: string): 
     const pendingRaw = await redis.get(`faq:pending_question:${clubId}`);
     if (!pendingRaw) return false;
 
-    const { question, askedBy } = JSON.parse(pendingRaw);
+    const { question, askedBy, playerJid } = JSON.parse(pendingRaw);
 
     const classification = await classifyAdminFaqResponse(question, text);
 
     if (!classification.isFaqAnswer) return false;
 
+    // Inoltra sempre la risposta all'utente originale (se abbiamo il JID)
+    if (playerJid) {
+        await simulateTypingAndSend(playerJid, text.trim()).catch(() => {});
+    }
+
     if (classification.isFaqAnswer && classification.confidence === 'high' && classification.faqWorthy) {
         await prisma.faq.create({ data: { clubId, question, answer: text.trim(), askedBy: askedBy || null } });
         await redis.del(`faq:pending_question:${clubId}`);
-        await sendMessage(jid, `Ho salvato la risposta come FAQ. Gli utenti la riceveranno direttamente la prossima volta che chiedono qualcosa di simile.`);
+        await sendMessage(jid, `Risposta inoltrata${playerJid ? ` a ${askedBy || 'utente'}` : ''} e salvata come FAQ ✅`);
         return true;
     }
 
     await redis.set(
         `faq:awaiting_save_confirm:${clubId}`,
-        JSON.stringify({ question, answer: text.trim(), askedBy }),
+        JSON.stringify({ question, answer: text.trim(), askedBy, playerJid }),
         'EX', 24 * 3600,
     );
     await sendMessage(
         jid,
-        `Vuoi che salvi questa risposta come FAQ per le prossime domande simili?\n\nD: ${question}\nR: ${text.trim()}\n\nRispondi sì o no.`,
+        `Risposta inoltrata${playerJid ? ` a ${askedBy || 'utente'}` : ''}.\n\nVuoi salvarla anche come FAQ per le prossime domande simili?\n\nD: ${question}\nR: ${text.trim()}\n\nRispondi sì o no.`,
     );
     return true;
 }

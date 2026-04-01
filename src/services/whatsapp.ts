@@ -294,7 +294,7 @@ async function _doConnect(key: string, state: ClubSocketState): Promise<void> {
                                 const { question, askedBy } = JSON.parse(pendingFaq);
                                 const msg = `🚨 *${club.name ?? 'Padel Bot'} — Alert*\n\n❓ ${askedBy || 'Un giocatore'} ha chiesto:\n"${question}"\n\nRispondi qui per salvare la tua risposta come FAQ.`;
                                 await _sendRaw(state, adminJid, msg);
-                                await redis.del(`faq:pending_question:${clubId}`);
+                                // NON cancellare: handleAdminFaqFlow dipende da questa chiave
                                 logger.info({ clubId, question }, 'Pending FAQ sent to admin after reconnect');
                             }
                         } catch (faqErr) {
