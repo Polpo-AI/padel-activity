@@ -86,6 +86,44 @@ export async function classifyIntent(
 }
 
 // ─────────────────────────────────────────────
+// SECONDARY FAQ DETECTION
+// Usato sui batch con 2+ messaggi: rileva se un singolo messaggio
+// contiene una domanda separata sul circolo che richiede FAQ_REQUEST.
+// Ritorna la domanda estratta (stringa) o null se non è una FAQ.
+// ─────────────────────────────────────────────
+
+export async function detectSecondaryFaqQuestion(text: string): Promise<string | null> {
+    if (!text || text.trim().length < 5) return null;
+    try {
+        const result = await withRetry(
+            () => anthropic.messages.create({
+                model: 'claude-haiku-4-5-20251001',
+                max_tokens: 80,
+                temperature: 0,
+                messages: [{
+                    role: 'user',
+                    content: `Sei il filtro di un bot padel italiano. Devi stabilire se questo messaggio contiene una domanda rivolta al circolo su servizi, regole, assicurazioni, tornei, orari speciali o qualsiasi cosa che il gestore dovrebbe rispondere.
+NON è una domanda FAQ se parla di: prenotazione, orario della partita, campo da prenotare, "sono disponibile", "vengo", "porto amici".
+È una domanda FAQ se chiede: assicurazioni, spogliatoi, docce, regolamento, tornei, abbonamenti, parcheggio, servizi extra, qualsiasi cosa sul circolo in generale.
+
+Messaggio: "${text.slice(0, 300)}"
+
+Rispondi SOLO con:
+- FAQ: <testo esatto della domanda estratta> (se è una FAQ)
+- NO (se non è una FAQ)`,
+                }],
+            }),
+            { maxAttempts: 2, baseDelayMs: 500, shouldRetry: isTransientNetworkError, context: 'detectSecondaryFaq' }
+        );
+        const raw = result.content[0].type === 'text' ? result.content[0].text.trim() : '';
+        if (raw.startsWith('FAQ:')) return raw.slice(4).trim();
+        return null;
+    } catch {
+        return null;
+    }
+}
+
+// ─────────────────────────────────────────────
 // REQUIRES RESPONSE — filtro messaggi offline
 // Usato per evitare di rispondere a ringraziamenti,
 // conferme, emoji o altri messaggi che non richiedono azione.
