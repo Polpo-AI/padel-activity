@@ -12,6 +12,7 @@
  */
 
 import pino from 'pino';
+import { sendMessage } from '../services/whatsapp';
 const logger = pino({ level: 'info' });
 
 const notificationCooldowns = new Map<string, number>();
@@ -61,8 +62,6 @@ export async function notifyAdmin(
     }
 
     try {
-        const { sendMessage } = await import('../services/whatsapp');
-
         const adminJid = `${phone.replace(/\D/g, '')}@s.whatsapp.net`;
         await sendMessage(adminJid, `🚨 *${name ?? 'Padel Bot'} — Alert*\n\n${message}`);
         notificationCooldowns.set(key, Date.now());
