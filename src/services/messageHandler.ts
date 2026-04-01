@@ -662,6 +662,37 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[], cor
             const { notifyAdmin } = await import('../utils/notify-admin');
             notifyAdmin(`⚠️ OPT_OUT: ${player.name || phoneNumber} (${phoneNumber}) ha disattivato i messaggi.`).catch(() => {});
         }
+
+        // ── Secondary FAQ detection: batch con 2+ messaggi ───────────────────────
+        // Quando il brain esegue un'azione concreta (BOOK_FIELD, ACCEPT_INVITATION, ecc.)
+        // ma il batch conteneva anche una domanda separata (es. "prenoto + c'è l'assicurazione?"),
+        // rileviamo la domanda e la inoltriamo all'admin come FAQ_REQUEST secondaria.
+        // Non attiviamo se la primary era già FAQ_REQUEST, NONE o REGISTER_PLAYER.
+        if (
+            result.success &&
+            action !== 'FAQ_REQUEST' &&
+            action !== 'NONE' &&
+            action !== 'REGISTER_PLAYER' &&
+            textMessages.length > 1
+        ) {
+            const isBookingLike = (text: string): boolean => {
+                const t = text.toLowerCase();
+                return /\balle\s+\d|\bdomani\b|\bdopodomani\b|\bprenot|\bcampo\b|\borario\b|\bsettimana\b|\bgiorno\b|\bdomani\b/.test(t);
+            };
+            const faqCandidate = textMessages.find(msg => {
+                const t = (msg.text || '').trim();
+                if (!t || isBookingLike(t)) return false;
+                if (t.includes('?')) return true;
+                return /\bc['']è\b|\bci sono\b|\bavete\b|\bè possibile\b|\bsi può\b|\bfate\b|\bfanno\b|\besiste\b/i.test(t);
+            });
+            if (faqCandidate) {
+                const faqText = (faqCandidate.text || '').trim();
+                logger.info({ faqText, primaryAction: action }, 'Secondary FAQ_REQUEST detected in multi-message batch');
+                await executeAction('FAQ_REQUEST', { question: faqText }, player, club, phoneNumber).catch(err => {
+                    logger.warn({ err }, 'Secondary FAQ_REQUEST failed — ignored');
+                });
+            }
+        }
     }
 }
 
