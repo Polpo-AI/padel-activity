@@ -33,7 +33,7 @@ function fmtTime(d: Date): string {
 export async function notifyMatchCancelled(matchId: string, clubId: string): Promise<void> {
     const match = await prisma.match.findUnique({
         where: { id: matchId },
-        include: { MatchPlayer: { where: { leftAt: null }, include: { player: true } } },
+        include: { MatchPlayer: { where: { leftAt: null }, include: { player: true } }, court: true },
     });
     if (!match) return;
 
@@ -73,6 +73,7 @@ export async function notifyMatchCancelled(matchId: string, clubId: string): Pro
         originalMatchId: matchId,
         originalStartTime: match.startTime,
         originalSkillLevel: match.skillLevel ?? 0,
+        originalCourtIsCovered: (match as any).court?.isCovered ?? null,
         reason: 'CANCELLED',
     });
 }

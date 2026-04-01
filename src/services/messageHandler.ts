@@ -762,6 +762,7 @@ Scrivi solo il messaggio.`;
                 originalMatchId: matchId,
                 originalStartTime: startTime,
                 originalSkillLevel: match?.skillLevel ?? 0,
+                originalCourtIsCovered: match?.court?.isCovered ?? null,
                 reason: 'SLOT_TAKEN',
                 clubId: match?.clubId || '',
             });

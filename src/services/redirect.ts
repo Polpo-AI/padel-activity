@@ -5,14 +5,13 @@
  * Chiamato ogni volta che N giocatori vengono rimossi da una partita
  * per qualsiasi motivo (disdetta, cancellazione, slot preso, pool esaurito).
  *
- * Priorità di ricerca:
- * P1 — Partite OPEN dove mancano esattamente N → chiusura garantita
- * P2 — Partite OPEN dove mancano più di N → entrano ma non chiudono
- * P3 — Campi liberi in orari vicini (±2h stesso giorno, poi ±1 giorno)
- * P4 — Rimando ai primi (4 - soluzioni_trovate) campi disponibili qualunque
- * P5 — Jolly: campo libero in giorno limitrofo (sempre aggiunto se soluzioni < 5)
+ * Priorità di ricerca (fino a 5 opzioni totali):
+ * FASE 1 — Partite OPEN nel range di skill del club (skip se skillLevel <= 0)
+ *           ordinate per vicinanza all'orario originale
+ * FASE 2 — Slot liberi della stessa tipologia (coperto/scoperto) della partita originale,
+ *           espansione bidirezionale dall'orario originale
  *
- * Il bot presenta sempre 4-5 opzioni e aspetta conferma prima di spostare.
+ * Se non si raggiungono 5 opzioni si mostra quello che c'è (4, 3, 2...).
  */
 
 import { prisma } from './db';
@@ -22,35 +21,38 @@ import pino from 'pino';
 
 const logger = pino({ level: 'info' });
 
-const REDIRECT_WINDOW_HOURS = 2;       // ±2h per P1/P2/P3
-const REDIRECT_WINDOW_DAYS = 1;        // ±1 giorno per P3 esteso
-const TARGET_OPTIONS = 5;              // opzioni da mostrare (4 + 1 jolly)
+const OPEN_MATCH_WINDOW_HOURS = 24;   // cerca partite open entro ±24h dall'orario originale
+const FREE_SLOT_WINDOW_DAYS  = 7;    // cerca slot liberi entro ±7 giorni
+const TARGET_OPTIONS = 5;
 
 // ─────────────────────────────────────────────
 // TIPI
 // ─────────────────────────────────────────────
 
 export interface RedirectOption {
-    priority: 1 | 2 | 3 | 4 | 5;
-    matchId?: string;           // se partita esistente
+    priority: 1 | 2 | 3;
+    matchId?: string;               // se partita esistente
     court: string;
     courtId?: string | null;
+    courtIsCovered: boolean | null;
     startTime: Date;
-    spotsLeft?: number;         // posti liberi nella partita
-    willLock: boolean;          // true se aggiungendo N si chiude
-    description: string;        // testo human-readable per il messaggio
+    spotsLeft?: number;
+    willLock: boolean;
+    isOpenMatch: boolean;           // true = matchmaking open, false = campo da affittare
+    description: string;
 }
 
 export interface RedirectGroup {
-    referentPhone: string;          // Mario — chi contattare
+    referentPhone: string;
     referentJid: string;
-    playerPhones: string[];         // tutti i giocatori da spostare (incluso Mario)
-    playerCount: number;            // quanti sono in totale
+    playerPhones: string[];
+    playerCount: number;
     originalMatchId: string;
     originalStartTime: Date;
-    originalSkillLevel: number;     // skill level della partita originale — usato per filtrare P1/P2
+    originalSkillLevel: number;         // -1 = non testato, >=1.0 = testato
+    originalCourtIsCovered: boolean | null; // tipologia campo originale — null = qualsiasi
     reason: 'CANCELLED' | 'UNFILLED' | 'SLOT_TAKEN' | 'POOL_EXHAUSTED' | 'CANCELLATION';
-    clubId: string;                 // ✅ FIX J: obbligatorio per isolamento multi-tenant
+    clubId: string;
 }
 
 // ─────────────────────────────────────────────
@@ -66,29 +68,24 @@ export async function redirectGroup(group: RedirectGroup): Promise<void> {
         group.originalMatchId,
         group.clubId,
         group.originalSkillLevel,
+        group.originalCourtIsCovered,
     );
 
     const message = buildRedirectMessage(group, options);
 
-    // Contatta il referente (Mario)
     await simulateTypingAndSend(group.referentJid, message);
 
-    // Stato redirect — dual-write Redis + PostgreSQL tramite conversation-state
     try {
         const { setState } = await import('./conversation-state');
-        await setState(`state:role:${group.referentJid}:AWAITING_REDIRECT_CHOICE`, { group, options }, 3600); // 1h TTL
+        await setState(`state:role:${group.referentJid}:AWAITING_REDIRECT_CHOICE`, { group, options }, 3600);
     } catch (err) {
         logger.error({ err }, 'Failed to save redirect state');
     }
 
-    // Se abbiamo i numeri degli altri, li notifichiamo in parallelo (solo info, non chiedono)
     for (const phone of group.playerPhones) {
         if (phone === group.referentPhone) continue;
         try {
-            await simulateTypingAndSend(
-                phone,
-                buildPlayerNotificationMessage(group)
-            );
+            await simulateTypingAndSend(phone, buildPlayerNotificationMessage(group));
         } catch (err) {
             logger.error({ err }, `Failed to notify player ${phone} of redirect`);
         }
@@ -103,139 +100,89 @@ export async function findRedirectOptions(
     playerCount: number,
     referenceTime: Date,
     excludeMatchId: string,
-    clubId: string,          // ✅ FIX J: filtra sempre per club
+    clubId: string,
     originalSkillLevel: number = 0,
+    originalCourtIsCovered: boolean | null = null,
 ): Promise<RedirectOption[]> {
     const options: RedirectOption[] = [];
 
-    const windowStart = new Date(referenceTime.getTime() - REDIRECT_WINDOW_HOURS * 60 * 60 * 1000);
-    const windowEnd = new Date(referenceTime.getTime() + REDIRECT_WINDOW_HOURS * 60 * 60 * 1000);
-    const dayStart = new Date(referenceTime.getTime() - REDIRECT_WINDOW_DAYS * 24 * 60 * 60 * 1000);
-    const dayEnd = new Date(referenceTime.getTime() + REDIRECT_WINDOW_DAYS * 24 * 60 * 60 * 1000);
+    // ── FASE 1: Partite OPEN compatibili con lo skill ──────────────────────────
+    // Skip se il giocatore non è ancora testato (skillLevel <= 0)
+    if (originalSkillLevel > 0) {
+        const club = await prisma.club.findUnique({
+            where: { id: clubId },
+            select: { matchLowerRange: true, matchUpperRange: true },
+        });
+        const lowerRange = club?.matchLowerRange ?? 1.0;
+        const upperRange = club?.matchUpperRange ?? 1.0;
+        const skillMin = originalSkillLevel - lowerRange;
+        const skillMax = originalSkillLevel + upperRange;
 
-    // Carica i range di skill del club per filtrare le partite compatibili
-    const club = await prisma.club.findUnique({
-        where: { id: clubId },
-        select: { matchLowerRange: true, matchUpperRange: true },
-    });
-    const lowerRange = club?.matchLowerRange ?? 1.0;
-    const upperRange = club?.matchUpperRange ?? 1.0;
-    const skillMin = originalSkillLevel > 0 ? originalSkillLevel - lowerRange : undefined;
-    const skillMax = originalSkillLevel > 0 ? originalSkillLevel + upperRange : undefined;
+        const windowStart = new Date(referenceTime.getTime() - OPEN_MATCH_WINDOW_HOURS * 3600_000);
+        const windowEnd   = new Date(referenceTime.getTime() + OPEN_MATCH_WINDOW_HOURS * 3600_000);
 
-    // ✅ FIX J: filtra per clubId — nessuna partita cross-club
-    // P1/P2: solo partite nel range di skill compatibile con la partita originale
-    const openMatches = await prisma.match.findMany({
-        where: {
-            clubId,
-            id: { not: excludeMatchId },
-            status: 'OPEN',
-            startTime: { gte: windowStart, lte: windowEnd },
-            ...(skillMin !== undefined && skillMax !== undefined ? {
-                skillLevel: { gte: skillMin, lte: skillMax },
-            } : {}),
-        },
-        include: { MatchPlayer: true, court: true },
-        orderBy: { startTime: 'asc' },
-    });
-
-    // P1 — chiusura esatta
-    for (const match of openMatches) {
-        if (options.length >= TARGET_OPTIONS) break;
-        const spotsLeft = match.playersNeeded - match.MatchPlayer.filter((mp: any) => !mp.leftAt).length;
-        if (spotsLeft === playerCount) {
-            options.push({
-                priority: 1,
-                matchId: match.id,
-                court: match.court?.name || 'Campo',
-                courtId: match.courtId,
-                startTime: match.startTime,
-                spotsLeft,
-                willLock: true,
-                description: buildOptionDescription(1, match.court?.name || 'Campo', match.startTime, spotsLeft, playerCount),
-            });
-        }
-    }
-
-    // P2 — entrano ma non chiudono
-    for (const match of openMatches) {
-        if (options.length >= TARGET_OPTIONS - 1) break; // lascia spazio al jolly
-        const spotsLeft = match.playersNeeded - match.MatchPlayer.filter((mp: any) => !mp.leftAt).length;
-        if (spotsLeft > playerCount) {
-            // Evita duplicati con P1
-            if (!options.find(o => o.matchId === match.id)) {
-                options.push({
-                    priority: 2,
-                    matchId: match.id,
-                    court: match.court?.name || 'Campo',
-                courtId: match.courtId,
-                    startTime: match.startTime,
-                    spotsLeft,
-                    willLock: false,
-                    description: buildOptionDescription(2, match.court?.name || 'Campo', match.startTime, spotsLeft, playerCount),
-                });
-            }
-        }
-    }
-
-    // P3 — campi liberi ±2h (slot senza partita)
-    if (options.length < TARGET_OPTIONS - 1) {
-        const freeSlots = await findFreeSlots(referenceTime, windowStart, windowEnd, excludeMatchId, clubId);
-        for (const slot of freeSlots) {
-            if (options.length >= TARGET_OPTIONS - 1) break;
-            options.push({
-                priority: 3,
-                court: slot.court,
-                startTime: slot.startTime,
-                willLock: false,
-                description: buildOptionDescription(3, slot.court, slot.startTime, 4, playerCount),
-            });
-        }
-    }
-
-    // P4 — rimando ai primi (4 - soluzioni) campi disponibili qualunque
-    if (options.length < TARGET_OPTIONS - 1) {
-        const needed = (TARGET_OPTIONS - 1) - options.length;
-        const anyMatches = await prisma.match.findMany({
+        const openMatches = await prisma.match.findMany({
             where: {
                 clubId,
                 id: { not: excludeMatchId },
                 status: 'OPEN',
-                startTime: { gte: dayStart, lte: dayEnd },
+                startTime: { gte: windowStart, lte: windowEnd },
+                skillLevel: { gte: skillMin, lte: skillMax },
             },
-            include: { MatchPlayer: true, court: true },
-            orderBy: { startTime: 'asc' },
-            take: needed,
+            include: {
+                MatchPlayer: { where: { leftAt: null } },
+                court: true,
+            },
         });
 
-        for (const match of anyMatches) {
-            if (options.find(o => o.matchId === match.id)) continue;
-            const spotsLeft = match.playersNeeded - match.MatchPlayer.filter((mp: any) => !mp.leftAt).length;
-            if (spotsLeft >= playerCount) {
-                options.push({
-                    priority: 4,
-                    matchId: match.id,
-                    court: match.court?.name || 'Campo',
+        // Ordina per vicinanza all'orario originale
+        openMatches.sort((a, b) =>
+            Math.abs(a.startTime.getTime() - referenceTime.getTime()) -
+            Math.abs(b.startTime.getTime() - referenceTime.getTime())
+        );
+
+        for (const match of openMatches) {
+            if (options.length >= TARGET_OPTIONS) break;
+            const spotsLeft = match.playersNeeded - match.MatchPlayer.length;
+            if (spotsLeft < playerCount) continue;
+
+            options.push({
+                priority: spotsLeft === playerCount ? 1 : 2,
+                matchId: match.id,
+                court: match.court?.name || 'Campo',
                 courtId: match.courtId,
-                    startTime: match.startTime,
-                    spotsLeft,
-                    willLock: spotsLeft === playerCount,
-                    description: buildOptionDescription(4, match.court?.name || 'Campo', match.startTime, spotsLeft, playerCount),
-                });
-            }
+                courtIsCovered: match.court?.isCovered ?? null,
+                startTime: match.startTime,
+                spotsLeft,
+                willLock: spotsLeft === playerCount,
+                isOpenMatch: true,
+                description: buildOptionDescription(true, match.court?.name || 'Campo', match.court?.isCovered ?? null, match.startTime, spotsLeft),
+            });
         }
     }
 
-    // P5 — jolly: campo libero in giorno limitrofo
-    const jollySlot = await findJollySlot(referenceTime, dayStart, dayEnd, excludeMatchId, clubId);
-    if (jollySlot) {
-        options.push({
-            priority: 5,
-            court: jollySlot.court,
-            startTime: jollySlot.startTime,
-            willLock: false,
-            description: buildOptionDescription(5, jollySlot.court, jollySlot.startTime, 4, playerCount),
-        });
+    // ── FASE 2: Slot liberi stessa tipologia campo, orari più vicini ──────────
+    if (options.length < TARGET_OPTIONS) {
+        const needed = TARGET_OPTIONS - options.length;
+        const freeSlots = await findFreeSlotsNearby(
+            referenceTime,
+            originalCourtIsCovered,
+            clubId,
+            excludeMatchId,
+            needed,
+        );
+        for (const slot of freeSlots) {
+            options.push({
+                priority: 3,
+                court: slot.court,
+                courtId: slot.courtId,
+                courtIsCovered: slot.isCovered,
+                startTime: slot.startTime,
+                willLock: false,
+                isOpenMatch: false,
+                description: buildOptionDescription(false, slot.court, slot.isCovered, slot.startTime, 4),
+            });
+        }
     }
 
     return options;
@@ -252,7 +199,6 @@ export async function confirmRedirectChoice(
 ): Promise<void> {
     const { group, options } = pendingState;
 
-    // AI capisce quale opzione ha scelto
     const chosenOption = await resolveChoice(choiceText, options);
 
     if (!chosenOption) {
@@ -273,10 +219,8 @@ export async function confirmRedirectChoice(
     }
 
     if (chosenOption.matchId) {
-        // Partita esistente — aggiungi tutti i giocatori
         await addGroupToMatch(chosenOption.matchId, group);
     } else {
-        // Campo libero — crea nuova partita
         await createMatchForGroup(chosenOption, group);
     }
 }
@@ -308,7 +252,6 @@ async function addGroupToMatch(matchId: string, group: RedirectGroup): Promise<v
         return;
     }
 
-    // Aggiungi tutti i giocatori
     for (const phone of group.playerPhones) {
         const player = await prisma.player.findFirst({ where: { phoneNumber: phone } });
         if (!player) continue;
@@ -324,7 +267,6 @@ async function addGroupToMatch(matchId: string, group: RedirectGroup): Promise<v
         });
     }
 
-    // Controlla se ora è piena
     const updatedMatch = await prisma.match.findUnique({
         where: { id: matchId },
         include: { MatchPlayer: true, court: true },
@@ -335,14 +277,12 @@ async function addGroupToMatch(matchId: string, group: RedirectGroup): Promise<v
         await prisma.match.update({ where: { id: matchId }, data: { status: 'LOCKED' } });
 
         if (match.groupId) {
-            // Aggiungi al gruppo WA esistente
             const { getSock } = await import('./whatsapp');
             const sock = getSock();
             if (sock) {
                 for (const phone of group.playerPhones) {
                     await sock.groupParticipantsUpdate(match.groupId, [`${phone}@s.whatsapp.net`], 'add');
                 }
-                // Recupera i nomi dei nuovi arrivati
                 const newPlayers = await prisma.player.findMany({
                     where: { phoneNumber: { in: group.playerPhones } },
                     select: { name: true },
@@ -361,7 +301,7 @@ async function addGroupToMatch(matchId: string, group: RedirectGroup): Promise<v
     const timeStr = match.startTime.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
     await simulateTypingAndSend(
         group.referentJid,
-        `Perfetto! Vi ho segnati per le ${timeStr} al ${(match as any).court?.name || 'Campo'} 🎾${newCount >= match.playersNeeded ? ' Siamo al completo!' : ' Aspettiamo gli altri.'}`
+        `Perfetto! Vi ho segnati per le ${timeStr} al ${(updatedMatch as any).court?.name || 'Campo'} 🎾${newCount >= match.playersNeeded ? ' Siamo al completo!' : ' Aspettiamo gli altri.'}`
     );
 }
 
@@ -370,22 +310,22 @@ async function addGroupToMatch(matchId: string, group: RedirectGroup): Promise<v
 // ─────────────────────────────────────────────
 
 async function createMatchForGroup(option: RedirectOption, group: RedirectGroup): Promise<void> {
-    // ✅ FIX J: usa clubId dal group, mai findFirst()
     const referent = await prisma.player.findFirst({ where: { phoneNumber: group.referentPhone } });
-    const skillLevel = referent?.skillLevel || 'INTERMEDIATE';
+    const skillLevel = referent?.skillLevel && referent.skillLevel > 0
+        ? referent.skillLevel
+        : group.originalSkillLevel > 0 ? group.originalSkillLevel : 3.5;
 
     const match = await prisma.match.create({
         data: {
-            clubId: group.clubId,   // ✅ FIX J
+            clubId: group.clubId,
             courtId: option.courtId || null,
             startTime: option.startTime,
-            skillLevel: skillLevel as any,
+            skillLevel,
             playersNeeded: 4,
             status: 'OPEN',
         },
     });
 
-    // Aggiungi i giocatori del gruppo
     for (const phone of group.playerPhones) {
         const player = await prisma.player.findFirst({ where: { phoneNumber: phone } });
         if (!player) continue;
@@ -395,17 +335,16 @@ async function createMatchForGroup(option: RedirectOption, group: RedirectGroup)
         });
     }
 
-    // Avvia wave per i posti rimanenti
-    const { waveQueue } = await import('./queue');
     const spotsLeft = 4 - group.playerCount;
     if (spotsLeft > 0) {
-        await waveQueue.add('process-wave', {
+        const { waveQueue } = await import('./queue');
+        waveQueue.add('process-wave', {
             matchId: match.id,
             waveNumber: 1,
             limit: spotsLeft,
         }, {
             delay: Math.floor(Math.random() * 60000) + 30000,
-        });
+        }).catch(err => logger.warn({ err, matchId: match.id }, 'Wave scheduling failed'));
     }
 
     const timeStr = option.startTime.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
@@ -416,60 +355,68 @@ async function createMatchForGroup(option: RedirectOption, group: RedirectGroup)
 }
 
 // ─────────────────────────────────────────────
-// UTILITY: trova slot liberi
+// UTILITY: slot liberi per tipologia campo
 // ─────────────────────────────────────────────
 
-async function findFreeSlots(
+async function findFreeSlotsNearby(
     referenceTime: Date,
-    from: Date,
-    to: Date,
+    isCovered: boolean | null,
+    clubId: string,
     excludeMatchId: string,
-    clubId: string           // ✅ FIX J + P: carica campi dal DB del club corretto
-): Promise<{ court: string; courtId?: string | null; startTime: Date }[]> {
-    // ✅ FIX J+P: usa clubId esplicito, legge i campi reali dal DB
-    const clubCourts = await prisma.court.findMany({
-        where: { clubId, active: true },
-        select: { id: true, name: true },
+    count: number,
+): Promise<{ court: string; courtId: string; isCovered: boolean; startTime: Date }[]> {
+    const windowFrom = new Date(referenceTime.getTime() - FREE_SLOT_WINDOW_DAYS * 86_400_000);
+    const windowTo   = new Date(referenceTime.getTime() + FREE_SLOT_WINDOW_DAYS * 86_400_000);
+
+    const courts = await prisma.court.findMany({
+        where: {
+            clubId,
+            active: true,
+            ...(isCovered !== null ? { isCovered } : {}),
+        },
+        select: { id: true, name: true, isCovered: true },
         orderBy: { name: 'asc' },
     });
-    if (clubCourts.length === 0) return [];
+    if (courts.length === 0) return [];
 
     const existingMatches = await prisma.match.findMany({
         where: {
             clubId,
             id: { not: excludeMatchId },
             status: { in: ['OPEN', 'LOCKED'] },
-            startTime: { gte: from, lte: to },
+            startTime: { gte: windowFrom, lte: windowTo },
         },
         select: { courtId: true, startTime: true },
     });
 
-    // ✅ Fix: usa courtId (stringa), non l'oggetto court (che diventa [object Object])
     const occupiedKeys = new Set(
         existingMatches.map(m => `${m.courtId}_${m.startTime.toISOString()}`)
     );
 
-    const slots: { court: string; courtId?: string | null; startTime: Date }[] = [];
+    const slots: { court: string; courtId: string; isCovered: boolean; startTime: Date }[] = [];
     const STEP_MS = 30 * 60 * 1000;
 
-    // ✅ Fix: espansione bidirezionale da referenceTime → prima le fasce vicine all'orario originale
-    // Per ogni fascia oraria candidata scegliamo UN SOLO campo libero (il primo disponibile),
-    // non tutti i campi liberi a quell'ora.
+    // Espansione bidirezionale da referenceTime → prima gli orari più vicini
     let fwd = new Date(referenceTime);
     let bwd = new Date(referenceTime.getTime() - STEP_MS);
 
-    while (slots.length < 3) {
-        const hasFwd = fwd <= to;
-        const hasBwd = bwd >= from;
+    while (slots.length < count) {
+        const hasFwd = fwd <= windowTo;
+        const hasBwd = bwd >= windowFrom;
         if (!hasFwd && !hasBwd) break;
 
         for (const dir of [hasFwd ? fwd : null, hasBwd ? bwd : null]) {
-            if (!dir || slots.length >= 3) continue;
-            const freeCourt = clubCourts.find(
+            if (!dir || slots.length >= count) continue;
+            const freeCourt = courts.find(
                 c => !occupiedKeys.has(`${c.id}_${dir.toISOString()}`)
             );
             if (freeCourt) {
-                slots.push({ court: freeCourt.name, courtId: freeCourt.id, startTime: new Date(dir) });
+                slots.push({
+                    court: freeCourt.name,
+                    courtId: freeCourt.id,
+                    isCovered: freeCourt.isCovered,
+                    startTime: new Date(dir),
+                });
             }
         }
 
@@ -478,46 +425,6 @@ async function findFreeSlots(
     }
 
     return slots;
-}
-
-async function findJollySlot(
-    referenceTime: Date,
-    from: Date,
-    to: Date,
-    excludeMatchId: string,
-    clubId: string           // ✅ FIX J + P
-): Promise<{ court: string; courtId?: string | null; startTime: Date } | null> {
-    const nextDay = new Date(referenceTime);
-    nextDay.setDate(nextDay.getDate() + 1);
-
-    // ✅ FIX J+P: campi reali dal DB del club corretto
-    const clubCourts = await prisma.court.findMany({
-        where: { clubId, active: true },
-        select: { id: true, name: true },
-    });
-    if (clubCourts.length === 0) return null;
-
-    const existingNextDay = await prisma.match.findMany({
-        where: {
-            clubId,
-            status: { in: ['OPEN', 'LOCKED'] },
-            startTime: {
-                gte: new Date(nextDay.getTime() - 60 * 60 * 1000),
-                lte: new Date(nextDay.getTime() + 60 * 60 * 1000),
-            },
-        },
-        select: { courtId: true },
-    });
-
-    const occupiedCourtIds = new Set(existingNextDay.map(m => m.courtId).filter(Boolean));
-    const courts = clubCourts; // ✅ FIX P: da DB
-    const freeCourt = courts.find(c => !occupiedCourtIds.has(c.id));
-
-    if (freeCourt) {
-        return { court: freeCourt.name, courtId: freeCourt.id, startTime: nextDay };
-    }
-
-    return null;
 }
 
 // ─────────────────────────────────────────────
@@ -567,30 +474,28 @@ Se non è chiaro, rispondi: UNCLEAR
 // UTILITY: costruisci messaggi
 // ─────────────────────────────────────────────
 
+function courtTypeLabel(isCovered: boolean | null): string {
+    if (isCovered === true)  return '🏟️ coperto';
+    if (isCovered === false) return '☀️ scoperto';
+    return '';
+}
+
 function buildOptionDescription(
-    priority: number,
+    isOpenMatch: boolean,
     court: string,
+    isCovered: boolean | null,
     startTime: Date,
     spotsLeft: number,
-    playerCount: number
 ): string {
     const timeStr = startTime.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
     const dateStr = startTime.toLocaleDateString('it-IT', { weekday: 'long', day: 'numeric', month: 'long' });
+    const typeLabel = courtTypeLabel(isCovered);
+    const courtPart = typeLabel ? `${court} ${typeLabel}` : court;
 
-    if (priority === 1) {
-        return `${court} — ${dateStr} alle ${timeStr} — mancano esattamente ${spotsLeft} 🔒 se confermi chiudo subito`;
+    if (isOpenMatch) {
+        return `${courtPart} — ${dateStr} alle ${timeStr} — 👥 partita aperta, mancano ${spotsLeft}`;
     }
-    if (priority === 2) {
-        return `${court} — ${dateStr} alle ${timeStr} — mancano ${spotsLeft}, entrerete ma cerco ancora qualcuno`;
-    }
-    if (priority === 3) {
-        return `${court} — ${dateStr} alle ${timeStr} — campo libero, apro io la partita e cerco altri ${4 - playerCount}`;
-    }
-    if (priority === 4) {
-        return `${court} — ${dateStr} alle ${timeStr} — partita aperta, ci sono ${spotsLeft} posti`;
-    }
-    // jolly
-    return `${court} — ${dateStr} alle ${timeStr} — jolly: campo libero in giornata alternativa`;
+    return `${courtPart} — ${dateStr} alle ${timeStr} — 🔑 solo campo (affitto)`;
 }
 
 function buildRedirectMessage(group: RedirectGroup, options: RedirectOption[]): string {
@@ -625,6 +530,10 @@ function buildRedirectMessage(group: RedirectGroup, options: RedirectOption[]): 
     const reasonList = reasonVariants[group.reason];
     const reason = reasonList[Math.floor(Math.random() * reasonList.length)];
     const lines = options.map((o, i) => `${i + 1}. ${o.description}`).join('\n');
+
+    if (options.length === 0) {
+        return `${reason}\n\nPurtroppo non ho trovato alternative disponibili al momento. Contatta il circolo per maggiori informazioni.`;
+    }
 
     const closingVariants = [
         `Quale preferisci? Dimmi il numero e chiudo subito 🎾`,
