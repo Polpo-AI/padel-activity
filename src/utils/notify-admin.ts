@@ -12,7 +12,6 @@
  */
 
 import pino from 'pino';
-import { runWithContext, getClubId } from './request-context';
 const logger = pino({ level: 'info' });
 
 const notificationCooldowns = new Map<string, number>();
@@ -62,14 +61,7 @@ export async function notifyAdmin(
     }
 
     try {
-        const { sendMessage, getConnectionStatus } = await import('../services/whatsapp');
-
-        // Usa il clubId dal context (se disponibile) per selezionare il socket corretto
-        const contextClubId = getClubId();
-        if (getConnectionStatus(contextClubId) !== 'open') {
-            logger.warn({ key, contextClubId }, 'Cannot send admin notification: WhatsApp not connected');
-            return false;
-        }
+        const { sendMessage } = await import('../services/whatsapp');
 
         const adminJid = `${phone.replace(/\D/g, '')}@s.whatsapp.net`;
         await sendMessage(adminJid, `🚨 *${name ?? 'Padel Bot'} — Alert*\n\n${message}`);
