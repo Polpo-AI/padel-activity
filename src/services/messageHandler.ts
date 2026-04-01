@@ -184,16 +184,27 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[], cor
     const adminPhone = (club?.adminPhone || '').replace(/\D/g, '');
     const isFromAdmin = adminPhone && phoneNumber === adminPhone;
     if (isFromAdmin) {
-        const okMatch = combinedText.match(/^ok\s*([+]?\d{7,15})?$/i);
-        if (okMatch) {
+        // Supporta sia "ok +393..." (singolo) che "ok +39A +39B +39C" (multipli)
+        const isOkCommand = /^ok\b/i.test(combinedText);
+        if (isOkCommand) {
             const redis = getRedis();
-            let targetPhone = okMatch[1]?.replace(/\D/g, '');
-            if (!targetPhone) {
-                // "ok" senza numero: approva l'unico pending o mostra lista
+            const extractedPhones = [...combinedText.matchAll(/[+]?\d{7,15}/g)]
+                .map(m => m[0].replace(/\D/g, ''))
+                .filter(p => p.length >= 7);
+
+            let phonesToApprove: string[] = extractedPhones;
+            if (phonesToApprove.length === 0) {
+                // "ok" senza numero: approva l'unico pending
                 const pendingRaw = await redis.get(`approval:last_pending:${club?.id || ''}`);
-                if (pendingRaw) targetPhone = pendingRaw;
+                if (pendingRaw) phonesToApprove = [pendingRaw];
             }
-            if (targetPhone) {
+
+            if (phonesToApprove.length === 0) {
+                await sendMessage(jid, '⚠️ Nessun numero in attesa di approvazione.');
+                return;
+            }
+
+            for (const targetPhone of phonesToApprove) {
                 await redis.set(`approval:approved:${targetPhone}`, '1', 'EX', 90 * 24 * 3600);
                 await redis.del(`approval:pending:${targetPhone}`);
                 await redis.del(`approval:last_pending:${club?.id || ''}`);
@@ -208,7 +219,7 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[], cor
                         type: 'text',
                         text: stored,
                         clubId: getClubId(),
-                        alreadyPersisted: true, // Fix #5: already in DB from original send
+                        alreadyPersisted: true,
                         raw: {
                             key: { id: `APPROVED_${Date.now()}`, remoteJid: `${targetPhone}@s.whatsapp.net`, fromMe: false },
                             pushName: targetPhone,
@@ -217,9 +228,10 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[], cor
                         } as any,
                     }]);
                 }
-            } else {
-                await sendMessage(jid, '⚠️ Nessun numero in attesa di approvazione.');
             }
+
+            const plural = phonesToApprove.length > 1 ? `${phonesToApprove.length} numeri approvati` : `${phonesToApprove[0]} approvato`;
+            await sendMessage(jid, `✅ ${plural}`).catch(() => {});
             return;
         }
 
