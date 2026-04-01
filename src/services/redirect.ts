@@ -424,27 +424,40 @@ async function findFreeSlots(
             status: { in: ['OPEN', 'LOCKED'] },
             startTime: { gte: from, lte: to },
         },
-        select: { court: true, startTime: true },
+        select: { courtId: true, startTime: true },
     });
 
+    // ✅ Fix: usa courtId (stringa), non l'oggetto court (che diventa [object Object])
     const occupiedKeys = new Set(
-        existingMatches.map(m => `${m.court}_${m.startTime.toISOString()}`)
+        existingMatches.map(m => `${m.courtId}_${m.startTime.toISOString()}`)
     );
 
-    // Genera slot ogni 30 minuti nell'arco temporale
     const slots: { court: string; courtId?: string | null; startTime: Date }[] = [];
-    const courts = clubCourts; // ✅ FIX P: da DB, non hardcoded
-    const current = new Date(from);
+    const STEP_MS = 30 * 60 * 1000;
 
-    while (current <= to && slots.length < 3) {
-        for (const court of courts) {
-            const key = `${court}_${current.toISOString()}`;
-            if (!occupiedKeys.has(key)) {
-                slots.push({ court: court.name, courtId: court.id, startTime: new Date(current) });
-                if (slots.length >= 3) break;
+    // ✅ Fix: espansione bidirezionale da referenceTime → prima le fasce vicine all'orario originale
+    // Per ogni fascia oraria candidata scegliamo UN SOLO campo libero (il primo disponibile),
+    // non tutti i campi liberi a quell'ora.
+    let fwd = new Date(referenceTime);
+    let bwd = new Date(referenceTime.getTime() - STEP_MS);
+
+    while (slots.length < 3) {
+        const hasFwd = fwd <= to;
+        const hasBwd = bwd >= from;
+        if (!hasFwd && !hasBwd) break;
+
+        for (const dir of [hasFwd ? fwd : null, hasBwd ? bwd : null]) {
+            if (!dir || slots.length >= 3) continue;
+            const freeCourt = clubCourts.find(
+                c => !occupiedKeys.has(`${c.id}_${dir.toISOString()}`)
+            );
+            if (freeCourt) {
+                slots.push({ court: freeCourt.name, courtId: freeCourt.id, startTime: new Date(dir) });
             }
         }
-        current.setMinutes(current.getMinutes() + 30);
+
+        fwd = new Date(fwd.getTime() + STEP_MS);
+        bwd = new Date(bwd.getTime() - STEP_MS);
     }
 
     return slots;
