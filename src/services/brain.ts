@@ -51,7 +51,8 @@ export interface BrainContext {
 // ─────────────────────────────────────────────
 
 export async function buildBrainContext(jid: string, phoneNumber: string): Promise<BrainContext> {
-    const currentClubId = process.env.CLUB_ID;
+    const { getClubId } = await import('../utils/request-context');
+    const currentClubId = getClubId() || process.env.CLUB_ID;
     const club = currentClubId
         ? await prisma.club.findUnique({ where: { id: currentClubId } })
         : await prisma.club.findFirst();
@@ -941,10 +942,12 @@ export async function executeAction(
                 // Salva in Redis — include playerJid per poter rispondere all'utente dopo
                 // NON cancellare dopo l'invio: handleAdminFaqFlow dipende da questa chiave per
                 // ricevere e inoltrare la risposta dell'admin all'utente originale.
+                const { getContextStore } = await import('../utils/request-context');
+                const playerJidFromCtx = getContextStore()?.jid;
                 await redis.set(faqKey, JSON.stringify({
                     question,
                     askedBy: player?.name || player?.phoneNumber,
-                    playerJid: jid,
+                    playerJid: playerJidFromCtx,
                 }), 'EX', 7 * 24 * 3600);
                 const { notifyAdmin } = await import('../utils/notify-admin');
                 await notifyAdmin(

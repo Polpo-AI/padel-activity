@@ -104,7 +104,7 @@ export async function handleAdminFaqFlow(text: string, club: any, jid: string): 
     if (classification.isFaqAnswer && classification.confidence === 'high' && classification.faqWorthy) {
         await prisma.faq.create({ data: { clubId, question, answer: text.trim(), askedBy: askedBy || null } });
         await redis.del(`faq:pending_question:${clubId}`);
-        await sendMessage(jid, `Risposta inoltrata${playerJid ? ` a ${askedBy || 'utente'}` : ''} e salvata come FAQ ✅`);
+        await sendMessage(jid, `Risposta inoltrata${playerJid ? ` a ${askedBy || 'utente'}` : ''} e salvata come FAQ ✅`).catch(() => {});
         return true;
     }
 
@@ -116,7 +116,7 @@ export async function handleAdminFaqFlow(text: string, club: any, jid: string): 
     await sendMessage(
         jid,
         `Risposta inoltrata${playerJid ? ` a ${askedBy || 'utente'}` : ''}.\n\nVuoi salvarla anche come FAQ per le prossime domande simili?\n\nD: ${question}\nR: ${text.trim()}\n\nRispondi sì o no.`,
-    );
+    ).catch(() => {});
     return true;
 }
 
