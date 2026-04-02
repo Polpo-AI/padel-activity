@@ -761,22 +761,25 @@ router.get('/stats', authMiddleware, async (req: Request, res: Response) => {
     const clubId = (req as any).clubId as string;
     const days = parseInt(req.query.days as string) || 30;
     const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+    const now = new Date();
 
     try {
         // ── Conteggi partite ──────────────────────────────────────────
+        // total/open: include future (pipeline visibile)
+        // locked/cancelled/unfilled: solo passate (concluse) per fill rate accurato
         const [total, locked, open, cancelled, unfilled] = await Promise.all([
             prisma.match.count({ where: { clubId, startTime: { gte: since }, status: { not: 'ARCHIVED' } } }),
-            prisma.match.count({ where: { clubId, startTime: { gte: since }, status: 'LOCKED' } }),
+            prisma.match.count({ where: { clubId, startTime: { gte: since, lte: now }, status: 'LOCKED' } }),
             prisma.match.count({ where: { clubId, startTime: { gte: since }, status: 'OPEN' } }),
-            prisma.match.count({ where: { clubId, startTime: { gte: since }, status: 'CANCELLED' } }),
-            prisma.match.count({ where: { clubId, startTime: { gte: since }, status: 'UNFILLED' } }),
+            prisma.match.count({ where: { clubId, startTime: { gte: since, lte: now }, status: 'CANCELLED' } }),
+            prisma.match.count({ where: { clubId, startTime: { gte: since, lte: now }, status: 'UNFILLED' } }),
         ]);
         const completed = locked + cancelled + unfilled;
         const fillRate = completed > 0 ? locked / completed : 0;
 
-        // ── Revenue: match LOCKED × prezzo slot ───────────────────────
+        // ── Revenue: solo partite LOCKED già concluse ──────────────────
         const lockedMatches = await prisma.match.findMany({
-            where: { clubId, startTime: { gte: since }, status: 'LOCKED' },
+            where: { clubId, startTime: { gte: since, lte: now }, status: 'LOCKED' },
             include: { court: { include: { prices: true } } },
         });
         let revenue = 0;
@@ -792,9 +795,9 @@ router.get('/stats', authMiddleware, async (req: Request, res: Response) => {
             if (price) revenue += price.price;
         }
 
-        // ── Partite salvate da disdetta ───────────────────────────────
+        // ── Partite salvate da disdetta (solo concluse) ───────────────
         const savedFromCancellation = await prisma.match.count({
-            where: { clubId, startTime: { gte: since }, status: 'LOCKED', recoveryWaveCount: { gt: 0 } },
+            where: { clubId, startTime: { gte: since, lte: now }, status: 'LOCKED', recoveryWaveCount: { gt: 0 } },
         });
 
         // ── Conversione wave ──────────────────────────────────────────
