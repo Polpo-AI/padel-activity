@@ -1,15 +1,24 @@
 /**
  * REDIRECT SERVICE
  *
- * Algoritmo di dirottamento universale.
+ * Algoritmo di dirottamento intent-aware.
  * Chiamato ogni volta che N giocatori vengono rimossi da una partita
- * per qualsiasi motivo (disdetta, cancellazione, slot preso, pool esaurito).
+ * per qualsiasi motivo (disdetta, cancellazione, slot preso, pool esaurito),
+ * oppure quando un booking fallisce (slot pieno, nessun match aperto).
  *
- * Priorità di ricerca (fino a 5 opzioni totali):
- * FASE 1 — Partite OPEN nel range di skill del club (skip se skillLevel <= 0)
- *           ordinate per vicinanza all'orario originale
- * FASE 2 — Slot liberi della stessa tipologia (coperto/scoperto) della partita originale,
- *           espansione bidirezionale dall'orario originale
+ * L'intent determina la strategia di ricerca:
+ *
+ * BOOK_FIELD (prenotazione privata / skill<=0):
+ *   - Slot 1: slot libero più vicino PRIMA di T nello stesso giorno (Rome tz)
+ *   - Slot 2: slot libero più vicino DOPO T nello stesso giorno
+ *   - Slot 3-5: stesso orario di T in giorni successivi (fino a 7 giorni) dove c'è un campo libero
+ *   - Max 5 opzioni totali
+ *
+ * MATCHMAKING (matchmaking / skill>0):
+ *   - Match 1: OPEN match compatibile più vicino PRIMA di T nello stesso giorno
+ *   - Match 2: OPEN match compatibile più vicino DOPO T nello stesso giorno
+ *   - Match 3-5: OPEN match compatibili allo stesso orario di T in giorni diversi entro 7 giorni
+ *   - MAX 5 opzioni totali
  *
  * Se non si raggiungono 5 opzioni si mostra quello che c'è (4, 3, 2...).
  */
@@ -21,9 +30,38 @@ import pino from 'pino';
 
 const logger = pino({ level: 'info' });
 
-const OPEN_MATCH_WINDOW_HOURS = 24;   // cerca partite open entro ±24h dall'orario originale
-const FREE_SLOT_WINDOW_DAYS  = 7;    // cerca slot liberi entro ±7 giorni
+const FREE_SLOT_WINDOW_DAYS  = 7;    // cerca slot liberi entro 7 giorni in avanti
 const TARGET_OPTIONS = 5;
+
+// Helper per estrarre H:M da un timestamp in Rome timezone
+function getRomeHM(d: Date): { h: number; m: number } {
+    const s = d.toLocaleString('en-US', { timeZone: 'Europe/Rome', hour: '2-digit', minute: '2-digit', hour12: false });
+    const [h, m] = s.split(':').map(Number);
+    return { h, m };
+}
+
+// Helper per costruire timestamp UTC da una data base + H:M in Rome timezone
+// Segue la stessa logica di buildRomeTime in brain.ts
+function buildRomeTimestamp(baseDate: Date, h: number, m: number): Date {
+    const noon = new Date(Date.UTC(baseDate.getUTCFullYear(), baseDate.getUTCMonth(), baseDate.getUTCDate(), 12, 0, 0));
+    const noonRomeHour = Number(noon.toLocaleString('en-US', { timeZone: 'Europe/Rome', hour: '2-digit', hour12: false }));
+    const offsetH = noonRomeHour - 12;
+    let utcH = h - offsetH;
+    let dayOffset = 0;
+    if (utcH < 0) { utcH += 24; dayOffset = -1; }
+    if (utcH >= 24) { utcH -= 24; dayOffset = 1; }
+    return new Date(Date.UTC(baseDate.getUTCFullYear(), baseDate.getUTCMonth(), baseDate.getUTCDate() + dayOffset, utcH, m, 0));
+}
+
+// Ritorna la data base del giorno in UTC (mezzanotte UTC del giorno in cui cade referenceTime in Rome tz)
+function getDayBaseUTC(referenceTime: Date): Date {
+    const romeStr = referenceTime.toLocaleString('en-US', {
+        timeZone: 'Europe/Rome', year: 'numeric', month: '2-digit', day: '2-digit',
+    });
+    // romeStr: "MM/DD/YYYY"
+    const [mm, dd, yyyy] = romeStr.split('/').map(Number);
+    return new Date(Date.UTC(yyyy, mm - 1, dd));
+}
 
 // ─────────────────────────────────────────────
 // TIPI
@@ -53,6 +91,8 @@ export interface RedirectGroup {
     originalCourtIsCovered: boolean | null; // tipologia campo originale — null = qualsiasi
     reason: 'CANCELLED' | 'UNFILLED' | 'SLOT_TAKEN' | 'POOL_EXHAUSTED' | 'CANCELLATION';
     clubId: string;
+    // Nuovo campo intent-aware: determina quale algoritmo di ricerca usare
+    intent?: 'BOOK_FIELD' | 'MATCHMAKING';
 }
 
 // ─────────────────────────────────────────────
@@ -60,7 +100,7 @@ export interface RedirectGroup {
 // ─────────────────────────────────────────────
 
 export async function redirectGroup(group: RedirectGroup): Promise<void> {
-    logger.info(`Redirecting ${group.playerCount} players from match ${group.originalMatchId}`);
+    logger.info(`Redirecting ${group.playerCount} players from match ${group.originalMatchId} (intent: ${group.intent || 'auto'})`);
 
     const options = await findRedirectOptions(
         group.playerCount,
@@ -69,6 +109,7 @@ export async function redirectGroup(group: RedirectGroup): Promise<void> {
         group.clubId,
         group.originalSkillLevel,
         group.originalCourtIsCovered,
+        group.intent,
     );
 
     const message = buildRedirectMessage(group, options);
@@ -93,7 +134,7 @@ export async function redirectGroup(group: RedirectGroup): Promise<void> {
 }
 
 // ─────────────────────────────────────────────
-// TROVA OPZIONI
+// TROVA OPZIONI (intent-aware)
 // ─────────────────────────────────────────────
 
 export async function findRedirectOptions(
@@ -103,89 +144,374 @@ export async function findRedirectOptions(
     clubId: string,
     originalSkillLevel: number = 0,
     originalCourtIsCovered: boolean | null = null,
+    intent?: 'BOOK_FIELD' | 'MATCHMAKING',
+): Promise<RedirectOption[]> {
+    // Determina l'intent effettivo: se non esplicito, usa la logica precedente
+    // (MATCHMAKING se skill>0, BOOK_FIELD altrimenti)
+    const effectiveIntent: 'BOOK_FIELD' | 'MATCHMAKING' =
+        intent ?? (originalSkillLevel > 0 ? 'MATCHMAKING' : 'BOOK_FIELD');
+
+    if (effectiveIntent === 'BOOK_FIELD') {
+        return findRedirectOptionsBookField(referenceTime, excludeMatchId, clubId, originalCourtIsCovered);
+    } else {
+        return findRedirectOptionsMatchmaking(playerCount, referenceTime, excludeMatchId, clubId, originalSkillLevel);
+    }
+}
+
+/**
+ * BOOK_FIELD redirect: cerca slot liberi (campo non occupato) vicini a referenceTime.
+ *
+ * - Slot 1: slot libero più vicino PRIMA di T nello stesso giorno (Rome tz)
+ * - Slot 2: slot libero più vicino DOPO T nello stesso giorno (Rome tz)
+ * - Slot 3-5: stesso orario di T nei giorni successivi (fino a 7 giorni) dove esiste almeno un campo libero
+ */
+async function findRedirectOptionsBookField(
+    referenceTime: Date,
+    excludeMatchId: string,
+    clubId: string,
+    originalCourtIsCovered: boolean | null = null,
 ): Promise<RedirectOption[]> {
     const options: RedirectOption[] = [];
 
-    // ── FASE 1: Partite OPEN compatibili con lo skill ──────────────────────────
-    // Skip se il giocatore non è ancora testato (skillLevel <= 0)
-    if (originalSkillLevel > 0) {
-        const club = await prisma.club.findUnique({
-            where: { id: clubId },
-            select: { matchLowerRange: true, matchUpperRange: true },
+    const courts = await prisma.court.findMany({
+        where: { clubId, active: true, ...(originalCourtIsCovered !== null ? { isCovered: originalCourtIsCovered } : {}) },
+        select: { id: true, name: true, isCovered: true },
+        orderBy: { name: 'asc' },
+    });
+    if (courts.length === 0) return [];
+
+    // Calcola inizio e fine giorno in Rome timezone per il giorno di referenceTime
+    const dayBase = getDayBaseUTC(referenceTime);
+    const dayStart = buildRomeTimestamp(dayBase, 0, 0);
+    const dayEnd = buildRomeTimestamp(dayBase, 23, 59);
+
+    // Trova tutti i match che occupano campi in un range ampio (stesso giorno + 7 giorni futuri)
+    const windowEnd = new Date(dayBase.getTime() + FREE_SLOT_WINDOW_DAYS * 86_400_000 + 24 * 3600_000);
+    const allOccupied = await prisma.match.findMany({
+        where: {
+            clubId,
+            id: { not: excludeMatchId },
+            // Include solo match che bloccano veramente il campo: OPEN con ≥3 confermati O LOCKED
+            // oppure controlla separatamente per la logica displacement — qui usiamo approccio semplice:
+            // un campo è considerato "libero" se non ha match OPEN con ≥3 confermati o LOCKED.
+            status: { in: ['OPEN', 'LOCKED'] },
+            startTime: { gte: dayStart, lte: windowEnd },
+        },
+        include: { MatchPlayer: { where: { leftAt: null } } },
+    });
+
+    // Costruisci set di slot bloccati (courtId + timestamp):
+    // LOCKED o OPEN con ≥3 giocatori confermati sono "occupati"
+    const occupiedKeys = new Set<string>();
+    for (const m of allOccupied as any[]) {
+        const confirmedCount = (m.MatchPlayer as any[]).filter((mp: any) => !mp.leftAt).length;
+        if (m.status === 'LOCKED' || confirmedCount >= 3) {
+            occupiedKeys.add(`${m.courtId}_${new Date(m.startTime).toISOString()}`);
+        }
+    }
+
+    const STEP_MS = 30 * 60 * 1000;
+
+    // ── Slot 1 & 2: stesso giorno, prima e dopo referenceTime ────────────────
+    // Prima cerca il più vicino PRIMA di T nello stesso giorno
+    let before: { court: string; courtId: string; isCovered: boolean; startTime: Date } | null = null;
+    {
+        let t = new Date(referenceTime.getTime() - STEP_MS);
+        while (t >= dayStart) {
+            for (const c of courts) {
+                const key = `${c.id}_${t.toISOString()}`;
+                if (!occupiedKeys.has(key)) {
+                    before = { court: c.name, courtId: c.id, isCovered: c.isCovered, startTime: new Date(t) };
+                    break;
+                }
+            }
+            if (before) break;
+            t = new Date(t.getTime() - STEP_MS);
+        }
+    }
+    if (before) {
+        options.push({
+            priority: 1,
+            court: before.court,
+            courtId: before.courtId,
+            courtIsCovered: before.isCovered,
+            startTime: before.startTime,
+            willLock: false,
+            isOpenMatch: false,
+            description: buildOptionDescription(false, before.court, before.isCovered, before.startTime, 4),
         });
-        const lowerRange = club?.matchLowerRange ?? 1.0;
-        const upperRange = club?.matchUpperRange ?? 1.0;
-        const skillMin = originalSkillLevel - lowerRange;
-        const skillMax = originalSkillLevel + upperRange;
+    }
 
-        const windowStart = new Date(referenceTime.getTime() - OPEN_MATCH_WINDOW_HOURS * 3600_000);
-        const windowEnd   = new Date(referenceTime.getTime() + OPEN_MATCH_WINDOW_HOURS * 3600_000);
+    // Poi cerca il più vicino DOPO T nello stesso giorno
+    if (options.length < TARGET_OPTIONS) {
+        let after: { court: string; courtId: string; isCovered: boolean; startTime: Date } | null = null;
+        {
+            // Inizia da referenceTime stesso (arrotondato al passo successivo)
+            let t = new Date(referenceTime.getTime() + STEP_MS);
+            while (t <= dayEnd) {
+                for (const c of courts) {
+                    const key = `${c.id}_${t.toISOString()}`;
+                    if (!occupiedKeys.has(key)) {
+                        after = { court: c.name, courtId: c.id, isCovered: c.isCovered, startTime: new Date(t) };
+                        break;
+                    }
+                }
+                if (after) break;
+                t = new Date(t.getTime() + STEP_MS);
+            }
+        }
+        if (after) {
+            options.push({
+                priority: 1,
+                court: after.court,
+                courtId: after.courtId,
+                courtIsCovered: after.isCovered,
+                startTime: after.startTime,
+                willLock: false,
+                isOpenMatch: false,
+                description: buildOptionDescription(false, after.court, after.isCovered, after.startTime, 4),
+            });
+        }
+    }
 
-        const openMatches = await prisma.match.findMany({
+    // ── Slot 3-5: stesso orario di T in giorni successivi entro 7 giorni ─────
+    const { h: refH, m: refM } = getRomeHM(referenceTime);
+
+    for (let d = 1; d <= FREE_SLOT_WINDOW_DAYS && options.length < TARGET_OPTIONS; d++) {
+        const futureBase = new Date(dayBase.getTime() + d * 86_400_000);
+        const futureSlot = buildRomeTimestamp(futureBase, refH, refM);
+
+        for (const c of courts) {
+            const key = `${c.id}_${futureSlot.toISOString()}`;
+            if (!occupiedKeys.has(key)) {
+                options.push({
+                    priority: 2,
+                    court: c.name,
+                    courtId: c.id,
+                    courtIsCovered: c.isCovered,
+                    startTime: futureSlot,
+                    willLock: false,
+                    isOpenMatch: false,
+                    description: buildOptionDescription(false, c.name, c.isCovered, futureSlot, 4),
+                });
+                break; // un campo per giorno è sufficiente
+            }
+        }
+    }
+
+    return options;
+}
+
+/**
+ * MATCHMAKING redirect: cerca OPEN match skill-compatibili vicini a referenceTime.
+ *
+ * - Match 1: OPEN match compatibile più vicino PRIMA di T nello stesso giorno
+ * - Match 2: OPEN match compatibile più vicino DOPO T nello stesso giorno
+ * - Match 3-5: OPEN match compatibili allo stesso orario di T in giorni successivi entro 7 giorni
+ */
+async function findRedirectOptionsMatchmaking(
+    playerCount: number,
+    referenceTime: Date,
+    excludeMatchId: string,
+    clubId: string,
+    originalSkillLevel: number,
+): Promise<RedirectOption[]> {
+    const options: RedirectOption[] = [];
+
+    // Se skill non assegnato, non possiamo fare matchmaking — fallback a BOOK_FIELD
+    if (originalSkillLevel <= 0) {
+        return findRedirectOptionsBookField(referenceTime, excludeMatchId, clubId, null);
+    }
+
+    const club = await prisma.club.findUnique({
+        where: { id: clubId },
+        select: { matchLowerRange: true, matchUpperRange: true },
+    });
+    const lowerRange = club?.matchLowerRange ?? 1.0;
+    const upperRange = club?.matchUpperRange ?? 1.0;
+    const skillMin = originalSkillLevel - lowerRange;
+    const skillMax = originalSkillLevel + upperRange;
+
+    const dayBase = getDayBaseUTC(referenceTime);
+    const dayStart = buildRomeTimestamp(dayBase, 0, 0);
+    const dayEnd = buildRomeTimestamp(dayBase, 23, 59);
+
+    // Carica tutti gli OPEN match skill-compatibili nel giorno di riferimento
+    const sameDayMatches = await prisma.match.findMany({
+        where: {
+            clubId,
+            id: { not: excludeMatchId },
+            status: 'OPEN',
+            startTime: { gte: dayStart, lte: dayEnd },
+            skillLevel: { gte: skillMin, lte: skillMax },
+        },
+        include: {
+            MatchPlayer: { where: { leftAt: null } },
+            court: true,
+        },
+        orderBy: { startTime: 'asc' },
+    });
+
+    // Filtra per posti disponibili sufficienti
+    const sameDayEligible = sameDayMatches.filter(m =>
+        (m.playersNeeded - m.MatchPlayer.length) >= playerCount
+    );
+
+    // Match più vicino PRIMA di T
+    const before = sameDayEligible
+        .filter(m => m.startTime < referenceTime)
+        .sort((a, b) => b.startTime.getTime() - a.startTime.getTime())[0];
+
+    if (before) {
+        const spotsLeft = before.playersNeeded - before.MatchPlayer.length;
+        options.push({
+            priority: spotsLeft === playerCount ? 1 : 2,
+            matchId: before.id,
+            court: before.court?.name || 'Campo',
+            courtId: before.courtId,
+            courtIsCovered: before.court?.isCovered ?? null,
+            startTime: before.startTime,
+            spotsLeft,
+            willLock: spotsLeft === playerCount,
+            isOpenMatch: true,
+            description: buildOptionDescription(true, before.court?.name || 'Campo', before.court?.isCovered ?? null, before.startTime, spotsLeft),
+        });
+    }
+
+    // Match più vicino DOPO T
+    if (options.length < TARGET_OPTIONS) {
+        const after = sameDayEligible
+            .filter(m => m.startTime >= referenceTime)
+            .sort((a, b) => a.startTime.getTime() - b.startTime.getTime())[0];
+
+        if (after) {
+            const spotsLeft = after.playersNeeded - after.MatchPlayer.length;
+            options.push({
+                priority: spotsLeft === playerCount ? 1 : 2,
+                matchId: after.id,
+                court: after.court?.name || 'Campo',
+                courtId: after.courtId,
+                courtIsCovered: after.court?.isCovered ?? null,
+                startTime: after.startTime,
+                spotsLeft,
+                willLock: spotsLeft === playerCount,
+                isOpenMatch: true,
+                description: buildOptionDescription(true, after.court?.name || 'Campo', after.court?.isCovered ?? null, after.startTime, spotsLeft),
+            });
+        }
+    }
+
+    // ── Match 3-5: stesso orario di T in giorni successivi entro 7 giorni ────
+    const { h: refH, m: refM } = getRomeHM(referenceTime);
+
+    for (let d = 1; d <= FREE_SLOT_WINDOW_DAYS && options.length < TARGET_OPTIONS; d++) {
+        const futureBase = new Date(dayBase.getTime() + d * 86_400_000);
+        const futureSlot = buildRomeTimestamp(futureBase, refH, refM);
+        const futureSlotEnd = new Date(futureSlot.getTime() + 30 * 60 * 1000);
+
+        const futureMatches = await prisma.match.findMany({
             where: {
                 clubId,
                 id: { not: excludeMatchId },
                 status: 'OPEN',
-                startTime: { gte: windowStart, lte: windowEnd },
+                startTime: { gte: futureSlot, lte: futureSlotEnd },
                 skillLevel: { gte: skillMin, lte: skillMax },
             },
             include: {
                 MatchPlayer: { where: { leftAt: null } },
                 court: true,
             },
+            take: 1,
         });
 
-        // Ordina per vicinanza all'orario originale
-        openMatches.sort((a, b) =>
-            Math.abs(a.startTime.getTime() - referenceTime.getTime()) -
-            Math.abs(b.startTime.getTime() - referenceTime.getTime())
-        );
-
-        for (const match of openMatches) {
-            if (options.length >= TARGET_OPTIONS) break;
-            const spotsLeft = match.playersNeeded - match.MatchPlayer.length;
+        for (const m of futureMatches) {
+            const spotsLeft = m.playersNeeded - m.MatchPlayer.length;
             if (spotsLeft < playerCount) continue;
-
             options.push({
-                priority: spotsLeft === playerCount ? 1 : 2,
-                matchId: match.id,
-                court: match.court?.name || 'Campo',
-                courtId: match.courtId,
-                courtIsCovered: match.court?.isCovered ?? null,
-                startTime: match.startTime,
+                priority: 2,
+                matchId: m.id,
+                court: m.court?.name || 'Campo',
+                courtId: m.courtId,
+                courtIsCovered: m.court?.isCovered ?? null,
+                startTime: m.startTime,
                 spotsLeft,
                 willLock: spotsLeft === playerCount,
                 isOpenMatch: true,
-                description: buildOptionDescription(true, match.court?.name || 'Campo', match.court?.isCovered ?? null, match.startTime, spotsLeft),
+                description: buildOptionDescription(true, m.court?.name || 'Campo', m.court?.isCovered ?? null, m.startTime, spotsLeft),
             });
-        }
-    }
-
-    // ── FASE 2: Slot liberi stessa tipologia campo, orari più vicini ──────────
-    if (options.length < TARGET_OPTIONS) {
-        const needed = TARGET_OPTIONS - options.length;
-        const freeSlots = await findFreeSlotsNearby(
-            referenceTime,
-            originalCourtIsCovered,
-            clubId,
-            excludeMatchId,
-            needed,
-        );
-        for (const slot of freeSlots) {
-            options.push({
-                priority: 3,
-                court: slot.court,
-                courtId: slot.courtId,
-                courtIsCovered: slot.isCovered,
-                startTime: slot.startTime,
-                willLock: false,
-                isOpenMatch: false,
-                description: buildOptionDescription(false, slot.court, slot.isCovered, slot.startTime, 4),
-            });
+            break;
         }
     }
 
     return options;
+}
+
+// ─────────────────────────────────────────────
+// NOTIFY DISPLACED PLAYERS (fire-and-forget, usato da createNewMatchAction)
+// ─────────────────────────────────────────────
+
+/**
+ * Notifica i giocatori di un match OPEN che è stato "spostato" (displacement)
+ * perché un BOOK_FIELD ha preso il loro campo.
+ *
+ * - Pending invitations: solo notifica "campo non più disponibile"
+ * - Confirmed players: notifica + redirect con intent MATCHMAKING
+ *
+ * Questa funzione è fire-and-forget: viene chiamata senza await da createNewMatchAction.
+ */
+export async function notifyDisplacedPlayers(
+    displacedMatchId: string,
+    confirmedPlayers: { id: string; phoneNumber: string; name: string | null; skillLevel: number }[],
+    pendingPlayerPhones: string[],
+    clubId: string,
+    originalStartTime: Date,
+    originalSkillLevel: number,
+): Promise<void> {
+    // Notifica i pending invitations: solo avviso, no redirect
+    for (const phone of pendingPlayerPhones) {
+        const jid = `${phone}@s.whatsapp.net`;
+        try {
+            await simulateTypingAndSend(jid,
+                'Il campo per cui eri stato invitato non è più disponibile. Spero di trovarti qualcosa di meglio presto! 🎾'
+            );
+        } catch (err) {
+            logger.warn({ err, phone }, 'notifyDisplacedPlayers: failed to notify pending player');
+        }
+    }
+
+    // Notifica i confirmed players + redirect MATCHMAKING
+    if (confirmedPlayers.length > 0) {
+        // Invia prima la notifica a ogni confermato
+        for (const p of confirmedPlayers) {
+            const jid = `${p.phoneNumber}@s.whatsapp.net`;
+            try {
+                await simulateTypingAndSend(jid,
+                    'Purtroppo il tuo slot è stato prenotato da qualcun altro 😕 Sto cercando subito un\'alternativa per te!'
+                );
+            } catch (err) {
+                logger.warn({ err, phone: p.phoneNumber }, 'notifyDisplacedPlayers: failed to notify confirmed player');
+            }
+        }
+
+        // Poi redirect con intent MATCHMAKING per il referente (primo confermato)
+        try {
+            await redirectGroup({
+                clubId,
+                referentPhone: confirmedPlayers[0].phoneNumber,
+                referentJid: `${confirmedPlayers[0].phoneNumber}@s.whatsapp.net`,
+                playerPhones: confirmedPlayers.map(p => p.phoneNumber),
+                playerCount: confirmedPlayers.length,
+                originalMatchId: displacedMatchId,
+                originalStartTime,
+                originalSkillLevel,
+                originalCourtIsCovered: null,
+                reason: 'SLOT_TAKEN',
+                intent: 'MATCHMAKING',
+            });
+        } catch (err) {
+            logger.warn({ err, matchId: displacedMatchId }, 'notifyDisplacedPlayers: redirectGroup failed');
+        }
+    }
 }
 
 // ─────────────────────────────────────────────
@@ -310,6 +636,10 @@ async function addGroupToMatch(matchId: string, group: RedirectGroup): Promise<v
 // ─────────────────────────────────────────────
 
 async function createMatchForGroup(option: RedirectOption, group: RedirectGroup): Promise<void> {
+    // BOOK_FIELD redirect → match privato LOCKED (campo riservato per il gruppo)
+    // MATCHMAKING redirect → match OPEN (cercano altri giocatori) — caso raro, di solito si sceglie un match esistente
+    const isBookField = group.intent === 'BOOK_FIELD' || group.originalSkillLevel <= 0;
+
     const referent = await prisma.player.findFirst({ where: { phoneNumber: group.referentPhone } });
     const skillLevel = referent?.skillLevel && referent.skillLevel > 0
         ? referent.skillLevel
@@ -322,7 +652,8 @@ async function createMatchForGroup(option: RedirectOption, group: RedirectGroup)
             startTime: option.startTime,
             skillLevel,
             playersNeeded: 4,
-            status: 'OPEN',
+            status: isBookField ? 'LOCKED' : 'OPEN',
+            isPrivateBooking: isBookField,
         },
     });
 
@@ -335,96 +666,30 @@ async function createMatchForGroup(option: RedirectOption, group: RedirectGroup)
         });
     }
 
-    const spotsLeft = 4 - group.playerCount;
-    if (spotsLeft > 0) {
-        const { waveQueue } = await import('./queue');
-        waveQueue.add('process-wave', {
-            matchId: match.id,
-            waveNumber: 1,
-            limit: spotsLeft,
-        }, {
-            delay: Math.floor(Math.random() * 60000) + 30000,
-        }).catch(err => logger.warn({ err, matchId: match.id }, 'Wave scheduling failed'));
-    }
-
     const timeStr = option.startTime.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
-    await simulateTypingAndSend(
-        group.referentJid,
-        `Perfetto! Ho aperto una partita per le ${timeStr} al ${option.court} 🎾 ${spotsLeft > 0 ? `Cerco altri ${spotsLeft} giocatori!` : 'Siete al completo!'}`
-    );
-}
 
-// ─────────────────────────────────────────────
-// UTILITY: slot liberi per tipologia campo
-// ─────────────────────────────────────────────
-
-async function findFreeSlotsNearby(
-    referenceTime: Date,
-    isCovered: boolean | null,
-    clubId: string,
-    excludeMatchId: string,
-    count: number,
-): Promise<{ court: string; courtId: string; isCovered: boolean; startTime: Date }[]> {
-    const windowFrom = new Date(referenceTime.getTime() - FREE_SLOT_WINDOW_DAYS * 86_400_000);
-    const windowTo   = new Date(referenceTime.getTime() + FREE_SLOT_WINDOW_DAYS * 86_400_000);
-
-    const courts = await prisma.court.findMany({
-        where: {
-            clubId,
-            active: true,
-            ...(isCovered !== null ? { isCovered } : {}),
-        },
-        select: { id: true, name: true, isCovered: true },
-        orderBy: { name: 'asc' },
-    });
-    if (courts.length === 0) return [];
-
-    const existingMatches = await prisma.match.findMany({
-        where: {
-            clubId,
-            id: { not: excludeMatchId },
-            status: { in: ['OPEN', 'LOCKED'] },
-            startTime: { gte: windowFrom, lte: windowTo },
-        },
-        select: { courtId: true, startTime: true },
-    });
-
-    const occupiedKeys = new Set(
-        existingMatches.map(m => `${m.courtId}_${m.startTime.toISOString()}`)
-    );
-
-    const slots: { court: string; courtId: string; isCovered: boolean; startTime: Date }[] = [];
-    const STEP_MS = 30 * 60 * 1000;
-
-    // Espansione bidirezionale da referenceTime → prima gli orari più vicini
-    let fwd = new Date(referenceTime);
-    let bwd = new Date(referenceTime.getTime() - STEP_MS);
-
-    while (slots.length < count) {
-        const hasFwd = fwd <= windowTo;
-        const hasBwd = bwd >= windowFrom;
-        if (!hasFwd && !hasBwd) break;
-
-        for (const dir of [hasFwd ? fwd : null, hasBwd ? bwd : null]) {
-            if (!dir || slots.length >= count) continue;
-            const freeCourt = courts.find(
-                c => !occupiedKeys.has(`${c.id}_${dir.toISOString()}`)
-            );
-            if (freeCourt) {
-                slots.push({
-                    court: freeCourt.name,
-                    courtId: freeCourt.id,
-                    isCovered: freeCourt.isCovered,
-                    startTime: new Date(dir),
-                });
-            }
+    if (isBookField) {
+        await simulateTypingAndSend(
+            group.referentJid,
+            `Perfetto! Ti ho prenotato ${option.court} per le ${timeStr} 🎾 Ci vediamo in campo!`
+        );
+    } else {
+        const spotsLeft = 4 - group.playerCount;
+        if (spotsLeft > 0) {
+            const { waveQueue } = await import('./queue');
+            waveQueue.add('process-wave', {
+                matchId: match.id,
+                waveNumber: 1,
+                limit: spotsLeft,
+            }, {
+                delay: Math.floor(Math.random() * 60000) + 30000,
+            }).catch(err => logger.warn({ err, matchId: match.id }, 'Wave scheduling failed'));
         }
-
-        fwd = new Date(fwd.getTime() + STEP_MS);
-        bwd = new Date(bwd.getTime() - STEP_MS);
+        await simulateTypingAndSend(
+            group.referentJid,
+            `Perfetto! Ho aperto una partita per le ${timeStr} al ${option.court} 🎾 ${spotsLeft > 0 ? `Cerco altri ${spotsLeft} giocatori!` : 'Siete al completo!'}`
+        );
     }
-
-    return slots;
 }
 
 // ─────────────────────────────────────────────
@@ -542,7 +807,14 @@ function buildRedirectMessage(group: RedirectGroup, options: RedirectOption[]): 
     ];
     const closing = closingVariants[Math.floor(Math.random() * closingVariants.length)];
 
-    return `${reason}\n\nHo trovato queste alternative:\n\n${lines}\n\n${closing}`;
+    // Closing message aggiuntivo intent-aware
+    const effectiveIntent: 'BOOK_FIELD' | 'MATCHMAKING' =
+        group.intent ?? (group.originalSkillLevel > 0 ? 'MATCHMAKING' : 'BOOK_FIELD');
+    const intentClosing = effectiveIntent === 'MATCHMAKING'
+        ? 'Oppure dimmi un giorno e ti dico i match aperti disponibili 📅'
+        : 'Sennò dimmi un giorno e ti dico le disponibilità libere 📅';
+
+    return `${reason}\n\nHo trovato queste alternative:\n\n${lines}\n\n${closing}\n${intentClosing}`;
 }
 
 function buildPlayerNotificationMessage(group: RedirectGroup): string {

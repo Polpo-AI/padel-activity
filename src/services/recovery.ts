@@ -233,27 +233,77 @@ export async function handleMatchUnfillable(matchId: string, forceCancel: boolea
             },
         });
 
-        for (const mp of confirmedPlayers) {
-            await sleep(randomInt(2, 5) * 1000);
+        // Annulla le invitation PENDING prima di notificare
+        const pendingInvitations = await prisma.invitation.findMany({
+            where: { matchId, status: 'PENDING' },
+            include: { player: true },
+        });
+        await prisma.invitation.updateMany({
+            where: { matchId, status: 'PENDING' },
+            data: { status: 'IGNORED' },
+        });
+
+        // Notifica i pending invitations: solo avviso, NO redirect
+        for (const inv of pendingInvitations) {
+            await sleep(randomInt(1, 3) * 1000);
             try {
-                const missing = match.playersNeeded - confirmedPlayers.length;
-                // Messaggi diversi per prenotazione privata (skill<=0) vs matchmaking
-                const unfillableVariants = (match as any).isPrivateBooking ? [
-                    `La tua prenotazione per ${courtName} alle ${timeStr} è stata annullata automaticamente. Scrivimi quando vuoi prenotare di nuovo! 🎾`,
-                    `Ho dovuto liberare ${courtName} alle ${timeStr} — la prenotazione è scaduta. Quando sei pronto, prenotiamo subito!`,
-                    `La prenotazione per ${courtName} alle ${timeStr} non è andata a buon fine. Scrivimi per fissare un nuovo appuntamento 🎾`,
-                ] : [
-                    `Mi dispiace, non siamo riusciti a trovare tutti e ${match.playersNeeded} per le ${timeStr} a ${courtName} 😔 Ho liberato il campo — scrivimi quando vuoi riprovare e ci penso io 🎾`,
-                    `Purtroppo la partita delle ${timeStr} a ${courtName} è saltata — mancavano ancora ${missing} ${missing === 1 ? 'giocatore' : 'giocatori'} 😕 Dimmi quando sei libero e prenotiamo subito!`,
-                    `Non ce l'abbiamo fatta stavolta: ${courtName} alle ${timeStr} è rimasto vuoto 😔 Il campo è già libero — quando vuoi riprovare?`,
-                    `La partita delle ${timeStr} a ${courtName} non si è chiusa, mi dispiace 😔 Se vuoi riprovare in un altro momento dimmi pure!`,
-                ];
                 await simulateTypingAndSend(
-                    mp.player.phoneNumber,
-                    unfillableVariants[Math.floor(Math.random() * unfillableVariants.length)]
+                    inv.player.phoneNumber,
+                    `La partita delle ${timeStr} a ${courtName} non si terrà più 😔 Il campo è libero per chi volesse prenotare!`
                 );
             } catch (err) {
-                logger.error({ err }, `Failed to notify ${mp.player.phoneNumber} of cancellation`);
+                logger.error({ err }, `Failed to notify pending invitation ${inv.player.phoneNumber}`);
+            }
+        }
+
+        // Notifica i confirmed players con messaggio che motiva il redirect ("meglio una partita sicura")
+        // Poi usa redirectGroup con intent MATCHMAKING (questi match sono sempre matchmaking/OPEN)
+        if (confirmedPlayers.length > 0) {
+            const missing = match.playersNeeded - confirmedPlayers.length;
+            // Messaggi diversi: per prenotazione privata (isPrivateBooking) solo avviso,
+            // per matchmaking aggiungi motivazione "meglio una partita sicura"
+            for (const mp of confirmedPlayers) {
+                await sleep(randomInt(2, 5) * 1000);
+                try {
+                    const unfillableVariants = (match as any).isPrivateBooking ? [
+                        `La tua prenotazione per ${courtName} alle ${timeStr} è stata annullata automaticamente. Scrivimi quando vuoi prenotare di nuovo! 🎾`,
+                        `Ho dovuto liberare ${courtName} alle ${timeStr} — la prenotazione è scaduta. Quando sei pronto, prenotiamo subito!`,
+                        `La prenotazione per ${courtName} alle ${timeStr} non è andata a buon fine. Scrivimi per fissare un nuovo appuntamento 🎾`,
+                    ] : [
+                        `Mi dispiace, non siamo riusciti a trovare tutti e ${match.playersNeeded} per le ${timeStr} a ${courtName} 😔 Piuttosto che aspettare ancora, ti cerco subito una partita già quasi completa — così giochi sicuro! 🎾`,
+                        `Purtroppo la partita delle ${timeStr} a ${courtName} è saltata — mancavano ancora ${missing} ${missing === 1 ? 'giocatore' : 'giocatori'} 😕 Ho preferito non farti aspettare: sto cercando un'alternativa già attiva 🎾`,
+                        `Non ce l'abbiamo fatta stavolta: ${courtName} alle ${timeStr} è rimasto vuoto 😔 Meglio una partita sicura: ti cerco subito qualcosa di disponibile!`,
+                        `La partita delle ${timeStr} a ${courtName} non si è chiusa, mi dispiace 😔 Per non perdere altro tempo, guarda queste alternative che ho trovato per te!`,
+                    ];
+                    await simulateTypingAndSend(
+                        mp.player.phoneNumber,
+                        unfillableVariants[Math.floor(Math.random() * unfillableVariants.length)]
+                    );
+                } catch (err) {
+                    logger.error({ err }, `Failed to notify ${mp.player.phoneNumber} of cancellation`);
+                }
+            }
+
+            // redirectGroup solo per matchmaking (non prenotazioni private)
+            if (!(match as any).isPrivateBooking && match.club) {
+                try {
+                    const { redirectGroup } = await import('./redirect');
+                    await redirectGroup({
+                        clubId: match.club.id,
+                        referentPhone: confirmedPlayers[0].player.phoneNumber,
+                        referentJid: confirmedPlayers[0].player.phoneNumber,
+                        playerPhones: confirmedPlayers.map(mp => mp.player.phoneNumber),
+                        playerCount: confirmedPlayers.length,
+                        originalMatchId: matchId,
+                        originalStartTime: match.startTime,
+                        originalSkillLevel: (match as any).skillLevel ?? 0,
+                        originalCourtIsCovered: match.court?.isCovered ?? null,
+                        reason: 'UNFILLED',
+                        intent: 'MATCHMAKING',
+                    });
+                } catch (err) {
+                    logger.error({ err, matchId }, 'handleMatchUnfillable: redirectGroup failed');
+                }
             }
         }
 

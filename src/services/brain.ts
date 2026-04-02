@@ -1115,7 +1115,7 @@ async function bookSlotForPlayer(
     preferCovered: boolean = false,
     preferMixed: boolean | null = null,
     privateBooking: boolean | null = null,
-): Promise<{ success: boolean; errorMessage?: string; matchId?: string }> {
+): Promise<{ success: boolean; errorMessage?: string; matchId?: string; requestedTime?: Date }> {
     // Valida che ci siano almeno 90 minuti prima della chiusura e dopo l'apertura
     if (club?.openTime || club?.closeTime) {
         const romeHM = (d: Date) => {
@@ -1187,6 +1187,11 @@ async function bookSlotForPlayer(
             const joinResult = await joinExistingMatch(existing.id, player);
             return { ...joinResult, matchId: existing.id };
         }
+
+        // Matchmaking richiesto ma nessun OPEN match compatibile trovato:
+        // segnala NO_OPEN_MATCH — messageHandler gestirà il redirect con intent MATCHMAKING.
+        // NON creare un nuovo match qui: il giocatore vuole aggiungersi a una partita esistente.
+        return { success: false, errorMessage: 'NO_OPEN_MATCH', requestedTime: startTime };
     }
 
     return await createNewMatchAction(startTime, player, club, preferCovered, preferMixed, privateBooking);
@@ -1200,22 +1205,74 @@ async function createNewMatchAction(
     preferMixed: boolean | null = null,
     privateBooking: boolean | null = null,
 ): Promise<{ success: boolean; errorMessage?: string; matchId?: string; requestedTime?: Date }> {
-    const occupied = await prisma.match.findMany({
+    // Carica tutti i match esistenti a questo startTime con i loro giocatori confermati
+    const occupiedMatches = await prisma.match.findMany({
         where: { clubId: player.clubId, status: { in: ['OPEN', 'LOCKED'] }, startTime },
-        select: { courtId: true },
+        include: { MatchPlayer: { where: { leftAt: null } } },
     });
-    const occupiedIds = occupied.map(m => m.courtId).filter(Boolean) as string[];
+
+    const allOccupied = occupiedMatches as any[];
+
+    // Determina se questo è un BOOK_FIELD (prenotazione privata): private=true o skill<=0
+    const isPrivateBookingIntent = privateBooking === true || (privateBooking === null && player.skillLevel <= 0);
+
+    // Costruisci set di courtId "completamente occupati" (LOCKED o OPEN con ≥3 confermati):
+    // questi non possono essere spostati
+    const hardOccupiedIds = new Set<string>(
+        allOccupied
+            .filter((m: any) => m.status === 'LOCKED' || (m.MatchPlayer as any[]).length >= 3)
+            .map((m: any) => m.courtId)
+            .filter(Boolean)
+    );
+
+    // Costruisci set di courtId "morbidamente occupati" (OPEN con ≤2 confermati):
+    // possono essere spostati (displacement) SOLO per BOOK_FIELD
+    const softOccupied = allOccupied.filter((m: any) =>
+        m.status === 'OPEN' && (m.MatchPlayer as any[]).length <= 2 && m.courtId
+    );
+
+    const allOccupiedIds = allOccupied.map((m: any) => m.courtId).filter(Boolean) as string[];
+
+    // Prima cerca un campo veramente libero (non occupato da nessun match)
     const freeCourt = await prisma.court.findFirst({
-        where: { clubId: player.clubId, active: true, id: { notIn: occupiedIds } },
+        where: { clubId: player.clubId, active: true, id: { notIn: allOccupiedIds } },
         orderBy: preferCovered
             ? [{ isCovered: 'desc' }, { name: 'asc' }]
             : [{ isCovered: 'asc' }, { name: 'asc' }],
     });
 
-    if (!freeCourt) return { success: false, errorMessage: 'ALL_COURTS_TAKEN', requestedTime: startTime };
+    // Se non c'è un campo libero ma è BOOK_FIELD, proviamo il displacement
+    let displacedMatchId: string | null = null;
+    let displacedMatchData: any | null = null;
+    let courtToUse = freeCourt;
+
+    if (!freeCourt && isPrivateBookingIntent && softOccupied.length > 0) {
+        // Trova il campo "morbidamente occupato" compatibile con la preferenza coperto/scoperto
+        const courtIds = softOccupied.map((m: any) => m.courtId) as string[];
+        const displacementCourt = await prisma.court.findFirst({
+            where: { clubId: player.clubId, active: true, id: { in: courtIds } },
+            orderBy: preferCovered
+                ? [{ isCovered: 'desc' }, { name: 'asc' }]
+                : [{ isCovered: 'asc' }, { name: 'asc' }],
+        });
+        if (displacementCourt) {
+            // Trova il match da spostare
+            const matchToDisplace = softOccupied.find((m: any) => m.courtId === displacementCourt.id);
+            if (matchToDisplace) {
+                displacedMatchId = matchToDisplace.id;
+                displacedMatchData = matchToDisplace;
+                courtToUse = displacementCourt;
+            }
+        }
+    }
+
+    // Usa courtToUse per la verifica (freeCourt o campo da displacement)
+    const effectiveCourt = courtToUse;
+
+    if (!effectiveCourt) return { success: false, errorMessage: 'ALL_COURTS_TAKEN', requestedTime: startTime };
 
     // Se l'utente NON ha richiesto il coperto ma l'unico campo libero è coperto, chiedi conferma
-    if (!preferCovered && freeCourt.isCovered) {
+    if (!preferCovered && effectiveCourt.isCovered) {
         const scopertoCount = await prisma.court.count({
             where: { clubId: player.clubId, active: true, isCovered: false },
         });
@@ -1225,7 +1282,7 @@ async function createNewMatchAction(
     }
 
     // Check simmetrico: ha chiesto coperto ma l'unico campo libero è scoperto
-    if (preferCovered && !freeCourt.isCovered) {
+    if (preferCovered && !effectiveCourt.isCovered) {
         const copertoCount = await prisma.court.count({
             where: { clubId: player.clubId, active: true, isCovered: true },
         });
@@ -1241,10 +1298,57 @@ async function createNewMatchAction(
     const isPrivateBooking = privateBooking === true || (privateBooking === null && player.skillLevel <= 0);
     const initialStatus = isPrivateBooking ? 'LOCKED' : 'OPEN';
 
+    // ── DISPLACEMENT: se stiamo usando un campo da un match OPEN ≤2, cancellalo prima ──
+    // Fetch i dati dei giocatori coinvolti PRIMA di aggiornare il DB
+    let displacedConfirmed: { id: string; phoneNumber: string; name: string | null; skillLevel: number }[] = [];
+    let displacedPendingPhones: string[] = [];
+    let displacedOriginalSkill = 0;
+
+    if (displacedMatchId && displacedMatchData) {
+        // Fetch confirmed players e pending invitations del match che stiamo spostando
+        const fullDisplacedMatch = await prisma.match.findUnique({
+            where: { id: displacedMatchId },
+            include: {
+                MatchPlayer: { where: { leftAt: null }, include: { player: true } },
+                invitations: { where: { status: 'PENDING' }, include: { player: true } },
+            },
+        });
+
+        if (fullDisplacedMatch) {
+            displacedConfirmed = (fullDisplacedMatch.MatchPlayer as any[]).map((mp: any) => ({
+                id: mp.player.id,
+                phoneNumber: mp.player.phoneNumber,
+                name: mp.player.name,
+                skillLevel: mp.player.skillLevel,
+            }));
+            displacedPendingPhones = (fullDisplacedMatch.invitations as any[]).map((inv: any) => inv.player.phoneNumber);
+            displacedOriginalSkill = (fullDisplacedMatch as any).skillLevel ?? 0;
+
+            // Displacement DB sync (atomico):
+            // 1. Segna tutti i MatchPlayer come usciti
+            await prisma.matchPlayer.updateMany({
+                where: { matchId: displacedMatchId, leftAt: null },
+                data: { leftAt: new Date() },
+            });
+            // 2. Annulla le invitation PENDING
+            await prisma.invitation.updateMany({
+                where: { matchId: displacedMatchId, status: 'PENDING' },
+                data: { status: 'IGNORED' },
+            });
+            // 3. Cancella il match con motivo DISPLACED_BY_BOOKING
+            await prisma.match.update({
+                where: { id: displacedMatchId },
+                data: { status: 'CANCELLED', cancelledAt: new Date(), cancelledReason: 'DISPLACED_BY_BOOKING' },
+            });
+
+            logger.info({ displacedMatchId, courtId: effectiveCourt.id }, 'createNewMatchAction: displaced OPEN match for BOOK_FIELD');
+        }
+    }
+
     const match = await prisma.match.create({
         data: {
             clubId: player.clubId,
-            courtId: freeCourt.id,
+            courtId: effectiveCourt.id,
             startTime,
             skillLevel,
             isMixed: preferMixed === true,
@@ -1268,6 +1372,20 @@ async function createNewMatchAction(
         }, { delay: Math.floor(Math.random() * 60000) + 30000 }).catch(err =>
             logger.warn({ err, matchId: match.id }, 'Wave scheduling failed — checkSilentMatches riproverà')
         );
+    }
+
+    // ── Fire-and-forget: notifica i giocatori del match spostato (displacement) ──
+    // Solo se c'è stato un displacement e ci sono giocatori da notificare
+    if (displacedMatchId && (displacedConfirmed.length > 0 || displacedPendingPhones.length > 0)) {
+        const { notifyDisplacedPlayers } = await import('./redirect');
+        notifyDisplacedPlayers(
+            displacedMatchId,
+            displacedConfirmed,
+            displacedPendingPhones,
+            player.clubId,
+            startTime,
+            displacedOriginalSkill,
+        ).catch(err => logger.warn({ err, displacedMatchId }, 'notifyDisplacedPlayers failed (fire-and-forget)'));
     }
 
     return { success: true, matchId: match.id };

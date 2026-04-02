@@ -519,21 +519,50 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[], cor
             } else if (result.errorMessage === 'SKILL_TEST_REQUIRED') {
                 await simulateTypingAndSend(jid, 'Per cercare avversari hai bisogno di completare prima lo Skill Test. Il circolo ti contatterà per organizzarlo — nel frattempo puoi prenotare il campo per te e i tuoi amici!');
             } else if (result.errorMessage === 'ALL_COURTS_TAKEN') {
-                // Tutti i campi occupati a quell'orario (skill incompatibile con le partite esistenti)
-                // Cerca partite pending quasi complete da proporre come alternativa
-                let redirectMsg = '';
+                // Tutti i campi occupati a quell'orario — redirect con intent BOOK_FIELD
+                // (se è arrivato qui, il booking era privato o skill<=0)
                 try {
-                    const { findRedirectOptions } = await import('./redirect');
+                    const { redirectGroup } = await import('./redirect');
                     const refTime = result.requestedTime ?? new Date();
-                    const opts = await findRedirectOptions(1, refTime, 'none', club?.id ?? '');
-                    const nearComplete = opts.filter(o => o.spotsLeft !== undefined && o.spotsLeft <= 2).slice(0, 3);
-                    if (nearComplete.length > 0) {
-                        const list = nearComplete.map((o, i) => `  ${i + 1}. ${o.description}`).join('\n');
-                        redirectMsg = `\n\nHo però queste partite in corso che cercano ancora giocatori:\n${list}\n\nVuoi unirti a una? Dimmi il numero oppure dimmi un altro orario!`;
-                    }
-                } catch { /* non bloccare */ }
-                const baseMsg = `Tutti i campi sono occupati a quell'orario${redirectMsg ? '' : ' — prova un orario diverso tra quelli liberi che ti ho indicato!'}.`;
-                await simulateTypingAndSend(jid, baseMsg + redirectMsg);
+                    await redirectGroup({
+                        clubId: club?.id ?? '',
+                        referentPhone: player?.phoneNumber ?? phoneNumber,
+                        referentJid: jid,
+                        playerPhones: [player?.phoneNumber ?? phoneNumber],
+                        playerCount: 1,
+                        originalMatchId: 'none',
+                        originalStartTime: refTime,
+                        originalSkillLevel: player?.skillLevel ?? 0,
+                        originalCourtIsCovered: params?.preferCovered === true ? true : null,
+                        reason: 'SLOT_TAKEN',
+                        intent: 'BOOK_FIELD',
+                    });
+                } catch (err) {
+                    logger.error({ err }, 'ALL_COURTS_TAKEN redirectGroup failed');
+                    await simulateTypingAndSend(jid, 'Tutti i campi sono occupati a quell\'orario. Dimmi un altro orario e trovo subito qualcosa! 🎾');
+                }
+            } else if (result.errorMessage === 'NO_OPEN_MATCH') {
+                // Nessun OPEN match compatibile trovato per il matchmaking — redirect con intent MATCHMAKING
+                try {
+                    const { redirectGroup } = await import('./redirect');
+                    const refTime = result.requestedTime ?? new Date();
+                    await redirectGroup({
+                        clubId: club?.id ?? '',
+                        referentPhone: player?.phoneNumber ?? phoneNumber,
+                        referentJid: jid,
+                        playerPhones: [player?.phoneNumber ?? phoneNumber],
+                        playerCount: 1,
+                        originalMatchId: 'none',
+                        originalStartTime: refTime,
+                        originalSkillLevel: player?.skillLevel ?? 0,
+                        originalCourtIsCovered: null,
+                        reason: 'SLOT_TAKEN',
+                        intent: 'MATCHMAKING',
+                    });
+                } catch (err) {
+                    logger.error({ err }, 'NO_OPEN_MATCH redirectGroup failed');
+                    await simulateTypingAndSend(jid, 'Non ci sono partite aperte a quell\'orario. Dimmi un altro orario e vedo cosa c\'è disponibile! 🎾');
+                }
             } else {
                 await simulateTypingAndSend(jid, `Ops! ${result.errorMessage} 😕`);
             }

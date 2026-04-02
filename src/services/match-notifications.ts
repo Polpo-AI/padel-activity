@@ -64,6 +64,7 @@ export async function notifyMatchCancelled(matchId: string, clubId: string): Pro
     }
 
     // redirectGroup: al solo prenotante se 1 confermato, a tutti se matchmaking (2+)
+    // intent: BOOK_FIELD se prenotazione privata, MATCHMAKING altrimenti
     await redirectGroup({
         clubId,
         referentPhone: confirmed[0].player.phoneNumber,
@@ -75,6 +76,7 @@ export async function notifyMatchCancelled(matchId: string, clubId: string): Pro
         originalSkillLevel: match.skillLevel ?? 0,
         originalCourtIsCovered: (match as any).court?.isCovered ?? null,
         reason: 'CANCELLED',
+        intent: (match as any).isPrivateBooking ? 'BOOK_FIELD' : 'MATCHMAKING',
     });
 }
 
