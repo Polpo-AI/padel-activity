@@ -11,9 +11,13 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 // MOCK SETUP
 // ─────────────────────────────────────────────
 
-const mockSimulateTypingAndSend = vi.fn().mockResolvedValue(undefined);
-const mockRedirectGroup = vi.fn().mockResolvedValue(undefined);
-const mockWaveQueueAdd = vi.fn().mockResolvedValue(undefined);
+// vi.mock factories are hoisted before const declarations, so use vi.hoisted()
+// to avoid TDZ "Cannot access before initialization" errors
+const { mockSimulateTypingAndSend, mockRedirectGroup, mockWaveQueueAdd } = vi.hoisted(() => ({
+    mockSimulateTypingAndSend: vi.fn().mockResolvedValue(undefined),
+    mockRedirectGroup: vi.fn().mockResolvedValue(undefined),
+    mockWaveQueueAdd: vi.fn().mockResolvedValue(undefined),
+}));
 
 vi.mock('../services/whatsapp', () => ({
     simulateTypingAndSend: mockSimulateTypingAndSend,
@@ -33,10 +37,14 @@ vi.mock('pino', () => ({
 }));
 
 // Prisma mock — configurato per-test con mockImplementation
-const mockPrismaMatchFindUnique = vi.fn();
-const mockPrismaMatchFindMany = vi.fn();
-const mockPrismaMatchUpdate = vi.fn();
-const mockPrismaInvitationUpdateMany = vi.fn();
+const { mockPrismaMatchFindUnique, mockPrismaMatchFindMany, mockPrismaMatchUpdate,
+    mockPrismaInvitationUpdateMany, mockPrismaMatchPlayerUpdateMany } = vi.hoisted(() => ({
+    mockPrismaMatchFindUnique: vi.fn(),
+    mockPrismaMatchFindMany: vi.fn(),
+    mockPrismaMatchUpdate: vi.fn(),
+    mockPrismaInvitationUpdateMany: vi.fn(),
+    mockPrismaMatchPlayerUpdateMany: vi.fn().mockResolvedValue({ count: 0 }),
+}));
 
 vi.mock('../services/db', () => ({
     prisma: {
@@ -47,6 +55,9 @@ vi.mock('../services/db', () => ({
         },
         invitation: {
             updateMany: (...args: any[]) => mockPrismaInvitationUpdateMany(...args),
+        },
+        matchPlayer: {
+            updateMany: (...args: any[]) => mockPrismaMatchPlayerUpdateMany(...args),
         },
     },
 }));

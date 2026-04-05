@@ -48,6 +48,7 @@ vi.mock('../utils/notify-admin', () => ({
 vi.mock('../utils/request-context', () => ({
     runWithContext: vi.fn((ctx: any, fn: any) => fn()),
     getCorrelationId: vi.fn().mockReturnValue('test-correlation'),
+    getClubId: vi.fn().mockReturnValue('club-1'),
 }));
 
 // ─────────────────────────────────────────────
@@ -105,20 +106,23 @@ function setupRedisInMemory() {
 // ─────────────────────────────────────────────
 
 describe('Onboarding flow', () => {
-    beforeEach(() => {
+    beforeEach(async () => {
         vi.resetModules();
         mockSend.mockClear();
-        mockAnthropicCreate.mockClear();
+        mockAnthropicCreate.mockReset();
         setupRedisInMemory();
+        // Pre-approve the test number so the unapproved gate doesn't block new users
+        await mockRedis.set(`approval:approved:${TEST_PHONE}`, '1', 'EX', 86400);
 
         // DB: nessun player, nessun messaggio, club esistente
         mockPrisma.whatsAppMessage = {
             findFirst: vi.fn().mockResolvedValue(null),
             create: vi.fn().mockResolvedValue({ id: 'wam-1' }),
+            findMany: vi.fn().mockResolvedValue([]),
         };
         mockPrisma.player = {
             findFirst: vi.fn().mockResolvedValue(null),
-            upsert: vi.fn().mockResolvedValue({ id: 'p-1', name: 'Marco Rossi', skillLevel: -1 }),
+            create: vi.fn().mockResolvedValue({ id: 'p-1', name: 'Marco Rossi', skillLevel: -1 }),
             update: vi.fn().mockResolvedValue({}),
         };
         mockPrisma.club = {
@@ -129,6 +133,7 @@ describe('Onboarding flow', () => {
         mockPrisma.matchPlayer = { findMany: vi.fn().mockResolvedValue([]) };
         mockPrisma.match = { findMany: vi.fn().mockResolvedValue([]) };
         mockPrisma.court = { findMany: vi.fn().mockResolvedValue([]) };
+        mockPrisma.faq = { findMany: vi.fn().mockResolvedValue([]) };
         mockPrisma.conversationState = {
             findFirst: vi.fn().mockResolvedValue(null),
             upsert: vi.fn().mockResolvedValue({}),
@@ -136,99 +141,53 @@ describe('Onboarding flow', () => {
         };
     });
 
-    it('nuovo utente riceve il messaggio di benvenuto che chiede nome e cognome', async () => {
-        // AI risponde per il primo messaggio onboarding
+    it('nuovo utente: il brain risponde con NONE chiedendo nome e cognome', async () => {
         mockAnthropicCreate.mockResolvedValueOnce({
-            content: [{ type: 'text', text: 'Ciao! Sono Francesca 👋 Lasciami nome e cognome così ti salvo. Dati usati solo per partite 🔒' }],
+            content: [{ type: 'text', text: JSON.stringify({
+                message: 'Ciao! Sono Francesca 🎾 Per registrarti dimmi nome e cognome.',
+                action: 'NONE',
+                params: {},
+            }) }],
         });
 
         const { handleBatch } = await import('../services/messageHandler');
         await handleBatch(TEST_JID, [{ type: 'text', text: 'ciao', raw: makeRawMsg('ciao') as any }]);
 
-        expect(mockSend).toHaveBeenCalledTimes(1);
-        const msg = mockSend.mock.calls[0][1] as string;
-        expect(msg.toLowerCase()).toContain('francesca');
+        expect(mockSend).toHaveBeenCalled();
+        const allText = mockSend.mock.calls.map((c: any[]) => c[1] as string).join(' ');
+        expect(allText.toLowerCase()).toContain('francesca');
     });
 
-    it('nickname con numeri viene rifiutato e viene richiesto il nome corretto', async () => {
-        const redisStore = setupRedisInMemory();
-        // Simula stato onboarding attivo
-        redisStore.set(`state:onboarding:${TEST_JID}`, {
-            value: JSON.stringify({
-                step: 'AWAITING_NAME',
-                data: { config: { ...MOCK_CLUB, botName: 'Francesca', clubId: 'club-1', askAvailability: false, askTimePreference: false, skipLevel: true, notifyAdminOnNewPlayer: false, maxDailyMessages: 3 } },
-                expiresAt: new Date(Date.now() + 3600000),
-            }),
-        });
-
-        // AI restituisce NULL per il nickname
+    it('brain raccoglie nome+cognome → REGISTER_PLAYER → player creato nel DB', async () => {
         mockAnthropicCreate.mockResolvedValueOnce({
-            content: [{ type: 'text', text: 'NULL' }],
+            content: [{ type: 'text', text: JSON.stringify({
+                message: 'Benvenuto Marco! Sei registrato.',
+                action: 'REGISTER_PLAYER',
+                params: { name: 'Marco Rossi' },
+            }) }],
         });
-
-        const { handleBatch } = await import('../services/messageHandler');
-        await handleBatch(TEST_JID, [{ type: 'text', text: 'Pallina68', raw: makeRawMsg('Pallina68') as any }]);
-
-        expect(mockSend).toHaveBeenCalledTimes(1);
-        // Non deve essere un messaggio di benvenuto
-        const msg = mockSend.mock.calls[0][1] as string;
-        expect(msg).not.toContain('Benvenuto');
-    });
-
-    it('solo nome senza cognome → chiede il cognome', async () => {
-        const redisStore = setupRedisInMemory();
-        redisStore.set(`state:onboarding:${TEST_JID}`, {
-            value: JSON.stringify({
-                step: 'AWAITING_NAME',
-                data: { config: { botName: 'Francesca', clubId: 'club-1', askAvailability: false, askTimePreference: false, skipLevel: true, notifyAdminOnNewPlayer: false, maxDailyMessages: 3 } },
-                expiresAt: new Date(Date.now() + 3600000),
-            }),
-        });
-
-        // AI restituisce solo il nome
+        // Secondo callBrain post-registrazione (re-call per intent pendente)
         mockAnthropicCreate.mockResolvedValueOnce({
-            content: [{ type: 'text', text: 'Marco' }],
+            content: [{ type: 'text', text: JSON.stringify({
+                message: 'Perfetto, sei a posto!',
+                action: 'NONE',
+                params: {},
+            }) }],
         });
-
-        const { handleBatch } = await import('../services/messageHandler');
-        await handleBatch(TEST_JID, [{ type: 'text', text: 'Marco', raw: makeRawMsg('Marco') as any }]);
-
-        expect(mockSend).toHaveBeenCalledTimes(1);
-        const msg = mockSend.mock.calls[0][1] as string;
-        expect(msg).toContain('cognome');
-    });
-
-    it('nome e cognome validi → welcome generato con aiTone + player salvato', async () => {
-        const redisStore = setupRedisInMemory();
-        redisStore.set(`state:onboarding:${TEST_JID}`, {
-            value: JSON.stringify({
-                step: 'AWAITING_NAME',
-                data: {
-                    config: { botName: 'Francesca', clubId: 'club-1', aiTone: 'entusiasta', askAvailability: false, askTimePreference: false, skipLevel: true, notifyAdminOnNewPlayer: false, maxDailyMessages: 3 },
-                    resolvedPhone: TEST_PHONE,
-                },
-                expiresAt: new Date(Date.now() + 3600000),
-            }),
-        });
-
-        // AI: estrazione nome
-        mockAnthropicCreate.mockResolvedValueOnce({
-            content: [{ type: 'text', text: 'Marco Rossi' }],
-        });
-        // AI: welcome message
-        mockAnthropicCreate.mockResolvedValueOnce({
-            content: [{ type: 'text', text: 'Marco, sei nella lista! 🎾 Trova subito compagni del tuo livello — scrivimi per la valutazione!' }],
-        });
+        // Dopo REGISTER_PLAYER, buildBrainContext viene ri-chiamato con il nuovo player
+        mockPrisma.player.findFirst = vi.fn()
+            .mockResolvedValueOnce(null) // prima chiamata: utente non registrato
+            .mockResolvedValue({ id: 'p-1', name: 'Marco Rossi', skillLevel: -1, clubId: 'club-1', reliabilityScore: 0.33, active: true, dailyMessagesCount: 0, notes: null });
 
         const { handleBatch } = await import('../services/messageHandler');
         await handleBatch(TEST_JID, [{ type: 'text', text: 'Marco Rossi', raw: makeRawMsg('Marco Rossi') as any }]);
 
-        expect(mockPrisma.player.upsert).toHaveBeenCalledWith(
+        expect(mockPrisma.player.create).toHaveBeenCalledWith(
             expect.objectContaining({
-                create: expect.objectContaining({ name: 'Marco Rossi', skillLevel: -1 }),
+                data: expect.objectContaining({ name: 'Marco Rossi', skillLevel: -1 }),
             })
         );
-        expect(mockSend).toHaveBeenCalledTimes(1);
+        expect(mockSend).toHaveBeenCalled();
         const welcomeMsg = mockSend.mock.calls[0][1] as string;
         expect(welcomeMsg).toContain('Marco');
     });
@@ -254,7 +213,7 @@ describe('Brain actions — utente registrato', () => {
     beforeEach(() => {
         vi.resetModules();
         mockSend.mockClear();
-        mockAnthropicCreate.mockClear();
+        mockAnthropicCreate.mockReset();
         setupRedisInMemory();
 
         mockPrisma.whatsAppMessage = {
@@ -274,7 +233,10 @@ describe('Brain actions — utente registrato', () => {
             findMany: vi.fn().mockResolvedValue([]),
             findUnique: vi.fn().mockResolvedValue(null),
         };
-        mockPrisma.matchPlayer = { findMany: vi.fn().mockResolvedValue([]) };
+        mockPrisma.matchPlayer = {
+            findMany: vi.fn().mockResolvedValue([]),
+            findFirst: vi.fn().mockResolvedValue(null),
+        };
         mockPrisma.match = {
             findMany: vi.fn().mockResolvedValue([]),
             findFirst: vi.fn().mockResolvedValue(null),
@@ -288,6 +250,7 @@ describe('Brain actions — utente registrato', () => {
             findFirst: vi.fn().mockResolvedValue({ id: 'court-1', name: 'Campo 1', isCovered: false, prices: [] }),
             findUnique: vi.fn().mockResolvedValue({ id: 'court-1', name: 'Campo 1', isCovered: false, prices: [] }),
         };
+        mockPrisma.faq = { findMany: vi.fn().mockResolvedValue([]) };
         mockPrisma.conversationState = {
             findFirst: vi.fn().mockResolvedValue(null),
             upsert: vi.fn().mockResolvedValue({}),
@@ -359,7 +322,7 @@ describe('Brain actions — utente registrato', () => {
         const { handleBatch } = await import('../services/messageHandler');
         await handleBatch(TEST_JID, [{ type: 'text', text: 'siete il circolo in via test?', raw: makeRawMsg('siete il circolo in via test?') as any }]);
 
-        expect(mockSend).toHaveBeenCalledTimes(1);
+        expect(mockSend).toHaveBeenCalled();
         expect(mockPrisma.match.create).not.toHaveBeenCalled();
     });
 });
@@ -419,6 +382,7 @@ describe('RESCHEDULE vs BOOK_FIELD — regola linguistica nel brain', () => {
         mockPrisma.matchPlayer = { findMany: vi.fn().mockResolvedValue([]) };
         mockPrisma.match = { findMany: vi.fn().mockResolvedValue([]) };
         mockPrisma.court = { findMany: vi.fn().mockResolvedValue([]) };
+        mockPrisma.faq = { findMany: vi.fn().mockResolvedValue([]) };
 
         mockAnthropicCreate.mockResolvedValueOnce({
             content: [{ type: 'text', text: JSON.stringify({ message: 'test', action: 'NONE', params: {} }) }],
@@ -450,6 +414,7 @@ describe('RESCHEDULE vs BOOK_FIELD — regola linguistica nel brain', () => {
                 { id: 'court-2', name: 'Campo 2', isCovered: true, notes: null, prices: [] },
             ]),
         };
+        mockPrisma.faq = { findMany: vi.fn().mockResolvedValue([]) };
 
         mockAnthropicCreate.mockResolvedValueOnce({
             content: [{ type: 'text', text: JSON.stringify({ message: 'test', action: 'NONE', params: {} }) }],

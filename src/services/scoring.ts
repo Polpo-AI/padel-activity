@@ -33,7 +33,7 @@ export async function updateShowUpRate(
     const player = await prisma.player.findUnique({ where: { id: playerId } });
     if (!player) return;
 
-    const currentRate = player.reliabilityScore;
+    const currentRate = player.reliabilityScore || PRIOR; // PRIOR fallback for legacy players with score=0
 
     let eventValue = showed ? 1.0 : 0.0;
     if (showed && minutesUntilMatchWhenInvited <= LAST_MINUTE_THRESHOLD_MIN) {
