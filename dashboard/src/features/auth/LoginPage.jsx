@@ -25,12 +25,7 @@ export default function LoginPage({ onLogin }) {
     <div style={{ minHeight: "100vh", background: C.bg, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "inherit" }}>
       <div style={{ width: 360, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 16, padding: 40, display: "flex", flexDirection: "column", gap: 24 }}>
         <div style={{ textAlign: "center" }}>
-          <div style={{
-            width: 60, height: 60, borderRadius: 18, fontSize: 28, margin: "0 auto 16px",
-            background: `linear-gradient(135deg, ${C.indigoDim}, ${C.accentDim})`,
-            border: `1px solid ${C.indigo}50`,
-            display: "flex", alignItems: "center", justifyContent: "center",
-          }}>🎾</div>
+          <div style={{ fontSize: 36, marginBottom: 12 }}>🎾</div>
           <div style={{ fontSize: 20, fontWeight: 700, color: C.text }}>Padel Dashboard</div>
           <div style={{ fontSize: 12, color: C.muted, marginTop: 4 }}>Accesso riservato</div>
         </div>
