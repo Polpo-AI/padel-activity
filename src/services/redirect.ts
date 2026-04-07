@@ -164,6 +164,9 @@ export async function findRedirectOptions(
  * - Slot 1: slot libero più vicino PRIMA di T nello stesso giorno (Rome tz)
  * - Slot 2: slot libero più vicino DOPO T nello stesso giorno (Rome tz)
  * - Slot 3-5: stesso orario di T nei giorni successivi (fino a 7 giorni) dove esiste almeno un campo libero
+ *
+ * Se il tipo di campo preferito non produce abbastanza opzioni, fa un secondo giro
+ * col tipo opposto (coperto ↔ scoperto) per non lasciare l'utente senza alternative.
  */
 async function findRedirectOptionsBookField(
     referenceTime: Date,
@@ -171,10 +174,35 @@ async function findRedirectOptionsBookField(
     clubId: string,
     originalCourtIsCovered: boolean | null = null,
 ): Promise<RedirectOption[]> {
+    const options = await _bookFieldSearch(referenceTime, excludeMatchId, clubId, originalCourtIsCovered);
+
+    // Se abbiamo preferenza di tipo ma mancano opzioni → fallback col tipo opposto
+    if (originalCourtIsCovered !== null && options.length < TARGET_OPTIONS) {
+        const fallback = await _bookFieldSearch(referenceTime, excludeMatchId, clubId, !originalCourtIsCovered);
+        // Deduplica per startTime (evita di proporre lo stesso slot già trovato)
+        const existingKeys = new Set(options.map(o => o.startTime.toISOString()));
+        for (const o of fallback) {
+            if (options.length >= TARGET_OPTIONS) break;
+            if (!existingKeys.has(o.startTime.toISOString())) {
+                options.push(o);
+                existingKeys.add(o.startTime.toISOString());
+            }
+        }
+    }
+
+    return options;
+}
+
+async function _bookFieldSearch(
+    referenceTime: Date,
+    excludeMatchId: string,
+    clubId: string,
+    isCoveredFilter: boolean | null,
+): Promise<RedirectOption[]> {
     const options: RedirectOption[] = [];
 
     const courts = await prisma.court.findMany({
-        where: { clubId, active: true, ...(originalCourtIsCovered !== null ? { isCovered: originalCourtIsCovered } : {}) },
+        where: { clubId, active: true, ...(isCoveredFilter !== null ? { isCovered: isCoveredFilter } : {}) },
         select: { id: true, name: true, isCovered: true },
         orderBy: { name: 'asc' },
     });
@@ -814,7 +842,26 @@ function buildRedirectMessage(group: RedirectGroup, options: RedirectOption[]): 
         ? 'Oppure dimmi un giorno e ti dico i match aperti disponibili 📅'
         : 'Sennò dimmi un giorno e ti dico le disponibilità libere 📅';
 
-    return `${reason}\n\nHo trovato queste alternative:\n\n${lines}\n\n${closing}\n${intentClosing}`;
+    // Se l'utente aveva una preferenza di tipo campo, controlla se le alternative includono il tipo opposto
+    let courtTypeNote = '';
+    if (group.originalCourtIsCovered !== null) {
+        const hasFallbackOptions = options.some(o => o.courtIsCovered !== group.originalCourtIsCovered);
+        const preferredTypeLabel = group.originalCourtIsCovered ? 'coperto' : 'scoperto';
+        const fallbackTypeLabel  = group.originalCourtIsCovered ? 'scoperto' : 'coperto';
+        const allAreFallback = options.every(o => o.courtIsCovered !== group.originalCourtIsCovered);
+
+        if (allAreFallback) {
+            courtTypeNote = `\nIl campo ${preferredTypeLabel} non è disponibile a quell'orario — ecco le alternative con campo ${fallbackTypeLabel}:`;
+        } else if (hasFallbackOptions) {
+            courtTypeNote = `\nIl campo ${preferredTypeLabel} è esaurito a quell'orario — alcune opzioni qui sotto sono con campo ${fallbackTypeLabel}:`;
+        }
+    }
+
+    const introLine = courtTypeNote
+        ? `Ho trovato queste alternative:${courtTypeNote}`
+        : `Ho trovato queste alternative:`;
+
+    return `${reason}\n\n${introLine}\n\n${lines}\n\n${closing}\n${intentClosing}`;
 }
 
 function buildPlayerNotificationMessage(group: RedirectGroup): string {
