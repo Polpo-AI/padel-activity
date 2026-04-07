@@ -88,7 +88,7 @@ function FilterDropdown({ trigger, children, active }) {
 
 function TextFilterDropdown({ value, onChange, placeholder, active }) {
   return (
-    <FilterDropdown trigger="▼" active={active}>
+    <FilterDropdown trigger="⌕" active={active}>
       {({ close }) => (
         <div style={{ padding: "8px 12px" }}>
           <input
@@ -124,7 +124,7 @@ function MultiSelectFilterDropdown({ options, selected, onChange, active }) {
   };
 
   return (
-    <FilterDropdown trigger="▼" active={active}>
+    <FilterDropdown trigger="⌕" active={active}>
       {({ close: _close }) => (
         <div style={{ padding: "4px 0" }}>
           {/* Tutti */}
@@ -188,7 +188,7 @@ function ReliabilityFilterDropdown({ minReliability, onChange, active }) {
   const color = minReliability >= 0.6 ? C.open : minReliability >= 0.3 ? C.warning : C.cancelled;
 
   return (
-    <FilterDropdown trigger="▼" active={active}>
+    <FilterDropdown trigger="⌕" active={active}>
       {() => (
         <div style={{ padding: "12px 16px", minWidth: 220 }}>
           <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8, fontSize: 12 }}>
