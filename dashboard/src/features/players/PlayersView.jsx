@@ -40,6 +40,18 @@ function SortArrow({ field, sortBy, sortDir, onSort }) {
   );
 }
 
+// ─── Th — intestazione colonna (DEVE stare fuori da PlayersView per non smontarsi ad ogni render) ──
+
+function Th({ label, sortField, sortBy, sortDir, onSort, filterEl }) {
+  return (
+    <div style={{ display: "inline-flex", alignItems: "center", gap: 4, whiteSpace: "nowrap" }}>
+      {label}
+      {sortField && <SortArrow field={sortField} sortBy={sortBy} sortDir={sortDir} onSort={onSort} />}
+      {filterEl}
+    </div>
+  );
+}
+
 // ─── FilterDropdown — contenitore popup ───────────────────────────────────────
 
 function FilterDropdown({ trigger, children, active }) {
@@ -129,7 +141,7 @@ function MultiSelectFilterDropdown({ options, selected, onChange, active }) {
 
   return (
     <FilterDropdown trigger="⌕" active={active}>
-      {({ close: _close }) => (
+      {({ close }) => (
         <div style={{ padding: "4px 0" }}>
           {/* Tutti */}
           <div
@@ -179,6 +191,13 @@ function MultiSelectFilterDropdown({ options, selected, onChange, active }) {
               </div>
             );
           })}
+
+          {/* Bottone OK */}
+          <div style={{ padding: "8px 12px 4px", borderTop: `1px solid ${C.border}`, marginTop: 4 }}>
+            <button onClick={close} style={{ ...btnPrimary, width: "100%", fontSize: 12, padding: "6px 0" }}>
+              OK
+            </button>
+          </div>
         </div>
       )}
     </FilterDropdown>
@@ -637,14 +656,7 @@ export default function PlayersView({ token }) {
   // Layout colonne: Nome | Telefono | Sesso | Livello | Affidabilità | Contattato | Stato
   const COLS = "2fr 1.2fr 0.45fr 0.65fr 1fr 0.85fr 0.6fr";
 
-  // Header cell: etichetta + freccia sort (se sortable) + icona filtro
-  const Th = ({ label, sortField, filterEl }) => (
-    <div style={{ display: "inline-flex", alignItems: "center", gap: 4, whiteSpace: "nowrap" }}>
-      {label}
-      {sortField && <SortArrow field={sortField} sortBy={sortBy} sortDir={sortDir} onSort={onSort} />}
-      {filterEl}
-    </div>
-  );
+  // Th è definito a livello modulo (fuori da PlayersView) — non cambia riferimento ad ogni render
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
@@ -701,18 +713,18 @@ export default function PlayersView({ token }) {
             fontSize: 10, color: C.muted, textTransform: "uppercase", letterSpacing: "0.1em",
             position: "relative",
           }}>
-            <Th label="Nome" sortField="name"
+            <Th label="Nome" sortField="name" sortBy={sortBy} sortDir={sortDir} onSort={onSort}
               filterEl={<TextFilterDropdown value={fName} onChange={setFName} placeholder="Cerca nome…" active={!!fName} />} />
-            <Th label="Telefono"
+            <Th label="Telefono" sortBy={sortBy} sortDir={sortDir} onSort={onSort}
               filterEl={<TextFilterDropdown value={fPhone} onChange={setFPhone} placeholder="Cerca numero…" active={!!fPhone} />} />
-            <Th label="Sesso"
+            <Th label="Sesso" sortBy={sortBy} sortDir={sortDir} onSort={onSort}
               filterEl={<MultiSelectFilterDropdown options={genderOptions} selected={fGender} onChange={setFGender} active={fGender.size > 0} />} />
-            <Th label="Liv." sortField="skillLevel"
+            <Th label="Liv." sortField="skillLevel" sortBy={sortBy} sortDir={sortDir} onSort={onSort}
               filterEl={<MultiSelectFilterDropdown options={skillOptions} selected={fSkill} onChange={setFSkill} active={fSkill.size > 0} />} />
-            <Th label="Affidabilità" sortField="reliability"
+            <Th label="Affidabilità" sortField="reliability" sortBy={sortBy} sortDir={sortDir} onSort={onSort}
               filterEl={<ReliabilityFilterDropdown minReliability={fReliability} onChange={setFReliability} active={fReliability > 0} />} />
-            <Th label="Contattato" sortField="contacted" />
-            <Th label="Stato"
+            <Th label="Contattato" sortField="contacted" sortBy={sortBy} sortDir={sortDir} onSort={onSort} />
+            <Th label="Stato" sortBy={sortBy} sortDir={sortDir} onSort={onSort}
               filterEl={<MultiSelectFilterDropdown options={statusOptions} selected={fStatus} onChange={setFStatus} active={fStatus.size > 0} />} />
           </div>
 
