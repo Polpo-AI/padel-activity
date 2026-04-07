@@ -58,23 +58,25 @@ function FilterDropdown({ trigger, children, active }) {
       <span
         onClick={(e) => { e.stopPropagation(); setOpen(v => !v); }}
         style={{
-          cursor: "pointer", fontSize: 9, padding: "1px 4px", borderRadius: 4, lineHeight: 1,
-          background: active ? C.accentDim : "transparent",
-          color: active ? C.accent : C.dim,
-          border: active ? `1px solid ${C.accent}40` : "1px solid transparent",
-          userSelect: "none",
+          cursor: "pointer", fontSize: 11, padding: "2px 6px", borderRadius: 5, lineHeight: 1,
+          background: active ? C.accentDim : "rgba(255,255,255,0.85)",
+          color: active ? C.accent : "#888",
+          border: `1px solid ${active ? `${C.accent}50` : "rgba(0,0,0,0.12)"}`,
+          userSelect: "none", display: "inline-block",
         }}
         title="Filtra"
       >
         {trigger}
       </span>
       {open && (
-        <div style={{
-          position: "absolute", top: "calc(100% + 6px)", left: 0, zIndex: 300,
-          background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10,
-          boxShadow: "0 8px 28px rgba(0,0,0,0.16)", minWidth: 200,
-          padding: "8px 0",
-        }}>
+        <div
+          onMouseDown={(e) => e.stopPropagation()}
+          style={{
+            position: "absolute", top: "calc(100% + 6px)", left: 0, zIndex: 300,
+            background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10,
+            boxShadow: "0 8px 28px rgba(0,0,0,0.16)", minWidth: 200,
+            padding: "8px 0",
+          }}>
           {children({ close: () => setOpen(false) })}
         </div>
       )}
