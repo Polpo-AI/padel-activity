@@ -111,16 +111,21 @@ function TextFilterDropdown({ value, onChange, placeholder, active }) {
             autoFocus
             value={value}
             onChange={e => onChange(e.target.value)}
+            onKeyDown={e => {
+              if (e.key === "Enter") { e.preventDefault(); close(); }
+              if (e.key === "Escape") { e.preventDefault(); onChange(""); close(); }
+            }}
             placeholder={placeholder}
             style={{ ...inputSt, fontSize: 12, padding: "6px 10px", width: "100%" }}
           />
-          {value && (
-            <div style={{ textAlign: "right", marginTop: 6 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 6 }}>
+            <span style={{ fontSize: 10, color: C.muted }}>↵ applica &nbsp;•&nbsp; Esc cancella</span>
+            {value && (
               <button onClick={() => { onChange(""); close(); }} style={{ ...btnGhost, fontSize: 11, padding: "3px 10px" }}>
                 ✕ Cancella
               </button>
-            </div>
-          )}
+            )}
+          </div>
         </div>
       )}
     </FilterDropdown>
@@ -142,7 +147,14 @@ function MultiSelectFilterDropdown({ options, selected, onChange, active }) {
   return (
     <FilterDropdown trigger="⌕" active={active}>
       {({ close }) => (
-        <div style={{ padding: "4px 0" }}>
+        <div
+          tabIndex={0}
+          onKeyDown={e => {
+            if (e.key === "Enter") { e.preventDefault(); close(); }
+            if (e.key === "Escape") { e.preventDefault(); onChange(new Set()); close(); }
+          }}
+          style={{ padding: "4px 0", outline: "none" }}
+        >
           {/* Tutti */}
           <div
             onClick={() => onChange(new Set())}
@@ -192,8 +204,11 @@ function MultiSelectFilterDropdown({ options, selected, onChange, active }) {
             );
           })}
 
-          {/* Bottone OK */}
+          {/* Bottone OK + hints */}
           <div style={{ padding: "8px 12px 4px", borderTop: `1px solid ${C.border}`, marginTop: 4 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+              <span style={{ fontSize: 10, color: C.muted }}>↵ applica &nbsp;•&nbsp; Esc cancella</span>
+            </div>
             <button onClick={close} style={{ ...btnPrimary, width: "100%", fontSize: 12, padding: "6px 0" }}>
               OK
             </button>
@@ -220,13 +235,14 @@ function ReliabilityFilterDropdown({ minReliability, onChange, active }) {
   return (
     <FilterDropdown trigger="⌕" active={active}>
       {() => (
-        <div style={{ padding: "12px 16px", minWidth: 240 }}>
+        <div style={{ padding: "12px 16px", width: 240, boxSizing: "border-box", overflow: "hidden" }}>
           {/* Intestazione con valore live */}
           <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 10, fontSize: 12 }}>
             <span style={{ color: C.muted }}>Affidabilità minima</span>
             <span style={{
               color, fontWeight: 700, fontSize: 13,
               transition: dragging ? "none" : "color 0.2s",
+              minWidth: 80, textAlign: "right",
             }}>
               ≥ {displayPct}%
               {dragging && <span style={{ fontSize: 10, color: C.muted, fontWeight: 400, marginLeft: 4 }}>(lascia per applicare)</span>}
