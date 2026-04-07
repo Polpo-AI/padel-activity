@@ -48,7 +48,11 @@ function FilterDropdown({ trigger, children, active }) {
 
   useEffect(() => {
     if (!open) return;
-    const close = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    // composedPath() attraversa il shadow DOM (necessario per il thumb del range input)
+    const close = (e) => {
+      if (ref.current && e.composedPath().includes(ref.current)) return;
+      setOpen(false);
+    };
     document.addEventListener("mousedown", close);
     return () => document.removeEventListener("mousedown", close);
   }, [open]);
@@ -58,7 +62,7 @@ function FilterDropdown({ trigger, children, active }) {
       <span
         onClick={(e) => { e.stopPropagation(); setOpen(v => !v); }}
         style={{
-          cursor: "pointer", fontSize: 11, padding: "2px 6px", borderRadius: 5, lineHeight: 1,
+          cursor: "pointer", fontSize: 16, padding: "1px 5px", borderRadius: 5, lineHeight: 1,
           background: active ? C.accentDim : "rgba(255,255,255,0.85)",
           color: active ? C.accent : "#888",
           border: `1px solid ${active ? `${C.accent}50` : "rgba(0,0,0,0.12)"}`,
