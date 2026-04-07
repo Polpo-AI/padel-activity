@@ -46,7 +46,12 @@ export default function PadelDashboard() {
       <div style={{ position: "fixed", left: 0, top: 0, bottom: 0, width: 210, background: C.surface, borderRight: `1px solid ${C.border}`, display: "flex", flexDirection: "column", padding: "24px 0" }}>
         <div style={{ padding: "0 20px 24px", borderBottom: `1px solid ${C.border}` }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <div style={{ width: 36, height: 36, borderRadius: 10, background: C.accentDim, border: `1px solid ${C.accentSoft}`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18 }}>🎾</div>
+            <div style={{
+              width: 36, height: 36, borderRadius: 10, fontSize: 18,
+              background: `linear-gradient(135deg, ${C.indigoDim}, ${C.accentDim})`,
+              border: `1px solid ${C.indigo}50`,
+              display: "flex", alignItems: "center", justifyContent: "center",
+            }}>🎾</div>
             <div>
               <div style={{ fontSize: 13, fontWeight: 700, color: C.text }}>{club?.name || "Padel"}</div>
               <div style={{ fontSize: 10, color: C.muted }}>Dashboard</div>
@@ -54,19 +59,25 @@ export default function PadelDashboard() {
           </div>
         </div>
 
-        <nav style={{ padding: "16px 12px", flex: 1, display: "flex", flexDirection: "column", gap: 4 }}>
-          {NAV.map(n => (
-            <button key={n.id} onClick={() => setTab(n.id)} style={{
-              display: "flex", alignItems: "center", gap: 10,
-              padding: "10px 12px", borderRadius: 8, border: "none", cursor: "pointer",
-              background: tab === n.id ? C.accentDim : "transparent",
-              color: tab === n.id ? C.accent : C.muted,
-              fontSize: 13, textAlign: "left", transition: "all 0.12s",
-              fontFamily: "inherit",
-            }}>
-              <span>{n.icon}</span><span>{n.label}</span>
-            </button>
-          ))}
+        <nav style={{ padding: "16px 12px", flex: 1, display: "flex", flexDirection: "column", gap: 2 }}>
+          {NAV.map(n => {
+            const active = tab === n.id;
+            return (
+              <button key={n.id} onClick={() => setTab(n.id)} style={{
+                display: "flex", alignItems: "center", gap: 10,
+                padding: "10px 12px", borderRadius: 8, cursor: "pointer",
+                border: active ? `1px solid ${C.indigo}35` : "1px solid transparent",
+                background: active ? C.indigoDim : "transparent",
+                color: active ? C.indigo : C.muted,
+                fontSize: 13, textAlign: "left", transition: "all 0.12s",
+                fontFamily: "inherit", fontWeight: active ? 600 : 400,
+              }}>
+                <span style={{ fontSize: 15 }}>{n.icon}</span>
+                <span>{n.label}</span>
+                {active && <span style={{ marginLeft: "auto", width: 5, height: 5, borderRadius: "50%", background: C.indigo, flexShrink: 0 }} />}
+              </button>
+            );
+          })}
         </nav>
 
         <div style={{ padding: "16px 20px", borderTop: `1px solid ${C.border}` }}>
@@ -76,9 +87,14 @@ export default function PadelDashboard() {
 
       {/* Content */}
       <div style={{ marginLeft: 210, padding: "32px 36px", maxWidth: 1300 }}>
-        <div style={{ marginBottom: 28 }}>
-          <div style={{ fontSize: 22, fontWeight: 700, color: C.text }}>{current?.label}</div>
-          <div style={{ fontSize: 12, color: C.muted, marginTop: 4 }}>{current?.desc}</div>
+        <div style={{ marginBottom: 28, paddingBottom: 20, borderBottom: `1px solid ${C.border}` }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <span style={{ fontSize: 20 }}>{current?.icon}</span>
+            <div>
+              <div style={{ fontSize: 20, fontWeight: 700, color: C.text }}>{current?.label}</div>
+              <div style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>{current?.desc}</div>
+            </div>
+          </div>
         </div>
 
         {tab === "courts"   && <CourtsView   token={token} onClubUpdate={setClub} />}
