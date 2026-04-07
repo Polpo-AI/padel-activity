@@ -1,12 +1,105 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { C, api, inputSt, btnPrimary, btnGhost, labelSt } from "../../shared/config";
 import Spinner from "../../shared/Spinner";
 import Toast from "../../shared/Toast";
 import Modal from "../../shared/Modal";
 
+// ─── Helpers ──────────────────────────────────
+
+const genderIcon  = (g) => g === "MALE" ? "♂" : g === "FEMALE" ? "♀" : "—";
+const genderColor = (g) => g === "MALE" ? "#3b82f6" : g === "FEMALE" ? "#ec4899" : C.dim;
+
+const rateColor = r => r >= 0.6 ? C.open : r >= 0.3 ? C.warning : C.cancelled;
+
+const fmtDate = (d) => {
+  if (!d) return "mai";
+  const dt = new Date(d);
+  const diffDays = Math.floor((Date.now() - dt.getTime()) / 86400000);
+  if (diffDays === 0) return "oggi";
+  if (diffDays === 1) return "ieri";
+  if (diffDays < 7) return `${diffDays}g fa`;
+  if (diffDays < 30) return `${Math.floor(diffDays / 7)}sett fa`;
+  return dt.toLocaleDateString("it-IT", { day: "numeric", month: "short" });
+};
+
+// ─── ColDropdown — Excel-style header con sort + filtro ───────────────────────
+
+function ColDropdown({ label, field, sortBy, sortDir, onSort, filter, filterOptions, onFilter }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  const isFiltered = filter && filter !== "all" && filter !== "";
+  const isSorted = sortBy === field;
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
+
+  const sortIcon = !isSorted ? null : sortDir === "asc" ? "↑" : "↓";
+
+  return (
+    <div ref={ref} style={{ position: "relative", display: "inline-flex", alignItems: "center", gap: 3, cursor: "pointer", userSelect: "none" }}
+      onClick={() => setOpen(v => !v)}>
+      <span style={{ color: isSorted ? C.accent : "inherit" }}>{label}</span>
+      {sortIcon && <span style={{ color: C.accent, fontSize: 9 }}>{sortIcon}</span>}
+      <span style={{
+        fontSize: 9, color: isFiltered ? C.accent : C.dim,
+        background: isFiltered ? C.accentDim : "transparent",
+        borderRadius: 3, padding: "1px 3px", lineHeight: 1,
+      }}>▼</span>
+
+      {open && (
+        <div style={{
+          position: "absolute", top: "calc(100% + 6px)", left: 0, zIndex: 200,
+          background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10,
+          boxShadow: "0 8px 24px rgba(0,0,0,0.14)", minWidth: 170, padding: "6px 0",
+        }}>
+          {/* Sort */}
+          {onSort && <>
+            {[
+              { dir: "asc",  label: field === "name" ? "↑ A → Z" : field === "skillLevel" || field === "reliabilityScore" ? "↑ Dal più basso" : "↑ Dal più vecchio" },
+              { dir: "desc", label: field === "name" ? "↓ Z → A" : field === "skillLevel" || field === "reliabilityScore" ? "↓ Dal più alto"  : "↓ Dal più recente" },
+            ].map(({ dir, label: lbl }) => (
+              <div key={dir} onClick={(e) => { e.stopPropagation(); onSort(field, dir); setOpen(false); }}
+                style={{
+                  padding: "7px 14px", fontSize: 12, cursor: "pointer",
+                  color: isSorted && sortDir === dir ? C.accent : C.text,
+                  fontWeight: isSorted && sortDir === dir ? 700 : 400,
+                  background: isSorted && sortDir === dir ? C.accentDim : "transparent",
+                }}
+                onMouseEnter={e => e.currentTarget.style.background = C.surfaceHover}
+                onMouseLeave={e => e.currentTarget.style.background = isSorted && sortDir === dir ? C.accentDim : "transparent"}>
+                {isSorted && sortDir === dir ? "✓ " : "   "}{lbl}
+              </div>
+            ))}
+            {filterOptions && <div style={{ height: 1, background: C.border, margin: "6px 0" }} />}
+          </>}
+
+          {/* Filter options */}
+          {filterOptions && filterOptions.map(opt => (
+            <div key={opt.value} onClick={(e) => { e.stopPropagation(); onFilter(opt.value); setOpen(false); }}
+              style={{
+                padding: "7px 14px", fontSize: 12, cursor: "pointer",
+                color: filter === opt.value ? C.accent : C.text,
+                fontWeight: filter === opt.value ? 700 : 400,
+                background: filter === opt.value ? C.accentDim : "transparent",
+              }}
+              onMouseEnter={e => e.currentTarget.style.background = C.surfaceHover}
+              onMouseLeave={e => e.currentTarget.style.background = filter === opt.value ? C.accentDim : "transparent"}>
+              {filter === opt.value ? "✓ " : "   "}{opt.label}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── PlayerProfile ────────────────────────────
 
-function PlayerProfile({ playerId, token, onClose, onUpdated, skillLevelCount = 3 }) {
+function PlayerProfile({ playerId, token, onClose, onUpdated }) {
   const [player, setPlayer] = useState(null);
   const [loading, setLoading] = useState(true);
   const [editName, setEditName] = useState("");
@@ -38,7 +131,7 @@ function PlayerProfile({ playerId, token, onClose, onUpdated, skillLevelCount = 
   if (!player) return null;
 
   const showRate = player.reliabilityScore || 0.33;
-  const rateColor = showRate >= 0.6 ? C.open : showRate >= 0.3 ? C.warning : C.cancelled;
+  const rColor = showRate >= 0.6 ? C.open : showRate >= 0.3 ? C.warning : C.cancelled;
 
   return (
     <Modal title="Profilo giocatore" onClose={onClose}>
@@ -73,10 +166,10 @@ function PlayerProfile({ playerId, token, onClose, onUpdated, skillLevelCount = 
       <div>
         <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
           <span style={{ fontSize: 11, color: C.muted, textTransform: "uppercase", letterSpacing: "0.08em" }}>Affidabilità</span>
-          <span style={{ fontSize: 13, fontWeight: 700, color: rateColor }}>{(showRate * 100).toFixed(0)}%</span>
+          <span style={{ fontSize: 13, fontWeight: 700, color: rColor }}>{(showRate * 100).toFixed(0)}%</span>
         </div>
         <div style={{ height: 6, background: C.dim, borderRadius: 3, overflow: "hidden" }}>
-          <div style={{ height: "100%", width: `${showRate * 100}%`, background: rateColor, borderRadius: 3, transition: "width 0.5s" }} />
+          <div style={{ height: "100%", width: `${showRate * 100}%`, background: rColor, borderRadius: 3, transition: "width 0.5s" }} />
         </div>
       </div>
 
@@ -97,20 +190,20 @@ function PlayerProfile({ playerId, token, onClose, onUpdated, skillLevelCount = 
         <label style={labelSt}>Sesso</label>
         <div style={{ display: "flex", gap: 8 }}>
           {[
-            { v: "MALE",    label: "Uomo",        icon: "♂️" },
-            { v: "FEMALE",  label: "Donna",       icon: "♀️" },
-            { v: "UNKNOWN", label: "Non definito", icon: "—" },
-          ].map(({ v, label, icon }) => (
+            { v: "MALE",    label: "♂ Uomo",        color: "#3b82f6" },
+            { v: "FEMALE",  label: "♀ Donna",       color: "#ec4899" },
+            { v: "UNKNOWN", label: "— Non definito", color: C.muted  },
+          ].map(({ v, label, color }) => (
             <button key={v} disabled={saving}
               onClick={() => { setEditGender(v); patch({ gender: v }); }}
               style={{
                 ...btnGhost, flex: 1,
-                background: editGender === v ? C.accentDim : "transparent",
-                color: editGender === v ? C.accent : C.muted,
-                borderColor: editGender === v ? `${C.accent}40` : C.border,
+                background: editGender === v ? `${color}18` : "transparent",
+                color: editGender === v ? color : C.muted,
+                borderColor: editGender === v ? `${color}50` : C.border,
                 fontWeight: editGender === v ? 700 : 400,
               }}>
-              {icon} {label}
+              {label}
             </button>
           ))}
         </div>
@@ -137,8 +230,8 @@ function PlayerProfile({ playerId, token, onClose, onUpdated, skillLevelCount = 
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
         <label style={labelSt}>Preferenze orario (da matchmaking)</label>
         {[
-          { key: "avoidMorning", label: "Evita mattina", sub: "Non invitare prima delle 14:00", icon: "☀️" },
-          { key: "avoidAfternoon", label: "Evita pomeriggio/sera", sub: "Non invitare dopo le 14:00", icon: "🌙" },
+          { key: "avoidMorning",   label: "Evita mattina",        sub: "Non invitare prima delle 14:00", icon: "☀️" },
+          { key: "avoidAfternoon", label: "Evita pomeriggio/sera", sub: "Non invitare dopo le 14:00",    icon: "🌙" },
         ].map(({ key, label, sub, icon }) => (
           <div key={key} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: C.bg, border: `1px solid ${C.dim}`, borderRadius: 10, padding: "10px 14px" }}>
             <div>
@@ -194,6 +287,7 @@ function AddPlayerModal({ token, onClose, onCreated }) {
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [skillLevel, setSkillLevel] = useState("");
+  const [gender, setGender] = useState("UNKNOWN");
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState("");
 
@@ -207,6 +301,7 @@ function AddPlayerModal({ token, onClose, onCreated }) {
         body: JSON.stringify({
           name: name.trim(),
           phoneNumber: phone.trim(),
+          gender,
           ...(skillLevel !== "" ? { skillLevel: parseFloat(skillLevel) } : {}),
         }),
       });
@@ -233,6 +328,26 @@ function AddPlayerModal({ token, onClose, onCreated }) {
           <div style={{ fontSize: 11, color: "#6b7280", marginTop: 4 }}>Solo cifre, con prefisso (es. 393471234567)</div>
         </div>
         <div>
+          <label style={labelSt}>Sesso</label>
+          <div style={{ display: "flex", gap: 8 }}>
+            {[
+              { v: "MALE",    label: "♂ Uomo",        color: "#3b82f6" },
+              { v: "FEMALE",  label: "♀ Donna",       color: "#ec4899" },
+              { v: "UNKNOWN", label: "— N/D",          color: C.muted  },
+            ].map(({ v, label, color }) => (
+              <button key={v} type="button" onClick={() => setGender(v)} style={{
+                ...btnGhost, flex: 1,
+                background: gender === v ? `${color}18` : "transparent",
+                color: gender === v ? color : C.muted,
+                borderColor: gender === v ? `${color}50` : C.border,
+                fontWeight: gender === v ? 700 : 400,
+              }}>
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div>
           <label style={labelSt}>Livello di gioco (opzionale)</label>
           <input type="number" step="0.5" min="1" max="7" value={skillLevel}
             onChange={e => setSkillLevel(e.target.value)}
@@ -254,17 +369,13 @@ function AddPlayerModal({ token, onClose, onCreated }) {
 
 // ─── PlayersView ──────────────────────────────
 
-const SORT_DEFAULTS = { name: "asc", skillLevel: "desc", reliabilityScore: "desc", lastContactedAt: "desc" };
-
 export default function PlayersView({ token, club }) {
   const [players, setPlayers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [filterActive, setFilterActive] = useState("all");
   const [filterGender, setFilterGender] = useState("all");
-  const [filterNoSkill, setFilterNoSkill] = useState(false);
-  const [skillMin, setSkillMin] = useState("");
-  const [skillMax, setSkillMax] = useState("");
+  const [filterSkill, setFilterSkill] = useState("all");   // "all" | "no-skill"
   const [sortBy, setSortBy] = useState("name");
   const [sortDir, setSortDir] = useState("asc");
   const [selectedPlayer, setSelectedPlayer] = useState(null);
@@ -287,28 +398,18 @@ export default function PlayersView({ token, club }) {
 
   useEffect(() => { const t = setTimeout(load, 300); return () => clearTimeout(t); }, [load]);
 
-  // ─── Client-side filter + sort ───────────────
-
   const filtered = useMemo(() => {
     let list = [...players];
-
     if (filterGender !== "all") list = list.filter(p => (p.gender || "UNKNOWN") === filterGender);
-    if (filterNoSkill) list = list.filter(p => p.skillLevel <= 0);
-    if (skillMin !== "") list = list.filter(p => p.skillLevel >= parseFloat(skillMin));
-    if (skillMax !== "") list = list.filter(p => p.skillLevel <= parseFloat(skillMax));
+    if (filterSkill === "no-skill") list = list.filter(p => p.skillLevel <= 0);
 
+    const SORT_DEFAULTS = { name: "asc", skillLevel: "desc", reliabilityScore: "desc", lastContactedAt: "desc" };
     list.sort((a, b) => {
       let va, vb;
-      if (sortBy === "name") {
-        va = (a.name || "").toLowerCase();
-        vb = (b.name || "").toLowerCase();
-      } else if (sortBy === "skillLevel") {
-        va = a.skillLevel;
-        vb = b.skillLevel;
-      } else if (sortBy === "reliabilityScore") {
-        va = a.reliabilityScore || 0.33;
-        vb = b.reliabilityScore || 0.33;
-      } else if (sortBy === "lastContactedAt") {
+      if (sortBy === "name") { va = (a.name || "").toLowerCase(); vb = (b.name || "").toLowerCase(); }
+      else if (sortBy === "skillLevel") { va = a.skillLevel; vb = b.skillLevel; }
+      else if (sortBy === "reliabilityScore") { va = a.reliabilityScore || 0.33; vb = b.reliabilityScore || 0.33; }
+      else if (sortBy === "lastContactedAt") {
         va = a.lastContactedAt ? new Date(a.lastContactedAt).getTime() : 0;
         vb = b.lastContactedAt ? new Date(b.lastContactedAt).getTime() : 0;
       }
@@ -316,27 +417,18 @@ export default function PlayersView({ token, club }) {
       if (va > vb) return sortDir === "asc" ? 1 : -1;
       return 0;
     });
-
     return list;
-  }, [players, filterNoSkill, skillMin, skillMax, sortBy, sortDir]);
+  }, [players, filterGender, filterSkill, sortBy, sortDir]);
 
-  const toggleSort = (field) => {
-    if (sortBy === field) {
-      setSortDir(d => d === "asc" ? "desc" : "asc");
-    } else {
-      setSortBy(field);
-      setSortDir(SORT_DEFAULTS[field] || "asc");
-    }
-  };
-
-  // ─── Export CSV ──────────────────────────────
+  const handleSort = (field, dir) => { setSortBy(field); setSortDir(dir); };
 
   const exportCsv = () => {
     const rows = [
-      ["Nome", "Telefono", "Livello", "Affidabilità %", "Stato", "Ultimo contatto"],
+      ["Nome", "Telefono", "Sesso", "Livello", "Affidabilità %", "Stato", "Ultimo contatto"],
       ...filtered.map(p => [
         p.name || "",
         p.phoneNumber,
+        p.gender === "MALE" ? "M" : p.gender === "FEMALE" ? "F" : "N/D",
         p.skillLevel > 0 ? p.skillLevel : "N/A",
         ((p.reliabilityScore || 0.33) * 100).toFixed(0) + "%",
         p.active ? "Attivo" : "Disattivato",
@@ -346,12 +438,9 @@ export default function PlayersView({ token, club }) {
     const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(";")).join("\n");
     const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url; a.download = "giocatori.csv"; a.click();
+    const a = document.createElement("a"); a.href = url; a.download = "giocatori.csv"; a.click();
     URL.revokeObjectURL(url);
   };
-
-  // ─── Helpers ─────────────────────────────────
 
   const handleToggle = async () => {
     if (!togglePhone.trim()) return;
@@ -363,37 +452,27 @@ export default function PlayersView({ token, club }) {
     finally { setToggleLoading(false); }
   };
 
-  const rateColor = r => r >= 0.6 ? C.open : r >= 0.3 ? C.warning : C.cancelled;
-
-  const fmtDate = (d) => {
-    if (!d) return "mai";
-    const dt = new Date(d);
-    const diffDays = Math.floor((Date.now() - dt.getTime()) / 86400000);
-    if (diffDays === 0) return "oggi";
-    if (diffDays === 1) return "ieri";
-    if (diffDays < 7) return `${diffDays}g fa`;
-    if (diffDays < 30) return `${Math.floor(diffDays / 7)}sett fa`;
-    return dt.toLocaleDateString("it-IT", { day: "numeric", month: "short" });
-  };
-
-  const totalActive = players.filter(p => p.active).length;
+  const totalActive  = players.filter(p => p.active).length;
   const noSkillCount = players.filter(p => p.skillLevel <= 0).length;
 
-  const SortIcon = ({ field }) =>
-    sortBy !== field
-      ? <span style={{ color: C.dim, marginLeft: 3, fontSize: 9 }}>↕</span>
-      : <span style={{ color: C.accent, marginLeft: 3, fontSize: 9 }}>{sortDir === "asc" ? "↑" : "↓"}</span>;
+  // active filter options per la ColDropdown — applicato lato server ma mostrato come colonna
+  const activeOpts = [
+    { value: "all",      label: "Tutti" },
+    { value: "active",   label: "✅ Attivi" },
+    { value: "inactive", label: "🚫 Disattivati" },
+  ];
+  const genderOpts = [
+    { value: "all",     label: "Tutti" },
+    { value: "MALE",    label: "♂ Uomini" },
+    { value: "FEMALE",  label: "♀ Donne" },
+    { value: "UNKNOWN", label: "— N/D" },
+  ];
+  const skillOpts = [
+    { value: "all",      label: "Tutti" },
+    { value: "no-skill", label: "⚠ Senza livello" },
+  ];
 
-  const ColHeader = ({ field, label }) => (
-    <span onClick={() => toggleSort(field)} style={{ cursor: "pointer", userSelect: "none", display: "inline-flex", alignItems: "center" }}>
-      {label}<SortIcon field={field} />
-    </span>
-  );
-
-  const genderIcon = (g) => g === "MALE" ? "♂" : g === "FEMALE" ? "♀" : "—";
-  const genderColor = (g) => g === "MALE" ? "#3b82f6" : g === "FEMALE" ? "#ec4899" : C.dim;
-
-  const COLS = "2fr 1.3fr 0.4fr 0.6fr 0.9fr 0.85fr 0.55fr";
+  const COLS = "2fr 1.2fr 0.45fr 0.65fr 0.95fr 0.85fr 0.6fr";
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
@@ -424,12 +503,7 @@ export default function PlayersView({ token, club }) {
         <span><strong style={{ color: C.open }}>{totalActive}</strong> attivi</span>
         {noSkillCount > 0 && <>
           <span style={{ color: C.dim }}>·</span>
-          <span
-            onClick={() => setFilterNoSkill(v => !v)}
-            style={{ cursor: "pointer", textDecoration: filterNoSkill ? "underline" : "none" }}
-          >
-            <strong style={{ color: C.warning }}>{noSkillCount}</strong> senza livello
-          </span>
+          <span><strong style={{ color: C.warning }}>{noSkillCount}</strong> senza livello</span>
         </>}
         {filtered.length !== players.length && <>
           <span style={{ color: C.dim }}>·</span>
@@ -437,71 +511,12 @@ export default function PlayersView({ token, club }) {
         </>}
       </div>
 
-      {/* ── Barra ricerca + filtri + azioni ── */}
-      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
-          <input value={search} onChange={e => setSearch(e.target.value)}
-            placeholder="Cerca per nome o numero..." style={{ ...inputSt, flex: 1, minWidth: 180 }} />
-
-          {[
-            { id: "all", label: "Tutti" },
-            { id: "active", label: "Attivi" },
-            { id: "inactive", label: "Disattivati" },
-          ].map(f => (
-            <button key={f.id} onClick={() => { setFilterActive(f.id); setFilterNoSkill(false); }} style={{
-              ...btnGhost, whiteSpace: "nowrap",
-              background: filterActive === f.id && !filterNoSkill ? C.accentDim : "transparent",
-              color: filterActive === f.id && !filterNoSkill ? C.accent : C.muted,
-              borderColor: filterActive === f.id && !filterNoSkill ? `${C.accent}40` : C.border,
-            }}>
-              {f.label}
-            </button>
-          ))}
-
-          <button onClick={() => { setFilterNoSkill(v => !v); setFilterActive("all"); }} style={{
-            ...btnGhost, whiteSpace: "nowrap",
-            background: filterNoSkill ? `${C.warning}20` : "transparent",
-            color: filterNoSkill ? C.warning : C.muted,
-            borderColor: filterNoSkill ? `${C.warning}50` : C.border,
-          }}>
-            Senza livello
-          </button>
-
-          {[
-            { id: "all",     label: "Tutti" },
-            { id: "MALE",    label: "♂ Uomini" },
-            { id: "FEMALE",  label: "♀ Donne" },
-          ].map(f => (
-            <button key={f.id} onClick={() => setFilterGender(f.id)} style={{
-              ...btnGhost, whiteSpace: "nowrap",
-              background: filterGender === f.id ? (f.id === "MALE" ? "#3b82f620" : f.id === "FEMALE" ? "#ec489920" : C.accentDim) : "transparent",
-              color: filterGender === f.id ? (f.id === "MALE" ? "#3b82f6" : f.id === "FEMALE" ? "#ec4899" : C.accent) : C.muted,
-              borderColor: filterGender === f.id ? (f.id === "MALE" ? "#3b82f640" : f.id === "FEMALE" ? "#ec489940" : `${C.accent}40`) : C.border,
-            }}>
-              {f.label}
-            </button>
-          ))}
-
-          <button onClick={() => setShowAddPlayer(true)} style={{ ...btnPrimary, whiteSpace: "nowrap" }}>+ Aggiungi</button>
-          <button onClick={exportCsv} title="Esporta lista filtrata come CSV" style={{ ...btnGhost, whiteSpace: "nowrap", fontSize: 11 }}>↓ CSV</button>
-        </div>
-
-        {/* Range livello */}
-        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          <span style={{ fontSize: 11, color: C.muted, whiteSpace: "nowrap" }}>Livello:</span>
-          <input type="number" step="0.5" min="1" max="7" value={skillMin}
-            onChange={e => setSkillMin(e.target.value)}
-            placeholder="da" style={{ ...inputSt, width: 64, fontSize: 12, padding: "5px 8px" }} />
-          <span style={{ fontSize: 11, color: C.dim }}>–</span>
-          <input type="number" step="0.5" min="1" max="7" value={skillMax}
-            onChange={e => setSkillMax(e.target.value)}
-            placeholder="a" style={{ ...inputSt, width: 64, fontSize: 12, padding: "5px 8px" }} />
-          {(skillMin !== "" || skillMax !== "") && (
-            <button onClick={() => { setSkillMin(""); setSkillMax(""); }} style={{ ...btnGhost, fontSize: 11, padding: "4px 10px" }}>
-              ✕ reset
-            </button>
-          )}
-        </div>
+      {/* ── Barra ricerca + azioni ── */}
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+        <input value={search} onChange={e => setSearch(e.target.value)}
+          placeholder="Cerca per nome o numero..." style={{ ...inputSt, flex: 1, minWidth: 180 }} />
+        <button onClick={() => setShowAddPlayer(true)} style={{ ...btnPrimary, whiteSpace: "nowrap" }}>+ Aggiungi</button>
+        <button onClick={exportCsv} title="Esporta lista filtrata come CSV" style={{ ...btnGhost, whiteSpace: "nowrap", fontSize: 11 }}>↓ CSV</button>
       </div>
 
       {/* ── Tabella ── */}
@@ -510,16 +525,16 @@ export default function PlayersView({ token, club }) {
           <Spinner /><span style={{ color: C.muted, fontSize: 13 }}>Caricamento...</span>
         </div>
       ) : (
-        <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, overflow: "hidden" }}>
+        <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, overflow: "visible" }}>
           {/* Header */}
-          <div style={{ display: "grid", gridTemplateColumns: COLS, padding: "10px 16px", borderBottom: `1px solid ${C.border}`, fontSize: 10, color: C.muted, textTransform: "uppercase", letterSpacing: "0.1em" }}>
-            <ColHeader field="name" label="Nome" />
-            <span>Telefono</span>
-            <span>Sesso</span>
-            <ColHeader field="skillLevel" label="Liv." />
-            <ColHeader field="reliabilityScore" label="Affidabilità" />
-            <ColHeader field="lastContactedAt" label="Contattato" />
-            <span>Stato</span>
+          <div style={{ display: "grid", gridTemplateColumns: COLS, padding: "10px 16px", borderBottom: `1px solid ${C.border}`, fontSize: 10, color: C.muted, textTransform: "uppercase", letterSpacing: "0.1em", position: "relative" }}>
+            <ColDropdown label="Nome"        field="name"             sortBy={sortBy} sortDir={sortDir} onSort={handleSort} filter={null} filterOptions={null} onFilter={null} />
+            <ColDropdown label="Telefono"    field={null}             sortBy={sortBy} sortDir={sortDir} onSort={null}       filter={null} filterOptions={null} onFilter={null} />
+            <ColDropdown label="Sesso"       field={null}             sortBy={sortBy} sortDir={sortDir} onSort={null}       filter={filterGender} filterOptions={genderOpts} onFilter={setFilterGender} />
+            <ColDropdown label="Liv."        field="skillLevel"       sortBy={sortBy} sortDir={sortDir} onSort={handleSort} filter={filterSkill}  filterOptions={skillOpts}  onFilter={setFilterSkill}  />
+            <ColDropdown label="Affidabilità" field="reliabilityScore" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} filter={null} filterOptions={null} onFilter={null} />
+            <ColDropdown label="Contattato"  field="lastContactedAt"  sortBy={sortBy} sortDir={sortDir} onSort={handleSort} filter={null} filterOptions={null} onFilter={null} />
+            <ColDropdown label="Stato"       field={null}             sortBy={sortBy} sortDir={sortDir} onSort={null}       filter={filterActive} filterOptions={activeOpts} onFilter={(v) => { setFilterActive(v); }} />
           </div>
 
           {filtered.length === 0 && (
@@ -580,7 +595,6 @@ export default function PlayersView({ token, club }) {
         <PlayerProfile
           playerId={selectedPlayer}
           token={token}
-          skillLevelCount={club?.skillLevelCount || 3}
           onClose={() => setSelectedPlayer(null)}
           onUpdated={load}
         />
