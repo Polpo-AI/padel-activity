@@ -188,28 +188,55 @@ function MultiSelectFilterDropdown({ options, selected, onChange, active }) {
 // ─── ReliabilityFilterDropdown ─────────────────────────────────────────────────
 
 function ReliabilityFilterDropdown({ minReliability, onChange, active }) {
-  const pct = Math.round(minReliability * 100);
-  const color = minReliability >= 0.6 ? C.open : minReliability >= 0.3 ? C.warning : C.cancelled;
+  // localPct: valore durante il drag (anteprima) — il filtro si applica solo al rilascio
+  const [localPct, setLocalPct] = useState(Math.round(minReliability * 100));
+  const [dragging, setDragging] = useState(false);
+
+  // Sincronizza localPct se il valore esterno cambia (es. reset)
+  useEffect(() => { if (!dragging) setLocalPct(Math.round(minReliability * 100)); }, [minReliability, dragging]);
+
+  const displayPct = dragging ? localPct : Math.round(minReliability * 100);
+  const color = displayPct >= 60 ? C.open : displayPct >= 30 ? C.warning : C.cancelled;
 
   return (
     <FilterDropdown trigger="⌕" active={active}>
       {() => (
-        <div style={{ padding: "12px 16px", minWidth: 220 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8, fontSize: 12 }}>
+        <div style={{ padding: "12px 16px", minWidth: 240 }}>
+          {/* Intestazione con valore live */}
+          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 10, fontSize: 12 }}>
             <span style={{ color: C.muted }}>Affidabilità minima</span>
-            <span style={{ color, fontWeight: 700 }}>≥ {pct}%</span>
+            <span style={{
+              color, fontWeight: 700, fontSize: 13,
+              transition: dragging ? "none" : "color 0.2s",
+            }}>
+              ≥ {displayPct}%
+              {dragging && <span style={{ fontSize: 10, color: C.muted, fontWeight: 400, marginLeft: 4 }}>(lascia per applicare)</span>}
+            </span>
           </div>
+
+          {/* Barra di anteprima */}
+          <div style={{ height: 4, background: C.dim, borderRadius: 2, overflow: "hidden", marginBottom: 8 }}>
+            <div style={{
+              height: "100%", width: `${displayPct}%`, background: color,
+              borderRadius: 2, transition: "width 0.05s, background 0.2s",
+            }} />
+          </div>
+
+          {/* Slider */}
           <input
             type="range" min={0} max={100} step={5}
-            value={pct}
-            onChange={e => onChange(parseInt(e.target.value) / 100)}
+            value={localPct}
+            onChange={e => { setLocalPct(parseInt(e.target.value)); setDragging(true); }}
+            onPointerUp={e => { const v = parseInt(e.target.value); setLocalPct(v); setDragging(false); onChange(v / 100); }}
             style={{ width: "100%", accentColor: color, cursor: "pointer" }}
           />
           <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: C.dim, marginTop: 2 }}>
             <span>0%</span><span>50%</span><span>100%</span>
           </div>
-          {minReliability > 0 && (
-            <button onClick={() => onChange(0)} style={{ ...btnGhost, fontSize: 11, padding: "4px 10px", marginTop: 8, width: "100%" }}>
+
+          {minReliability > 0 && !dragging && (
+            <button onClick={() => { setLocalPct(0); onChange(0); }}
+              style={{ ...btnGhost, fontSize: 11, padding: "4px 10px", marginTop: 8, width: "100%" }}>
               ✕ Rimuovi filtro
             </button>
           )}
