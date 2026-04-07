@@ -284,119 +284,7 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[], cor
         return;
     }
 
-    // ─── PENDING COVERED CONFIRMATION (Fix #4) ───
-    // Se il bot ha chiesto "campo coperto va bene?" e l'utente risponde sì, esegui il booking
-    {
-        const redis = getRedis();
-        const pendingCoveredRaw = await redis.get(`state:pending_covered:${jid}`);
-        if (pendingCoveredRaw && combinedText) {
-            const lower = combinedText.toLowerCase().trim();
-            const isYes = /^(s[iì]|yes|ok|certo|va bene|esatto|perfetto|dai|sì|si)/.test(lower);
-            const isNo = /^(no|nope|non|neanche|lascia perdere|cancella)/.test(lower);
-            if (isYes || isNo) {
-                await redis.del(`state:pending_covered:${jid}`);
-                if (isYes) {
-                    const { action: pendingAction, params: pendingParams } = JSON.parse(pendingCoveredRaw);
-                    const { executeAction } = await import('./brain');
-                    const brainPlayer = player || await prisma.player.findFirst({
-                        where: { phoneNumber: { in: phoneVariants }, clubId: resolvedClubId ? resolvedClubId : { not: '' } }
-                    });
-                    const result = await executeAction(pendingAction, pendingParams, brainPlayer, club, phoneNumber);
-                    if (result.success && result.matchId) {
-                        const { calculateSlotCost } = await import('./pricing');
-                        const match = await prisma.match.findUnique({
-                            where: { id: result.matchId },
-                            include: { court: true },
-                        });
-                        if (match?.court) {
-                            const totalCost = await calculateSlotCost(match.court.id, match.startTime);
-                            const pricePerPerson = totalCost > 0 ? (totalCost / 4).toFixed(2) : null;
-                            const timeStr = match.startTime.toLocaleString('it-IT', {
-                                timeZone: 'Europe/Rome', weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit',
-                            });
-                            const courtType = match.court.isCovered ? '🏟️ coperto' : '☀️ all\'aperto';
-                            const clubLocation = [club?.address, club?.city].filter(Boolean).join(' — ');
-                            const coveredConfirmVariants = [
-                                'Perfetto, prenoto il campo coperto! 🏟️',
-                                'Ottimo, ti metto al coperto! 🏟️',
-                                'Fatto, campo coperto prenotato! 🏟️',
-                            ];
-                            await simulateTypingAndSend(jid, coveredConfirmVariants[Math.floor(Math.random() * coveredConfirmVariants.length)]);
-                            const lines = [
-                                `📋 *Dettagli prenotazione*`,
-                                `📅 ${timeStr}`,
-                                `🎾 ${match.court.name} (${courtType})`,
-                                pricePerPerson ? `💶 ${pricePerPerson}€ a persona` : null,
-                                clubLocation ? `📍 ${clubLocation}` : null,
-                            ].filter(Boolean);
-                            await simulateTypingAndSend(jid, lines.join('\n'));
-                        } else {
-                            await simulateTypingAndSend(jid, 'Perfetto, sei dentro! 🏟️');
-                        }
-                    } else if (result.errorMessage) {
-                        await simulateTypingAndSend(jid, `Ops! ${result.errorMessage} 😕`);
-                    }
-                } else {
-                    await simulateTypingAndSend(jid, 'Ok, nessun problema! Dimmi se vuoi provare un altro orario. 🎾');
-                }
-                return;
-            }
-            // Se non è un sì/no chiaro, cancella il pending e prosegui normalmente col brain
-            await redis.del(`state:pending_covered:${jid}`);
-        }
-    }
-
-    // ─── PENDING UNCOVERED CONFIRMATION ───
-    // Speculare a pending_covered: ha chiesto coperto ma solo scoperto è libero
-    {
-        const redis = getRedis();
-        const pendingUncoveredRaw = await redis.get(`state:pending_uncovered:${jid}`);
-        if (pendingUncoveredRaw && combinedText) {
-            const lower = combinedText.toLowerCase().trim();
-            const isYes = /^(s[iì]|yes|ok|certo|va bene|esatto|perfetto|dai|sì|si)/.test(lower);
-            const isNo = /^(no|nope|non|neanche|lascia perdere|cancella)/.test(lower);
-            if (isYes || isNo) {
-                await redis.del(`state:pending_uncovered:${jid}`);
-                if (isYes) {
-                    const { action: pendingAction, params: pendingParams } = JSON.parse(pendingUncoveredRaw);
-                    const { executeAction } = await import('./brain');
-                    const brainPlayer = player || await prisma.player.findFirst({
-                        where: { phoneNumber: { in: phoneVariants }, clubId: resolvedClubId ? resolvedClubId : { not: '' } }
-                    });
-                    const result = await executeAction(pendingAction, { ...pendingParams, preferCovered: false }, brainPlayer, club, phoneNumber);
-                    if (result.success && result.matchId) {
-                        const { calculateSlotCost } = await import('./pricing');
-                        const match = await prisma.match.findUnique({ where: { id: result.matchId }, include: { court: true } });
-                        if (match?.court) {
-                            const totalCost = await calculateSlotCost(match.court.id, match.startTime);
-                            const pricePerPerson = totalCost > 0 ? (totalCost / 4).toFixed(2) : null;
-                            const timeStr = match.startTime.toLocaleString('it-IT', {
-                                timeZone: 'Europe/Rome', weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit',
-                            });
-                            const clubLocation = [club?.address, club?.city].filter(Boolean).join(' — ');
-                            await simulateTypingAndSend(jid, 'Perfetto, prenoto il campo scoperto! ☀️');
-                            const lines = [
-                                `📋 *Dettagli prenotazione*`,
-                                `📅 ${timeStr}`,
-                                `🎾 ${match.court.name} (☀️ all'aperto)`,
-                                pricePerPerson ? `💶 ${pricePerPerson}€ a persona` : null,
-                                clubLocation ? `📍 ${clubLocation}` : null,
-                            ].filter(Boolean);
-                            await simulateTypingAndSend(jid, lines.join('\n'));
-                        } else {
-                            await simulateTypingAndSend(jid, 'Perfetto, sei dentro! ☀️');
-                        }
-                    } else if (result.errorMessage) {
-                        await simulateTypingAndSend(jid, 'Ok, nessun problema! Dimmi se vuoi provare un altro orario. 🎾');
-                    }
-                } else {
-                    await simulateTypingAndSend(jid, 'Ok, nessun problema! Dimmi se vuoi provare un altro orario. 🎾');
-                }
-                return;
-            }
-            await redis.del(`state:pending_uncovered:${jid}`);
-        }
-    }
+    // (pending_covered e pending_uncovered rimossi: ora si usa sempre il redirect algorithm)
 
     // ─── BRAIN ───
     conversationalPhase.set(getCorrelationId() || correlationId, true);
@@ -432,56 +320,56 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[], cor
     if (action !== 'NONE') {
         const result = await executeAction(action, params, player, club, phoneNumber);
         if (!result.success && result.errorMessage) {
-            // Solo campo coperto disponibile — chiedi conferma + proponi alternative scoperto
+            // Campo preferito non disponibile → redirect algorithm con preferenza tipo campo
+            // Il two-pass in redirect.ts cerca prima il tipo preferito, poi aggiunge il tipo opposto come fallback
             if (result.errorMessage === 'ONLY_COVERED_AVAILABLE') {
-                const redis = getRedis();
-                await redis.set(
-                    `state:pending_covered:${jid}`,
-                    JSON.stringify({ action, params: { ...params, preferCovered: true } }),
-                    'EX', 300,
-                );
-                // Cerca slot scoperto alternativi vicini
-                let altMsg = '';
+                // Utente voleva scoperto, solo coperto è libero a quell'orario
+                // → redirect con originalCourtIsCovered=false: prima cerca scoperti vicini, poi coperto come fallback
                 try {
-                    const { findNearbyFreeScopertoSlots } = await import('./brain');
+                    const { redirectGroup } = await import('./redirect');
                     const refTime = result.requestedTime ?? new Date();
-                    const altSlots = await findNearbyFreeScopertoSlots(
-                        club?.id ?? '',
-                        refTime,
-                        (club as any)?.openTime || '08:00',
-                        (club as any)?.closeTime || '23:30',
-                        3,
-                    );
-                    if (altSlots.length > 0) {
-                        altMsg = `\n\nSe preferisci all'aperto, ho questi orari liberi:\n${altSlots.map(s => `  📅 ${s}`).join('\n')}`;
-                    }
-                } catch { /* non bloccare */ }
-                const onlyCoveredVariants = altMsg ? [
-                    'A quell\'orario gli scoperti sono tutti occupati. Posso prenotarti il campo coperto 🏟️',
-                    'Per quell\'orario ho solo il coperto disponibile. Ti va bene? 🏟️',
-                    'Gli scoperti sono tutti presi a quell\'orario. Posso metterti al coperto 🏟️',
-                ] : [
-                    'A quell\'orario gli scoperti sono tutti occupati. Posso prenotarti il campo coperto? 🏟️',
-                    'Per quell\'orario ho solo il campo coperto libero. Lo prenoto? 🏟️',
-                    'Gli scoperti sono tutti occupati a quell\'orario. Ti va bene il coperto? 🏟️',
-                ];
-                const baseMsg = onlyCoveredVariants[Math.floor(Math.random() * onlyCoveredVariants.length)];
-                await simulateTypingAndSend(jid, baseMsg + altMsg);
+                    await redirectGroup({
+                        clubId: club?.id ?? '',
+                        referentPhone: player?.phoneNumber ?? phoneNumber,
+                        referentJid: jid,
+                        playerPhones: [player?.phoneNumber ?? phoneNumber],
+                        playerCount: 1,
+                        originalMatchId: 'none',
+                        originalStartTime: refTime,
+                        originalSkillLevel: player?.skillLevel ?? 0,
+                        originalCourtIsCovered: false,
+                        reason: 'SLOT_TAKEN',
+                        intent: 'BOOK_FIELD',
+                    });
+                } catch (err) {
+                    logger.error({ err }, 'ONLY_COVERED_AVAILABLE redirectGroup failed');
+                    await simulateTypingAndSend(jid, 'A quell\'orario gli scoperti sono tutti occupati. Dimmi un altro orario e trovo qualcosa! 🎾');
+                }
                 return;
             }
             if (result.errorMessage === 'ONLY_UNCOVERED_AVAILABLE') {
-                const redis = getRedis();
-                await redis.set(
-                    `state:pending_uncovered:${jid}`,
-                    JSON.stringify({ action, params }),
-                    'EX', 300,
-                );
-                const variants = [
-                    'A quell\'orario i campi coperti sono tutti occupati. Posso prenotarti un campo all\'aperto? ☀️',
-                    'Per quell\'orario ho solo campo scoperto libero. Ti va bene? ☀️',
-                    'I coperti sono tutti presi a quell\'orario. Prenoto all\'aperto? ☀️',
-                ];
-                await simulateTypingAndSend(jid, variants[Math.floor(Math.random() * variants.length)]);
+                // Utente voleva coperto, solo scoperto è libero a quell'orario
+                // → redirect con originalCourtIsCovered=true: prima cerca coperti vicini, poi scoperto come fallback
+                try {
+                    const { redirectGroup } = await import('./redirect');
+                    const refTime = result.requestedTime ?? new Date();
+                    await redirectGroup({
+                        clubId: club?.id ?? '',
+                        referentPhone: player?.phoneNumber ?? phoneNumber,
+                        referentJid: jid,
+                        playerPhones: [player?.phoneNumber ?? phoneNumber],
+                        playerCount: 1,
+                        originalMatchId: 'none',
+                        originalStartTime: refTime,
+                        originalSkillLevel: player?.skillLevel ?? 0,
+                        originalCourtIsCovered: true,
+                        reason: 'SLOT_TAKEN',
+                        intent: 'BOOK_FIELD',
+                    });
+                } catch (err) {
+                    logger.error({ err }, 'ONLY_UNCOVERED_AVAILABLE redirectGroup failed');
+                    await simulateTypingAndSend(jid, 'A quell\'orario i coperti sono tutti occupati. Dimmi un altro orario e trovo qualcosa! 🎾');
+                }
                 return;
             }
             if (result.errorMessage.startsWith('PLAYER_NOT_FOUND:')) {
@@ -533,7 +421,7 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[], cor
                         originalMatchId: 'none',
                         originalStartTime: refTime,
                         originalSkillLevel: player?.skillLevel ?? 0,
-                        originalCourtIsCovered: params?.preferCovered === true ? true : null,
+                        originalCourtIsCovered: params?.preferCovered === true ? true : params?.preferCovered === false ? false : null,
                         reason: 'SLOT_TAKEN',
                         intent: 'BOOK_FIELD',
                     });

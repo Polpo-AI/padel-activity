@@ -804,9 +804,9 @@ function buildRedirectMessage(group: RedirectGroup, options: RedirectOption[]): 
             'Purtroppo non abbiamo chiuso la squadra in tempo 😔',
         ],
         SLOT_TAKEN: [
-            'Il posto è stato preso mentre aspettavi 😕',
-            'Peccato, qualcun altro ha preso il posto un attimo prima! 😅',
-            'Il posto si è liberato ma qualcuno è stato più veloce 😔',
+            'Quell\'orario non è disponibile 😕',
+            'Purtroppo quell\'orario è già occupato 😔',
+            'A quell\'orario non c\'è posto 😕',
         ],
         POOL_EXHAUSTED: [
             'Ho esaurito i giocatori disponibili per completare la partita 😔',
@@ -815,53 +815,64 @@ function buildRedirectMessage(group: RedirectGroup, options: RedirectOption[]): 
         ],
         CANCELLATION: [
             'Un giocatore ha disdetto e non riesco a trovare un sostituto in tempo 😔',
-            'Purtroppo qualcuno ha cancellato e non riusciamo a rimpiazzarlo 😕',
+            'Purtropto qualcuno ha cancellato e non riusciamo a rimpiazzarlo 😕',
             'Disdetta dell\'ultimo minuto e nessuno disponibile come sostituto 😔',
         ],
     };
 
     const reasonList = reasonVariants[group.reason];
     const reason = reasonList[Math.floor(Math.random() * reasonList.length)];
-    const lines = options.map((o, i) => `${i + 1}. ${o.description}`).join('\n');
 
     if (options.length === 0) {
-        return `${reason}\n\nPurtroppo non ho trovato alternative disponibili al momento. Contatta il circolo per maggiori informazioni.`;
+        const noOptionsMsg = group.originalCourtIsCovered !== null
+            ? `${reason}\n\nNon ho trovato campi ${group.originalCourtIsCovered ? 'coperti' : 'scoperti'} liberi nei prossimi giorni. Scrivimi un giorno specifico e vedo cosa c'è disponibile, oppure dimmi se va bene anche il tipo opposto 🎾`
+            : `${reason}\n\nNon ho trovato campi liberi nei prossimi giorni. Scrivimi un giorno specifico e vedo subito! 🎾`;
+        return noOptionsMsg;
     }
 
+    const effectiveIntent: 'BOOK_FIELD' | 'MATCHMAKING' =
+        group.intent ?? (group.originalSkillLevel > 0 ? 'MATCHMAKING' : 'BOOK_FIELD');
+
+    // Costruisci intestazione con contesto tipo campo
+    let introLine: string;
+    if (group.originalCourtIsCovered !== null) {
+        const preferredTypeLabel = group.originalCourtIsCovered ? 'coperto' : 'scoperto';
+        const fallbackTypeLabel  = group.originalCourtIsCovered ? 'scoperto' : 'coperto';
+        const hasFallbackOptions = options.some(o => o.courtIsCovered !== group.originalCourtIsCovered);
+        const allAreFallback     = options.every(o => o.courtIsCovered !== group.originalCourtIsCovered);
+
+        if (allAreFallback) {
+            introLine = `Nessun campo ${preferredTypeLabel} libero a quell'orario. Ho trovato queste disponibilità con campo ${fallbackTypeLabel}:`;
+        } else if (hasFallbackOptions) {
+            introLine = `I campi ${preferredTypeLabel} sono occupati a quell'orario. Ho trovato queste alternative (alcune con campo ${fallbackTypeLabel}):`;
+        } else {
+            introLine = `Ho trovato queste disponibilità con campo ${preferredTypeLabel}:`;
+        }
+    } else {
+        introLine = effectiveIntent === 'MATCHMAKING'
+            ? 'Ho trovato questi match aperti nelle vicinanze:'
+            : 'Ho trovato queste disponibilità:';
+    }
+
+    const lines = options.map((o, i) => `${i + 1}. ${o.description}`).join('\n');
+
+    // Coda action-oriented
     const closingVariants = [
-        `Quale preferisci? Dimmi il numero e chiudo subito 🎾`,
-        `Dimmi quale ti va e mi metto subito in moto 🎾`,
-        `Scegli pure — basta il numero e ci penso io 🙌`,
+        'Dimmi il numero e prenoto subito 🎾',
+        'Basta il numero e chiudo io 🎾',
+        'Scegli il numero e ci penso io 🙌',
     ];
     const closing = closingVariants[Math.floor(Math.random() * closingVariants.length)];
 
-    // Closing message aggiuntivo intent-aware
-    const effectiveIntent: 'BOOK_FIELD' | 'MATCHMAKING' =
-        group.intent ?? (group.originalSkillLevel > 0 ? 'MATCHMAKING' : 'BOOK_FIELD');
-    const intentClosing = effectiveIntent === 'MATCHMAKING'
-        ? 'Oppure dimmi un giorno e ti dico i match aperti disponibili 📅'
-        : 'Sennò dimmi un giorno e ti dico le disponibilità libere 📅';
-
-    // Se l'utente aveva una preferenza di tipo campo, controlla se le alternative includono il tipo opposto
-    let courtTypeNote = '';
+    // Opzioni aggiuntive in coda
+    const tailParts: string[] = [];
+    tailParts.push('📅 Preferisci un giorno diverso? Scrivimi quando e vedo le disponibilità.');
     if (group.originalCourtIsCovered !== null) {
-        const hasFallbackOptions = options.some(o => o.courtIsCovered !== group.originalCourtIsCovered);
-        const preferredTypeLabel = group.originalCourtIsCovered ? 'coperto' : 'scoperto';
-        const fallbackTypeLabel  = group.originalCourtIsCovered ? 'scoperto' : 'coperto';
-        const allAreFallback = options.every(o => o.courtIsCovered !== group.originalCourtIsCovered);
-
-        if (allAreFallback) {
-            courtTypeNote = `\nIl campo ${preferredTypeLabel} non è disponibile a quell'orario — ecco le alternative con campo ${fallbackTypeLabel}:`;
-        } else if (hasFallbackOptions) {
-            courtTypeNote = `\nIl campo ${preferredTypeLabel} è esaurito a quell'orario — alcune opzioni qui sotto sono con campo ${fallbackTypeLabel}:`;
-        }
+        const otherType = group.originalCourtIsCovered ? 'scoperto' : 'coperto';
+        tailParts.push(`☀️ Vuoi che cerchi anche campi ${otherType}? Dimmelo!`);
     }
 
-    const introLine = courtTypeNote
-        ? `Ho trovato queste alternative:${courtTypeNote}`
-        : `Ho trovato queste alternative:`;
-
-    return `${reason}\n\n${introLine}\n\n${lines}\n\n${closing}\n${intentClosing}`;
+    return `${reason}\n\n${introLine}\n\n${lines}\n\n${closing}\n\n${tailParts.join('\n')}`;
 }
 
 function buildPlayerNotificationMessage(group: RedirectGroup): string {

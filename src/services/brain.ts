@@ -1160,27 +1160,29 @@ async function bookSlotForPlayer(
         const existingCovered = existingMatch?.court?.isCovered ?? false;
 
         // Court swap: stessa fascia oraria ma tipo campo diverso (scoperto ↔ coperto)
-        // Invece di bloccare, cancella la prenotazione esistente e prenota il tipo richiesto.
+        // Tenta prima il nuovo booking; cancella il vecchio SOLO se riesce
+        // → evita di lasciare l'utente senza prenotazione se il tipo richiesto è esaurito
         if (preferCovered !== existingCovered && existingMatch?.isPrivateBooking) {
             logger.info(
                 { matchId: existingMatch.id, from: existingCovered ? 'coperto' : 'scoperto', to: preferCovered ? 'coperto' : 'scoperto' },
-                'Court swap detected — cancelling existing and rebooking'
+                'Court swap detected — trying new booking before cancelling old'
             );
 
-            // 1. Togli il player dal vecchio match
-            await prisma.matchPlayer.update({
-                where: { id: alreadyBooked.id },
-                data: { leftAt: new Date() },
-            });
+            const newResult = await createNewMatchAction(startTime, player, club, preferCovered, preferMixed, privateBooking ?? true);
 
-            // 2. Cancella il vecchio match (era isPrivateBooking LOCKED)
-            await prisma.match.update({
-                where: { id: existingMatch.id },
-                data: { status: 'CANCELLED', cancelledAt: new Date(), cancelledReason: 'COURT_SWAP' },
-            });
-
-            // 3. Prenota il nuovo campo con la preferenza richiesta (cade nel flusso normale)
-            return await createNewMatchAction(startTime, player, club, preferCovered, preferMixed, privateBooking ?? true);
+            if (newResult.success) {
+                // Nuovo campo assegnato: ora cancella il vecchio booking
+                await prisma.matchPlayer.update({
+                    where: { id: alreadyBooked.id },
+                    data: { leftAt: new Date() },
+                });
+                await prisma.match.update({
+                    where: { id: existingMatch.id },
+                    data: { status: 'CANCELLED', cancelledAt: new Date(), cancelledReason: 'COURT_SWAP' },
+                });
+            }
+            // Se fallisce, il vecchio booking rimane intatto e l'errore va a messageHandler (che farà redirect)
+            return newResult;
         }
 
         return { success: false, errorMessage: 'Hai già una prenotazione in quella fascia oraria.' };
