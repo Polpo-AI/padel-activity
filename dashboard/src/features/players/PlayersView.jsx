@@ -10,13 +10,14 @@ function PlayerProfile({ playerId, token, onClose, onUpdated, skillLevelCount = 
   const [player, setPlayer] = useState(null);
   const [loading, setLoading] = useState(true);
   const [editName, setEditName] = useState("");
+  const [editGender, setEditGender] = useState("UNKNOWN");
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState(null);
 
   const load = useCallback(async () => {
     try {
       const d = await api(`/players/${playerId}`, token);
-      setPlayer(d); setEditName(d.name || "");
+      setPlayer(d); setEditName(d.name || ""); setEditGender(d.gender || "UNKNOWN");
     } finally { setLoading(false); }
   }, [playerId, token]);
 
@@ -90,6 +91,29 @@ function PlayerProfile({ playerId, token, onClose, onUpdated, skillLevelCount = 
           />
         </div>
         <div style={{ fontSize: 11, color: C.muted, marginTop: 4 }}>Premi Invio o esci dal campo per salvare (es. 2.5)</div>
+      </div>
+
+      <div>
+        <label style={labelSt}>Sesso</label>
+        <div style={{ display: "flex", gap: 8 }}>
+          {[
+            { v: "MALE",    label: "Uomo",        icon: "♂️" },
+            { v: "FEMALE",  label: "Donna",       icon: "♀️" },
+            { v: "UNKNOWN", label: "Non definito", icon: "—" },
+          ].map(({ v, label, icon }) => (
+            <button key={v} disabled={saving}
+              onClick={() => { setEditGender(v); patch({ gender: v }); }}
+              style={{
+                ...btnGhost, flex: 1,
+                background: editGender === v ? C.accentDim : "transparent",
+                color: editGender === v ? C.accent : C.muted,
+                borderColor: editGender === v ? `${C.accent}40` : C.border,
+                fontWeight: editGender === v ? 700 : 400,
+              }}>
+              {icon} {label}
+            </button>
+          ))}
+        </div>
       </div>
 
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: C.bg, border: `1px solid ${C.dim}`, borderRadius: 10, padding: "12px 16px" }}>
@@ -237,6 +261,7 @@ export default function PlayersView({ token, club }) {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [filterActive, setFilterActive] = useState("all");
+  const [filterGender, setFilterGender] = useState("all");
   const [filterNoSkill, setFilterNoSkill] = useState(false);
   const [skillMin, setSkillMin] = useState("");
   const [skillMax, setSkillMax] = useState("");
@@ -267,6 +292,7 @@ export default function PlayersView({ token, club }) {
   const filtered = useMemo(() => {
     let list = [...players];
 
+    if (filterGender !== "all") list = list.filter(p => (p.gender || "UNKNOWN") === filterGender);
     if (filterNoSkill) list = list.filter(p => p.skillLevel <= 0);
     if (skillMin !== "") list = list.filter(p => p.skillLevel >= parseFloat(skillMin));
     if (skillMax !== "") list = list.filter(p => p.skillLevel <= parseFloat(skillMax));
@@ -364,7 +390,10 @@ export default function PlayersView({ token, club }) {
     </span>
   );
 
-  const COLS = "2fr 1.3fr 0.6fr 0.9fr 0.85fr 0.55fr";
+  const genderIcon = (g) => g === "MALE" ? "♂" : g === "FEMALE" ? "♀" : "—";
+  const genderColor = (g) => g === "MALE" ? "#3b82f6" : g === "FEMALE" ? "#ec4899" : C.dim;
+
+  const COLS = "2fr 1.3fr 0.4fr 0.6fr 0.9fr 0.85fr 0.55fr";
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
@@ -438,6 +467,21 @@ export default function PlayersView({ token, club }) {
             Senza livello
           </button>
 
+          {[
+            { id: "all",     label: "Tutti" },
+            { id: "MALE",    label: "♂ Uomini" },
+            { id: "FEMALE",  label: "♀ Donne" },
+          ].map(f => (
+            <button key={f.id} onClick={() => setFilterGender(f.id)} style={{
+              ...btnGhost, whiteSpace: "nowrap",
+              background: filterGender === f.id ? (f.id === "MALE" ? "#3b82f620" : f.id === "FEMALE" ? "#ec489920" : C.accentDim) : "transparent",
+              color: filterGender === f.id ? (f.id === "MALE" ? "#3b82f6" : f.id === "FEMALE" ? "#ec4899" : C.accent) : C.muted,
+              borderColor: filterGender === f.id ? (f.id === "MALE" ? "#3b82f640" : f.id === "FEMALE" ? "#ec489940" : `${C.accent}40`) : C.border,
+            }}>
+              {f.label}
+            </button>
+          ))}
+
           <button onClick={() => setShowAddPlayer(true)} style={{ ...btnPrimary, whiteSpace: "nowrap" }}>+ Aggiungi</button>
           <button onClick={exportCsv} title="Esporta lista filtrata come CSV" style={{ ...btnGhost, whiteSpace: "nowrap", fontSize: 11 }}>↓ CSV</button>
         </div>
@@ -471,6 +515,7 @@ export default function PlayersView({ token, club }) {
           <div style={{ display: "grid", gridTemplateColumns: COLS, padding: "10px 16px", borderBottom: `1px solid ${C.border}`, fontSize: 10, color: C.muted, textTransform: "uppercase", letterSpacing: "0.1em" }}>
             <ColHeader field="name" label="Nome" />
             <span>Telefono</span>
+            <span>Sesso</span>
             <ColHeader field="skillLevel" label="Liv." />
             <ColHeader field="reliabilityScore" label="Affidabilità" />
             <ColHeader field="lastContactedAt" label="Contattato" />
@@ -499,6 +544,9 @@ export default function PlayersView({ token, club }) {
                   {p.name || <span style={{ color: C.dim }}>—</span>}
                 </span>
                 <span style={{ color: C.muted, fontFamily: "monospace", fontSize: 11 }}>{p.phoneNumber}</span>
+                <span style={{ fontSize: 14, fontWeight: 700, color: genderColor(p.gender) }}>
+                  {genderIcon(p.gender)}
+                </span>
                 <span style={{
                   display: "inline-flex", width: 28, height: 22, alignItems: "center", justifyContent: "center",
                   borderRadius: 6,
