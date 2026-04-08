@@ -200,7 +200,15 @@ export async function checkSilentMatches(): Promise<void> {
                     matchId: match.id,
                     waveNumber: match.recoveryWaveCount + 1,
                     scheduledAt: Date.now() + delayMs,
-                }, { delay: delayMs }).catch(err => logger.warn({ err, matchId: match.id }, 'checkSilentMatches: wave reschedule failed'));
+                }, { delay: delayMs }).catch(async (err) => {
+                    logger.warn({ err, matchId: match.id }, 'checkSilentMatches: wave reschedule failed');
+                    // Fallback: notifica admin direttamente (bypass dedup Redis che potrebbe anche essere giù)
+                    const { notifyAdmin } = await import('../utils/notify-admin');
+                    notifyAdmin(
+                        `⚠️ Partita ${match.id} senza wave — impossibile rilanciare (Redis?). Verifica manualmente.`,
+                        `silent-wave-fail-${match.id}`,
+                    ).catch(() => {});
+                });
 
                 await notifyAdminSafe(
                     `Partita rilevata senza wave attive → rilancio automatico (${Math.round(minutesLeft)} min al match).`,

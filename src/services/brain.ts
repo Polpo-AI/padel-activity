@@ -987,7 +987,27 @@ export async function executeAction(
             if (!playerName) return { success: false, errorMessage: 'PLAYER_NOT_FOUND:' };
             const preferred = await findPlayerFuzzy(playerName, player.clubId);
             if (!preferred) return { success: false, errorMessage: `PLAYER_NOT_FOUND:${playerName}` };
-            // Store as preferred player (no-op for now, matchmaker handles it)
+
+            // Trova il match OPEN corrente del richiedente e aggiunge il player preferito
+            const activeMatch = await prisma.matchPlayer.findFirst({
+                where: { playerId: player.id, leftAt: null, match: { status: 'OPEN' } },
+                include: { match: true },
+                orderBy: { joinedAt: 'desc' },
+            });
+
+            if (activeMatch) {
+                const currentPreferred: string[] = (activeMatch.match as any).preferredPlayerIds ?? [];
+                if (!currentPreferred.includes(preferred.id)) {
+                    await prisma.match.update({
+                        where: { id: activeMatch.matchId },
+                        data: { preferredPlayerIds: [...currentPreferred, preferred.id] },
+                    });
+                    logger.info({ matchId: activeMatch.matchId, preferredId: preferred.id }, 'INVITE_PREFERRED: added to preferredPlayerIds');
+                }
+            } else {
+                logger.info({ playerId: player.id }, 'INVITE_PREFERRED: no active OPEN match found — preferred stored only in conversation');
+            }
+
             return { success: true };
         }
 

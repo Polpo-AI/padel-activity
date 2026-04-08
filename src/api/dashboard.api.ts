@@ -489,6 +489,33 @@ router.post('/matches/:id/cancel', authMiddleware, async (req: Request, res: Res
     res.json({ success: true, notified, notifyError });
 });
 
+// Segna un giocatore come no-show dopo la partita → decresce reliability
+// LESSON 36: rotta specifica PRIMA di /:id generica
+router.post('/matches/:id/no-show/:playerId', authMiddleware, async (req: Request, res: Response) => {
+    const clubId = (req as any).clubId;
+    const { id: matchId, playerId } = req.params;
+
+    try {
+        const mp = await prisma.matchPlayer.findFirst({
+            where: { matchId, playerId, leftAt: null, match: { clubId } },
+        });
+        if (!mp) return res.status(404).json({ error: 'Partecipazione non trovata' });
+
+        await prisma.matchPlayer.update({
+            where: { id: mp.id },
+            data: { noShow: true },
+        });
+
+        const { decreaseReliability } = await import('../services/scoring');
+        await decreaseReliability(playerId).catch((err: any) => logger.error({ err }, 'decreaseReliability failed'));
+
+        logger.info({ matchId, playerId, clubId }, 'No-show marked by admin');
+        res.json({ success: true });
+    } catch (e: any) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
 // Modifica orario o campo di una partita — notifica automatica ai giocatori
 router.patch('/matches/:id', authMiddleware, async (req: Request, res: Response) => {
     const clubId = (req as any).clubId;
