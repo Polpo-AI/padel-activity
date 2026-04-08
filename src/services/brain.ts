@@ -964,21 +964,34 @@ export async function executeAction(
             const question = (params.question || '').trim();
             if (question && club?.id) {
                 const redis = getRedis();
-                const faqKey = `faq:pending_question:${club.id}`;
-                // Salva in Redis — include playerJid per poter rispondere all'utente dopo
-                // NON cancellare dopo l'invio: handleAdminFaqFlow dipende da questa chiave per
-                // ricevere e inoltrare la risposta dell'admin all'utente originale.
                 const { getContextStore } = await import('../utils/request-context');
                 const playerJidFromCtx = getContextStore()?.jid;
+
+                // ID univoco per questa FAQ — evita sovrascrittura se più utenti chiedono contemporaneamente
+                const faqId = `${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+                const faqKey = `faq:pending:${club.id}:${faqId}`;
+                const idsKey = `faq:pending_ids:${club.id}`;
+
                 await redis.set(faqKey, JSON.stringify({
+                    id: faqId,
                     question,
                     askedBy: player?.name || player?.phoneNumber,
                     playerJid: playerJidFromCtx,
                 }), 'EX', 7 * 24 * 3600);
+                await redis.rpush(idsKey, faqId);
+                await redis.expire(idsKey, 7 * 24 * 3600);
+
+                // Conta quante FAQ sono in sospeso per contestualizzare la notifica
+                const pendingCount = await redis.llen(idsKey);
+                const prefix = pendingCount > 1 ? `[${pendingCount} domande in sospeso]\n` : '';
+                const suffix = pendingCount > 1
+                    ? `\n\nSe hai più domande in sospeso, inizia la risposta con il numero (es. "1: risposta...") oppure rispondi liberamente alla prima in lista.`
+                    : `\n\nRispondi qui per inoltrarla all'utente e salvarla come FAQ.`;
+
                 const { notifyAdmin } = await import('../utils/notify-admin');
                 await notifyAdmin(
-                    `❓ ${player?.name || player?.phoneNumber} ha chiesto:\n"${question}"\n\nRispondi qui per salvare la tua risposta come FAQ e inoltrarla all'utente.`,
-                    `faq_pending_${question.substring(0, 20)}`,
+                    `${prefix}❓ ${player?.name || player?.phoneNumber} ha chiesto:\n"${question}"${suffix}`,
+                    `faq_pending_${faqId}`,
                     club?.adminPhone,
                     club?.name,
                 ).catch(() => {});

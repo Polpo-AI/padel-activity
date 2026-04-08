@@ -60,6 +60,7 @@ export async function handleAdminFaqFlow(text: string, club: any, jid: string): 
     if (!club?.id || !text.trim()) return false;
     const redis = getRedis();
     const clubId = club.id;
+    const idsKey = `faq:pending_ids:${clubId}`;
 
     // ── Stato 1: admin ha già visto la proposta di salvataggio e deve confermare sì/no
     const confirmRaw = await redis.get(`faq:awaiting_save_confirm:${clubId}`);
@@ -71,14 +72,13 @@ export async function handleAdminFaqFlow(text: string, club: any, jid: string): 
         if (affirmative) {
             await prisma.faq.create({ data: { clubId, question, answer, askedBy: askedBy || null } });
             await redis.del(`faq:awaiting_save_confirm:${clubId}`);
-            await redis.del(`faq:pending_question:${clubId}`);
             await sendMessage(jid, `Salvato! La risposta sarà disponibile agli utenti da ora.`);
             return true;
         }
 
         if (negative) {
             await redis.del(`faq:awaiting_save_confirm:${clubId}`);
-            await sendMessage(jid, `Ok, non salvo. La domanda resta in sospeso se vuoi rispondere diversamente.`);
+            await sendMessage(jid, `Ok, non salvo.`);
             return true;
         }
 
@@ -86,36 +86,61 @@ export async function handleAdminFaqFlow(text: string, club: any, jid: string): 
         await redis.del(`faq:awaiting_save_confirm:${clubId}`);
     }
 
-    // ── Stato 2: c'è una domanda pending → classifica se il messaggio è una risposta
-    const pendingRaw = await redis.get(`faq:pending_question:${clubId}`);
-    if (!pendingRaw) return false;
+    // ── Stato 2: carica la coda delle FAQ in sospeso
+    const pendingIds = await redis.lrange(idsKey, 0, -1);
+    if (pendingIds.length === 0) return false;
 
-    const { question, askedBy, playerJid } = JSON.parse(pendingRaw);
-
-    const classification = await classifyAdminFaqResponse(question, text);
-
-    if (!classification.isFaqAnswer) return false;
-
-    // Inoltra sempre la risposta all'utente originale (se abbiamo il JID)
-    if (playerJid) {
-        await simulateTypingAndSend(playerJid, text.trim()).catch(() => {});
+    const pendingItems: Array<{ id: string; question: string; askedBy: string; playerJid: string }> = [];
+    for (const id of pendingIds) {
+        const raw = await redis.get(`faq:pending:${clubId}:${id}`);
+        if (raw) pendingItems.push(JSON.parse(raw));
+    }
+    if (pendingItems.length === 0) {
+        await redis.del(idsKey);
+        return false;
     }
 
-    if (classification.isFaqAnswer && classification.confidence === 'high' && classification.faqWorthy) {
-        await prisma.faq.create({ data: { clubId, question, answer: text.trim(), askedBy: askedBy || null } });
-        await redis.del(`faq:pending_question:${clubId}`);
-        await sendMessage(jid, `Risposta inoltrata${playerJid ? ` a ${askedBy || 'utente'}` : ''} e salvata come FAQ ✅`).catch(() => {});
+    // Se il messaggio inizia con "N:" l'admin sta rispondendo esplicitamente alla Nᵃ domanda
+    let answerText = text.trim();
+    let targetItem = pendingItems[0]; // default FIFO
+    const numPrefixMatch = answerText.match(/^(\d+)\s*[:–\-]\s*/);
+    if (numPrefixMatch) {
+        const idx = parseInt(numPrefixMatch[1]) - 1;
+        if (idx >= 0 && idx < pendingItems.length) {
+            targetItem = pendingItems[idx];
+            answerText = answerText.slice(numPrefixMatch[0].length).trim();
+        }
+    }
+
+    const classification = await classifyAdminFaqResponse(targetItem.question, answerText);
+    if (!classification.isFaqAnswer) return false;
+
+    // Inoltra la risposta all'utente originale
+    if (targetItem.playerJid) {
+        await simulateTypingAndSend(targetItem.playerJid, answerText).catch(() => {});
+    }
+
+    // Rimuove questa FAQ dalla coda
+    await redis.lrem(idsKey, 1, targetItem.id);
+    await redis.del(`faq:pending:${clubId}:${targetItem.id}`);
+
+    const remaining = await redis.llen(idsKey);
+    const remainingNote = remaining > 0 ? `\n\n⚠️ Hai ancora ${remaining} domanda${remaining > 1 ? 'e' : ''} in sospeso.` : '';
+
+    if (classification.confidence === 'high' && classification.faqWorthy) {
+        await prisma.faq.create({ data: { clubId, question: targetItem.question, answer: answerText, askedBy: targetItem.askedBy || null } });
+        await sendMessage(jid, `Risposta inoltrata a ${targetItem.askedBy || 'utente'} e salvata come FAQ ✅${remainingNote}`).catch(() => {});
         return true;
     }
 
     await redis.set(
         `faq:awaiting_save_confirm:${clubId}`,
-        JSON.stringify({ question, answer: text.trim(), askedBy, playerJid }),
+        JSON.stringify({ question: targetItem.question, answer: answerText, askedBy: targetItem.askedBy, playerJid: targetItem.playerJid }),
         'EX', 24 * 3600,
     );
     await sendMessage(
         jid,
-        `Risposta inoltrata${playerJid ? ` a ${askedBy || 'utente'}` : ''}.\n\nVuoi salvarla anche come FAQ per le prossime domande simili?\n\nD: ${question}\nR: ${text.trim()}\n\nRispondi sì o no.`,
+        `Risposta inoltrata a ${targetItem.askedBy || 'utente'}.\n\nVuoi salvarla come FAQ?\n\nD: ${targetItem.question}\nR: ${answerText}\n\nRispondi sì o no.${remainingNote}`,
     ).catch(() => {});
     return true;
 }
