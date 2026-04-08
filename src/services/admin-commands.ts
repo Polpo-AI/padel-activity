@@ -393,6 +393,84 @@ Restituisci SOLO JSON:
 }
 
 // ─────────────────────────────────────────────
+// NOTIFY PENDING FAQ USERS
+// ─────────────────────────────────────────────
+
+/**
+ * Chiamata dopo ogni creazione/aggiornamento FAQ (dashboard o WhatsApp).
+ * Controlla la coda Redis dei pending e risponde agli utenti le cui domande
+ * sono coperte dalla nuova FAQ.
+ */
+export async function notifyPendingFaqUsers(
+    clubId: string,
+    faqQuestion: string,
+    faqAnswer: string,
+): Promise<void> {
+    const redis = getRedis();
+    const idsKey = `faq:pending_ids:${clubId}`;
+    const pendingIds = await redis.lrange(idsKey, 0, -1);
+    if (pendingIds.length === 0) return;
+
+    const pendingItems: PendingFaqItem[] = (
+        await Promise.all(pendingIds.map(id => redis.get(`faq:pending:${clubId}:${id}`)))
+    ).filter(Boolean).map(raw => JSON.parse(raw!));
+
+    if (pendingItems.length === 0) return;
+
+    // Per ogni pending, chiede all'AI se la nuova FAQ risponde alla domanda
+    for (const item of pendingItems) {
+        try {
+            const covered = await isFaqCoveringQuestion(faqQuestion, faqAnswer, item.question);
+            if (!covered) continue;
+
+            // Risponde all'utente
+            if (item.playerJid) {
+                const { simulateTypingAndSend } = await import('./whatsapp');
+                const { runWithContext } = await import('../utils/request-context');
+                await runWithContext({ correlationId: `faq-notify-${item.id}`, clubId }, () =>
+                    simulateTypingAndSend(item.playerJid, faqAnswer).catch(() => {})
+                );
+            }
+
+            // Rimuove dalla coda
+            await redis.lrem(idsKey, 1, item.id);
+            await redis.del(`faq:pending:${clubId}:${item.id}`);
+
+            logger.info({ clubId, faqQuestion, askedBy: item.askedBy }, 'Pending FAQ user notified via new FAQ');
+        } catch (err) {
+            logger.warn({ err, itemId: item.id }, 'notifyPendingFaqUsers: error processing item');
+        }
+    }
+}
+
+async function isFaqCoveringQuestion(
+    faqQuestion: string,
+    faqAnswer: string,
+    pendingQuestion: string,
+): Promise<boolean> {
+    const prompt = `Una nuova FAQ è stata aggiunta:
+D: ${faqQuestion}
+R: ${faqAnswer}
+
+Un utente aveva fatto questa domanda in sospeso: "${pendingQuestion}"
+
+La nuova FAQ risponde (anche parzialmente) alla domanda dell'utente?
+Restituisci SOLO: true oppure false`;
+
+    try {
+        const resp = await anthropic.messages.create({
+            model: 'claude-haiku-4-5-20251001', max_tokens: 10, temperature: 0,
+            messages: [{ role: 'user', content: prompt }],
+        });
+        const raw = resp.content[0].type === 'text' ? resp.content[0].text.trim().toLowerCase() : '';
+        return raw.startsWith('true');
+    } catch (err) {
+        logger.error({ err }, 'isFaqCoveringQuestion failed');
+        return false;
+    }
+}
+
+// ─────────────────────────────────────────────
 // MAIN COMMAND HANDLER
 // ─────────────────────────────────────────────
 

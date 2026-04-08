@@ -1205,6 +1205,11 @@ router.post('/faqs', authMiddleware, async (req: Request, res: Response) => {
                 askedBy: askedBy ? String(askedBy) : null,
             },
         });
+        // Se ha una risposta, notifica eventuali utenti con domande simili in sospeso
+        if (answer) {
+            const { notifyPendingFaqUsers } = await import('../services/admin-commands');
+            notifyPendingFaqUsers(clubId, String(question), String(answer)).catch(() => {});
+        }
         res.status(201).json(faq);
     } catch (e: any) {
         res.status(500).json({ error: e.message });
@@ -1238,6 +1243,9 @@ router.post('/faqs/merge', authMiddleware, async (req: Request, res: Response) =
             prisma.faq.delete({ where: { id: String(deleteId) } }),
         ]);
 
+        const { notifyPendingFaqUsers } = await import('../services/admin-commands');
+        notifyPendingFaqUsers(clubId, String(mergedQuestion), String(mergedAnswer)).catch(() => {});
+
         res.json(updated);
     } catch (e: any) {
         res.status(500).json({ error: e.message });
@@ -1260,6 +1268,10 @@ router.put('/faqs/:id', authMiddleware, async (req: Request, res: Response) => {
                 ...(answer !== undefined ? { answer: answer === null ? null : String(answer) } : {}),
             },
         });
+        if (answer) {
+            const { notifyPendingFaqUsers } = await import('../services/admin-commands');
+            notifyPendingFaqUsers(clubId, updated.question, String(answer)).catch(() => {});
+        }
         res.json(updated);
     } catch (e: any) {
         res.status(500).json({ error: e.message });
@@ -1324,6 +1336,10 @@ router.post('/faqs/:id/answer', authMiddleware, async (req: Request, res: Respon
                 ).catch(() => {})
             );
         }
+
+        // Notifica anche gli utenti con domande simili ancora in sospeso in Redis
+        const { notifyPendingFaqUsers } = await import('../services/admin-commands');
+        notifyPendingFaqUsers(clubId, faq.question, String(answer)).catch(() => {});
 
         res.json({ decision, faq: updated });
     } catch (e: any) {
