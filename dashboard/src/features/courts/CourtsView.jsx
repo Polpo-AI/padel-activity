@@ -486,7 +486,7 @@ function CreateMatchModal({ courts, club, token, onClose, onCreated, defaultDate
 
 // ─── MatchChip (compact for calendar) ─────────
 
-function MatchChip({ match, onCancel, onDeleteUnavailable }) {
+function MatchChip({ match, onCancel, onDeleteUnavailable, onSelect }) {
   const [confirming, setConfirming] = useState(false);
   const [hovered, setHovered] = useState(false);
   const confirmed = match.MatchPlayer?.filter(mp => !mp.leftAt).length || 0;
@@ -517,6 +517,7 @@ function MatchChip({ match, onCancel, onDeleteUnavailable }) {
     <div
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
+      onClick={() => { if (!confirming && onSelect) onSelect(match.id); }}
       style={{
         background: isUnavail ? `${C.dim}` : `${color}15`,
         border: `1px solid ${isUnavail ? C.border : color + "40"}`,
@@ -524,6 +525,7 @@ function MatchChip({ match, onCancel, onDeleteUnavailable }) {
         padding: "4px 6px",
         opacity: isCancelled ? 0.45 : 1,
         textDecoration: isCancelled ? 'line-through' : 'none',
+        cursor: onSelect && !confirming ? "pointer" : "default",
       }}>
       <div style={{ display: "flex", alignItems: "center", gap: 3 }}>
         <span style={{ fontSize: 9 }}>{typeIcon}</span>
@@ -555,7 +557,7 @@ function MatchChip({ match, onCancel, onDeleteUnavailable }) {
       )}
       {canDelete && !confirming && (
         <button
-          onClick={() => setConfirming(true)}
+          onClick={(e) => { e.stopPropagation(); setConfirming(true); }}
           style={{
             marginTop: 4, width: "100%", fontSize: 9, padding: "2px 0",
             background: `${C.cancelled}15`, border: `1px solid ${C.cancelled}40`,
@@ -566,7 +568,7 @@ function MatchChip({ match, onCancel, onDeleteUnavailable }) {
       {canDelete && confirming && (
         <div style={{ marginTop: 4, display: "flex", gap: 3 }}>
           <button
-            onClick={handleDelete}
+            onClick={(e) => { e.stopPropagation(); handleDelete(); }}
             style={{
               flex: 1, fontSize: 9, padding: "2px 0",
               background: C.cancelled, border: "none",
@@ -574,7 +576,7 @@ function MatchChip({ match, onCancel, onDeleteUnavailable }) {
             }}
           >Sì</button>
           <button
-            onClick={() => setConfirming(false)}
+            onClick={(e) => { e.stopPropagation(); setConfirming(false); }}
             style={{
               flex: 1, fontSize: 9, padding: "2px 0",
               background: `${C.dim}`, border: `1px solid ${C.border}`,
@@ -677,11 +679,146 @@ function DayDetailModal({ date, courts, onCancel, onClose }) {
   );
 }
 
+// ─── MatchDetailModal ─────────────────────────
+
+function MatchDetailModal({ matchId, token, onCancel, onClose }) {
+  const [match, setMatch] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState(null);
+
+  useEffect(() => {
+    api(`/matches/${matchId}`, token)
+      .then(setMatch)
+      .catch(e => setErr(e.message))
+      .finally(() => setLoading(false));
+  }, [matchId, token]);
+
+  const confirmed = match?.MatchPlayer?.filter(mp => !mp.leftAt) || [];
+  const pendingInvites = match?.invitations?.filter(inv => inv.status === "PENDING") || [];
+  const spotsLeft = match ? match.playersNeeded - confirmed.length : 0;
+
+  const genderLabel = (g) => g === "MALE" ? "Solo uomini 👨" : g === "FEMALE" ? "Solo donne 👩" : g === "ANY" ? "Misto 🤝" : null;
+  const typeIcon = match?.type === "LESSON" ? "👨‍🏫 Lezione" : match?.isPrivateBooking ? "🔒 Prenotazione privata" : "🎾 Matchmaking";
+
+  return (
+    <Modal title="Dettaglio partita" onClose={onClose}>
+      {loading && <div style={{ display: "flex", gap: 10, alignItems: "center", padding: "20px 0" }}><Spinner /><span style={{ color: C.muted, fontSize: 13 }}>Caricamento...</span></div>}
+      {err && <div style={{ color: C.cancelled, fontSize: 13 }}>{err}</div>}
+      {match && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+          {/* Header */}
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+            <div>
+              <div style={{ fontSize: 20, fontWeight: 700, color: C.text }}>
+                {fmtTime(match.startTime)}{match.endTime ? `–${fmtTime(match.endTime)}` : ""}
+              </div>
+              <div style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>
+                {new Date(match.startTime).toLocaleDateString("it-IT", { weekday: "long", day: "numeric", month: "long", timeZone: "Europe/Rome" })}
+              </div>
+            </div>
+            <Badge status={match.status} />
+          </div>
+
+          {/* Info grid */}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+            {[
+              { l: "Tipo", v: typeIcon },
+              { l: "Campo", v: match.court ? `${match.court.name} ${match.court.isCovered ? "🏠" : "☀️"}` : "—" },
+              ...(!match.isPrivateBooking ? [
+                { l: "Livello", v: match.skillLevel ? `${match.skillLevel}` : "—" },
+                { l: "Genere", v: genderLabel(match.targetGender) || "—" },
+              ] : []),
+            ].map(({ l, v }) => (
+              <div key={l} style={{ background: C.bg, border: `1px solid ${C.dim}`, borderRadius: 8, padding: "8px 12px" }}>
+                <div style={{ fontSize: 10, color: C.muted, textTransform: "uppercase", letterSpacing: "0.08em" }}>{l}</div>
+                <div style={{ fontSize: 13, fontWeight: 600, color: C.text, marginTop: 2 }}>{v}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* Players */}
+          {!match.isPrivateBooking && (
+            <div>
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
+                <span style={{ fontSize: 12, fontWeight: 600, color: C.text }}>Giocatori</span>
+                <span style={{ fontSize: 11, color: C.muted }}>{confirmed.length}/{match.playersNeeded}</span>
+              </div>
+              <div style={{ height: 3, background: C.dim, borderRadius: 2, marginBottom: 10, overflow: "hidden" }}>
+                <div style={{
+                  height: "100%", borderRadius: 2, transition: "width 0.3s",
+                  width: `${(confirmed.length / match.playersNeeded) * 100}%`,
+                  background: match.status === "LOCKED" ? C.locked : confirmed.length > 0 ? C.accent : C.muted,
+                }} />
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                {confirmed.map(mp => (
+                  <div key={mp.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: C.dim, borderRadius: 6, padding: "6px 10px" }}>
+                    <span style={{ fontSize: 12, color: C.text, fontWeight: 500 }}>
+                      {mp.player?.name || mp.player?.phoneNumber?.slice(-4)}
+                    </span>
+                    {mp.player?.skillLevel > 0 && (
+                      <span style={{ fontSize: 10, color: C.muted }}>Liv. {mp.player.skillLevel}</span>
+                    )}
+                  </div>
+                ))}
+                {Array.from({ length: spotsLeft }).map((_, i) => (
+                  <div key={i} style={{ background: "transparent", border: `1px dashed ${C.dim}`, borderRadius: 6, padding: "6px 10px" }}>
+                    <span style={{ fontSize: 12, color: C.dim }}>Posto libero</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Private booking player */}
+          {match.isPrivateBooking && confirmed.length > 0 && (
+            <div>
+              <div style={{ fontSize: 12, fontWeight: 600, color: C.text, marginBottom: 6 }}>Prenotato da</div>
+              <div style={{ background: C.dim, borderRadius: 6, padding: "8px 12px" }}>
+                <span style={{ fontSize: 13, color: C.text }}>
+                  {confirmed[0]?.player?.name || confirmed[0]?.player?.phoneNumber}
+                </span>
+              </div>
+            </div>
+          )}
+
+          {/* Pending invitations */}
+          {pendingInvites.length > 0 && (
+            <div>
+              <div style={{ fontSize: 12, fontWeight: 600, color: C.text, marginBottom: 6 }}>
+                Inviti in attesa ({pendingInvites.length})
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                {pendingInvites.map(inv => (
+                  <div key={inv.id} style={{ background: `${C.warning}10`, border: `1px solid ${C.warning}30`, borderRadius: 6, padding: "5px 10px", display: "flex", justifyContent: "space-between" }}>
+                    <span style={{ fontSize: 11, color: C.text }}>{inv.player?.name || inv.player?.phoneNumber?.slice(-4)}</span>
+                    <span style={{ fontSize: 10, color: C.warning }}>In attesa</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Cancel button */}
+          {(match.status === "OPEN" || match.status === "LOCKED") && (
+            <button
+              onClick={() => { onCancel(match.id); onClose(); }}
+              style={{ ...btnGhost, fontSize: 12, color: C.cancelled, borderColor: `${C.cancelled}30` }}
+            >
+              Cancella partita
+            </button>
+          )}
+        </div>
+      )}
+    </Modal>
+  );
+}
+
 // ─── WeekCalendar ─────────────────────────────
 
 const DAY_NAMES = ["Lun", "Mar", "Mer", "Gio", "Ven", "Sab", "Dom"];
 
-function WeekCalendar({ courtData, weekDays, onCancel, onDeleteUnavailable, todayStr, onDayClick, onCourtManage, onQuickCreate }) {
+function WeekCalendar({ courtData, weekDays, onCancel, onDeleteUnavailable, todayStr, onDayClick, onCourtManage, onQuickCreate, onSelectMatch }) {
   const thBase = {
     padding: "10px 8px", textAlign: "center",
     borderBottom: `1px solid ${C.border}`,
@@ -770,7 +907,7 @@ function WeekCalendar({ courtData, weekDays, onCancel, onDeleteUnavailable, toda
                     <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
                       {dayMatches.length > 0 && (
                         <div style={{ display: "flex", flexDirection: "column", gap: 3, maxHeight: 160, overflowY: "auto" }}>
-                          {dayMatches.map(m => <MatchChip key={m.id} match={m} onCancel={onCancel} onDeleteUnavailable={onDeleteUnavailable} />)}
+                          {dayMatches.map(m => <MatchChip key={m.id} match={m} onCancel={onCancel} onDeleteUnavailable={onDeleteUnavailable} onSelect={onSelectMatch} />)}
                         </div>
                       )}
                       <button
@@ -808,6 +945,7 @@ export default function CourtsView({ token, onClubUpdate }) {
   const [createCourtId, setCreateCourtId] = useState(null);
   const [unavailCourt, setUnavailCourt] = useState(null);
   const [dayDetail, setDayDetail] = useState(null);
+  const [selectedMatchId, setSelectedMatchId] = useState(null);
   const [toast, setToast] = useState(null);
 
   const weekDays = getWeekDays(weekStart);
@@ -920,6 +1058,7 @@ export default function CourtsView({ token, onClubUpdate }) {
         onDayClick={(d) => setDayDetail(d)}
         onCourtManage={(court) => setUnavailCourt(court)}
         onQuickCreate={(d, cId) => { setCreateDate(d); setCreateCourtId(cId); setShowCreate(true); }}
+        onSelectMatch={(id) => setSelectedMatchId(id)}
       />
 
       <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 16, flexWrap: "wrap" }}>
@@ -934,7 +1073,7 @@ export default function CourtsView({ token, onClubUpdate }) {
             <span style={{ fontSize: 11, color: C.muted }}>{label}</span>
           </div>
         ))}
-        <span style={{ fontSize: 11, color: C.dim }}>· Clicca + su cella vuota per creare · Clicca giorno per dettaglio</span>
+        <span style={{ fontSize: 11, color: C.dim }}>· Clicca + su cella vuota per creare · Clicca giorno per dettaglio · Clicca partita per scheda</span>
       </div>
 
       {showCreate && (
@@ -955,6 +1094,14 @@ export default function CourtsView({ token, onClubUpdate }) {
           courts={courtData}
           onCancel={cancelMatch}
           onClose={() => setDayDetail(null)}
+        />
+      )}
+      {selectedMatchId && (
+        <MatchDetailModal
+          matchId={selectedMatchId}
+          token={token}
+          onCancel={cancelMatch}
+          onClose={() => { setSelectedMatchId(null); load(); }}
         />
       )}
       {toast && <Toast msg={toast.msg} type={toast.type} onDone={() => setToast(null)} />}
