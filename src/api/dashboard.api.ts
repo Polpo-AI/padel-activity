@@ -292,7 +292,9 @@ router.get('/matches', authMiddleware, async (req: Request, res: Response) => {
 
 router.get('/matches/suggest-level', authMiddleware, async (req: Request, res: Response) => {
     const clubId = (req as any).clubId as string;
-    const { date, time } = req.query as { date?: string; time?: string };
+    const { date, time, targetGender: tg } = req.query as { date?: string; time?: string; targetGender?: string };
+    // targetGender: 'MALE' | 'FEMALE' | 'ANY' | undefined — filtra il pool di conseguenza
+    const filterGender = (tg === 'MALE' || tg === 'FEMALE') ? tg : null;
 
     try {
         const club = await prisma.club.findUnique({ where: { id: clubId } });
@@ -318,13 +320,13 @@ router.get('/matches/suggest-level', authMiddleware, async (req: Request, res: R
             isWeekday = dow >= 1 && dow <= 5;
         }
 
-        // Pool eligibile: attivi, skillLevel > 0, cap fascia non raggiunto
-        // avoid flags applicati solo nei feriali (nel weekend si gioca anche la mattina)
+        // Pool eligibile: attivi, skillLevel > 0, cap fascia non raggiunto, eventuale filtro genere
         const pool = await prisma.player.findMany({
             where: {
                 clubId,
                 active: true,
                 skillLevel: { gt: 0 },
+                ...(filterGender ? { gender: filterGender } : {}),
                 ...(isMorning
                     ? { morningContactsToday: { lt: dailyCap }, ...(isWeekday ? { avoidMorning: false } : {}) }
                     : { afternoonContactsToday: { lt: dailyCap }, ...(isWeekday ? { avoidAfternoon: false } : {}) }),
@@ -375,7 +377,11 @@ router.get('/matches/:id', authMiddleware, async (req: Request, res: Response) =
 
 router.post('/matches', authMiddleware, async (req: Request, res: Response) => {
     const clubId = (req as any).clubId;
-    const { courtId, startTime, skillLevel, playersNeeded = 4, type = 'MATCH', duration, title, isMixed = false } = req.body;
+    const { courtId, startTime, skillLevel, playersNeeded = 4, type = 'MATCH', duration, title, targetGender = null } = req.body;
+    // targetGender: null=infer legacy, 'MALE'=solo uomini, 'FEMALE'=solo donne, 'ANY'=misto esplicito
+    const validGenders = ['MALE', 'FEMALE', 'ANY'];
+    const safeTargetGender: string | null = validGenders.includes(targetGender) ? targetGender : null;
+    const isMixed = safeTargetGender === 'ANY';
     if (type === 'MATCH' && playersNeeded < 2) return res.status(400).json({ error: 'playersNeeded deve essere almeno 2' });
     const playersNeededNum = parseInt(playersNeeded);
     if (isNaN(playersNeededNum) || playersNeededNum > 100 || playersNeededNum < 0) return res.status(400).json({ error: 'playersNeeded deve essere tra 0 e 100' });
@@ -420,7 +426,8 @@ router.post('/matches', authMiddleware, async (req: Request, res: Response) => {
             endTime: new Date(new Date(startTime).getTime() + (duration ? duration * 60000 : (club?.matchDuration || 90) * 60000)),
             skillLevel: parseInt(skillLevel),
             playersNeeded: parseInt(playersNeeded),
-            isMixed: matchType === 'MATCH' ? Boolean(isMixed) : false,
+            isMixed: matchType === 'MATCH' ? isMixed : false,
+            targetGender: matchType === 'MATCH' ? safeTargetGender : null,
             status: 'OPEN',
         },
         include: { court: true },

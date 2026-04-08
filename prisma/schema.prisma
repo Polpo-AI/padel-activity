@@ -58,6 +58,7 @@ model Match {
   endTime           DateTime?
   skillLevel        Float
   isMixed           Boolean       @default(false)
+  targetGender      String?       // null=inferisci dai partecipanti, 'MALE'=solo uomini, 'FEMALE'=solo donne, 'ANY'=misto esplicito
   playersNeeded     Int           @default(4)
   status            MatchStatus   @default(OPEN)
   preferredPlayerIds String[]     @default([])

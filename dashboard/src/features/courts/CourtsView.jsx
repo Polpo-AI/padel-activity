@@ -276,7 +276,7 @@ function CreateMatchModal({ courts, club, token, onClose, onCreated, defaultDate
   // Time range picker (UNAVAILABLE)
   const [fromHour, setFromHour] = useState("");
   const [toHour, setToHour] = useState("");
-  const [isMixed, setIsMixed] = useState(false);
+  const [targetGender, setTargetGender] = useState("ANY"); // 'ANY'=misto, 'MALE'=uomini, 'FEMALE'=donne
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState("");
 
@@ -309,7 +309,7 @@ function CreateMatchModal({ courts, club, token, onClose, onCreated, defaultDate
         startTime = selectedSlot;
         dur = duration;
       }
-      await api("/matches", token, { method: "POST", body: JSON.stringify({ courtId, startTime, skillLevel, type: matchType, duration: dur, title: title.trim() || undefined, isMixed: matchType === "MATCH" ? isMixed : undefined }) });
+      await api("/matches", token, { method: "POST", body: JSON.stringify({ courtId, startTime, skillLevel, type: matchType, duration: dur, title: title.trim() || undefined, targetGender: matchType === "MATCH" ? targetGender : undefined }) });
       onCreated(); onClose();
     } catch (e) { setErr(e.message); }
     finally { setSaving(false); }
@@ -371,6 +371,7 @@ function CreateMatchModal({ courts, club, token, onClose, onCreated, defaultDate
                     const slot = suggestions ? null : (selectedSlot ? new Date(selectedSlot).toTimeString().slice(0,5) : null);
                     const params = new URLSearchParams({ date });
                     if (slot) params.set("time", slot);
+                    if (targetGender) params.set("targetGender", targetGender);
                     const d = await api(`/matches/suggest-level?${params}`, token);
                     setSuggestions(d.suggestions || []);
                     if (d.suggestions?.[0]) setSkillLevel(d.suggestions[0].level);
@@ -410,20 +411,22 @@ function CreateMatchModal({ courts, club, token, onClose, onCreated, defaultDate
         )}
 
         {matchType === "MATCH" && (
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 12px", background: C.bg, borderRadius: 8, border: `1px solid ${C.dim}` }}>
-            <div>
-              <div style={{ fontSize: 13, fontWeight: 600, color: C.text }}>Partita mista</div>
-              <div style={{ fontSize: 11, color: C.muted }}>Ammette uomini e donne insieme</div>
+          <div>
+            <label style={labelSt}>Genere ammesso</label>
+            <div style={{ display: "flex", gap: 6 }}>
+              {[
+                { id: "ANY", label: "🤝 Misto" },
+                { id: "MALE", label: "👨 Solo uomini" },
+                { id: "FEMALE", label: "👩 Solo donne" },
+              ].map(opt => (
+                <button key={opt.id} onClick={() => setTargetGender(opt.id)} style={{
+                  flex: 1, padding: "7px 4px", borderRadius: 8, fontSize: 11, fontWeight: 600, cursor: "pointer",
+                  background: targetGender === opt.id ? C.accentDim : C.bg,
+                  color: targetGender === opt.id ? C.accent : C.muted,
+                  border: `1px solid ${targetGender === opt.id ? C.accent : C.dim}`,
+                }}>{opt.label}</button>
+              ))}
             </div>
-            <button onClick={() => setIsMixed(v => !v)} style={{
-              width: 44, height: 24, borderRadius: 12, border: "none", cursor: "pointer",
-              background: isMixed ? C.accent : C.dim, position: "relative", transition: "background 0.2s"
-            }}>
-              <span style={{
-                position: "absolute", top: 2, left: isMixed ? 22 : 2, width: 20, height: 20,
-                borderRadius: "50%", background: "#fff", transition: "left 0.2s"
-              }} />
-            </button>
           </div>
         )}
 

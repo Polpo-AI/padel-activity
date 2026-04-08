@@ -1469,6 +1469,18 @@ async function createNewMatchAction(
         }
     }
 
+    // targetGender: derivato da preferMixed + genere del player
+    // 'ANY' = misto esplicito, 'MALE'/'FEMALE' = solo quel sesso, null = privato (nessuna wave)
+    let matchTargetGender: string | null = null;
+    if (!isPrivateBooking) {
+        if (preferMixed === true) {
+            matchTargetGender = 'ANY';
+        } else if (preferMixed === false && player.gender && player.gender !== 'UNKNOWN') {
+            matchTargetGender = player.gender; // 'MALE' o 'FEMALE'
+        }
+        // preferMixed=null con prenotazione non-privata → non dovrebbe succedere (brain chiede prima)
+    }
+
     const match = await prisma.match.create({
         data: {
             clubId: player.clubId,
@@ -1476,6 +1488,7 @@ async function createNewMatchAction(
             startTime,
             skillLevel,
             isMixed: preferMixed === true,
+            targetGender: matchTargetGender,
             playersNeeded: 4,
             status: initialStatus,
             isPrivateBooking,

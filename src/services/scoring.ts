@@ -143,13 +143,20 @@ export async function selectPlayersForWave(
     });
     if (!match) return { players: [], targetCount: 0 };
 
-    // 1. GENDER RESTRICTION (Always same sex unless club allows mixed)
+    // 1. GENDER RESTRICTION
+    // targetGender sul match (esplicito da dashboard o bot): 'MALE', 'FEMALE', 'ANY', null
+    // 'ANY' = misto esplicito → nessun filtro
+    // 'MALE'/'FEMALE' = filtro diretto
+    // null = legacy: inferisci dal genere dei partecipanti già iscritti (se isMixed=false)
     let targetGender: any = null;
-    if (!match.isMixed) {
+    const explicitTarget = (match as any).targetGender as string | null;
+    if (explicitTarget === 'MALE' || explicitTarget === 'FEMALE') {
+        targetGender = explicitTarget;
+    } else if (explicitTarget !== 'ANY' && !match.isMixed) {
+        // Legacy: inferisci dai partecipanti
         const participants = match.MatchPlayer.map(mp => mp.player).filter(Boolean);
         if (participants.length > 0) {
             const genders = Array.from(new Set(participants.map(p => p.gender)));
-            // Se sono tutti dello stesso sesso (e non UNKNOWN), restringiamo a quello
             if (genders.length === 1 && genders[0] !== 'UNKNOWN') {
                 targetGender = genders[0];
             }
@@ -238,7 +245,10 @@ export async function getPlayersForRecovery(matchId: string): Promise<any[]> {
     if (!match) return [];
 
     let targetGender: any = null;
-    if (!match.isMixed) {
+    const explicitTargetR = (match as any).targetGender as string | null;
+    if (explicitTargetR === 'MALE' || explicitTargetR === 'FEMALE') {
+        targetGender = explicitTargetR;
+    } else if (explicitTargetR !== 'ANY' && !match.isMixed) {
         const participants = match.MatchPlayer.map(mp => mp.player).filter(Boolean);
         if (participants.length > 0) {
             const genders = Array.from(new Set(participants.map(p => p.gender)));
