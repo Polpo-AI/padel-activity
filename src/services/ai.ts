@@ -20,7 +20,7 @@ const logger = pino({ level: 'info' });
 export const anthropic = new Anthropic({
     apiKey: process.env.ANTHROPIC_API_KEY,
     timeout: 30000,
-    maxRetries: 0, // gestiamo noi
+    maxRetries: 2, // SDK riprova su 429 e 5xx (incluso 529 Overloaded) con backoff esponenziale
 });
 
 export const openai = new OpenAI({
