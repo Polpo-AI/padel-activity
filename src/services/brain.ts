@@ -8,6 +8,7 @@
 import { prisma } from './db';
 import { anthropic } from './ai';
 import { waveQueue, getRedis } from './queue';
+import { simulateTypingAndSend } from './whatsapp';
 import pino from 'pino';
 
 const logger = pino({ level: 'info' });
@@ -841,7 +842,10 @@ export async function executeAction(
 
             await prisma.matchPlayer.update({ where: { id: mp.id }, data: { leftAt: new Date() } });
 
-            const match = await prisma.match.findUnique({ where: { id: mp.matchId } });
+            const match = await prisma.match.findUnique({
+                where: { id: mp.matchId },
+                include: { MatchPlayer: { where: { leftAt: null }, include: { player: { select: { phoneNumber: true, firstName: true } } } } },
+            });
             if (match?.status === 'LOCKED') {
                 if (match.isPrivateBooking) {
                     // Prenotazione privata: il campo era riservato per questo player → libera il slot
@@ -858,6 +862,20 @@ export async function executeAction(
                         urgencyMultiplier: 2,
                         scheduledAt: Date.now(),
                     }, { delay: 0 }).catch(err => logger.warn({ err, matchId: mp.matchId }, 'Wave scheduling failed'));
+
+                    // GAP #11: notifica gli altri co-giocatori che il gruppo si è riaperto
+                    const matchTimeStr = match.startTime.toLocaleString('it-IT', {
+                        timeZone: 'Europe/Rome', weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit',
+                    });
+                    const leavingName = (player as any).firstName || (player as any).name || 'Un giocatore';
+                    for (const rmp of (match as any).MatchPlayer) {
+                        const phone = rmp.player?.phoneNumber;
+                        if (phone) {
+                            simulateTypingAndSend(`${phone}@s.whatsapp.net`,
+                                `${leavingName} non può più venire alla partita di ${matchTimeStr}. Stiamo cercando un sostituto 🎾`
+                            ).catch(() => {});
+                        }
+                    }
                 }
             }
 
@@ -882,7 +900,7 @@ export async function executeAction(
             // 2. Controlla quanti giocatori rimangono nel vecchio match
             const oldMatch = await prisma.match.findUnique({
                 where: { id: mp.matchId },
-                include: { MatchPlayer: { where: { leftAt: null } } },
+                include: { MatchPlayer: { where: { leftAt: null }, include: { player: { select: { phoneNumber: true, firstName: true } } } } },
             });
             const remainingPlayers = oldMatch?.MatchPlayer.length ?? 0;
 
@@ -901,6 +919,20 @@ export async function executeAction(
                     urgencyMultiplier: 2,
                     scheduledAt: Date.now(),
                 }, { delay: 0 }).catch(err => logger.warn({ err, matchId: mp.matchId }, 'Wave scheduling failed'));
+
+                // GAP #11: notifica gli altri co-giocatori che il gruppo si è riaperto
+                const matchTimeStr = oldMatch.startTime.toLocaleString('it-IT', {
+                    timeZone: 'Europe/Rome', weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit',
+                });
+                const leavingName = (player as any).firstName || (player as any).name || 'Un giocatore';
+                for (const rmp of oldMatch.MatchPlayer) {
+                    const phone = (rmp as any).player?.phoneNumber;
+                    if (phone) {
+                        simulateTypingAndSend(`${phone}@s.whatsapp.net`,
+                            `${leavingName} non può più venire alla partita di ${matchTimeStr}. Stiamo cercando un sostituto 🎾`
+                        ).catch(() => {});
+                    }
+                }
             }
 
             // 3. Prenota nuovo slot — propaga la preferenza coperto/scoperto
@@ -911,7 +943,6 @@ export async function executeAction(
         if (action === 'REQUEST_LESSON') {
             const contactPhone = club?.adminAlternativePhone || club?.adminPhone;
             if (contactPhone) {
-                const { simulateTypingAndSend } = await import('./whatsapp');
                 const dayPart = params.day ? ` (richiesta: ${params.day}${params.time ? ' alle ' + params.time : ''})` : '';
                 const msg = `🎾 Richiesta lezione da ${player.name || player.phoneNumber} (${player.phoneNumber})${dayPart}. Contattalo per confermare orario.`;
                 simulateTypingAndSend(`${contactPhone}@s.whatsapp.net`, msg).catch(() => {});

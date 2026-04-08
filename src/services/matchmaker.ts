@@ -69,7 +69,8 @@ async function _processWaveInner(matchId: string, waveNumber: number, urgencyMul
     if (isNightInRome(now)) {
         const delayMs = msUntil8amRome(now);
         logger.info(`Wave ${waveNumber} for ${matchId} falls in night window — rescheduling in ${Math.round(delayMs / 60000)}min`);
-        await waveQueue.add('process-wave', { matchId, waveNumber }, { delay: delayMs });
+        waveQueue.add('process-wave', { matchId, waveNumber }, { delay: delayMs })
+            .catch(err => logger.warn({ err, matchId }, 'Night-window wave reschedule failed'));
         return;
     }
 
@@ -242,16 +243,24 @@ async function _processWaveInner(matchId: string, waveNumber: number, urgencyMul
         try {
             await simulateTypingAndSend(player.phoneNumber, text);
             const isMorning = isMorningMatchInRome(match.startTime);
-            await prisma.player.update({
-                where: { id: player.id },
-                data: {
-                    lastContactedAt: new Date(),
-                    dailyMessagesCount: { increment: 1 },
-                    ...(isMorning
-                        ? { morningContactsToday: { increment: 1 } }
-                        : { afternoonContactsToday: { increment: 1 } }),
-                },
-            });
+            const sentNow = new Date();
+            await Promise.all([
+                prisma.player.update({
+                    where: { id: player.id },
+                    data: {
+                        lastContactedAt: sentNow,
+                        dailyMessagesCount: { increment: 1 },
+                        ...(isMorning
+                            ? { morningContactsToday: { increment: 1 } }
+                            : { afternoonContactsToday: { increment: 1 } }),
+                    },
+                }),
+                // GAP #27: aggiorna sentAt al momento reale dell'invio, non alla creazione
+                prisma.invitation.updateMany({
+                    where: { matchId, playerId: player.id, status: 'PENDING' },
+                    data: { sentAt: sentNow },
+                }),
+            ]);
         } catch (err) {
             logger.error({ err }, `Failed to send invitation to ${player.phoneNumber}`);
             // Invitation già in DB — aggiorna a IGNORED
@@ -268,11 +277,11 @@ async function _processWaveInner(matchId: string, waveNumber: number, urgencyMul
         const nextFireAt = new Date(Date.now() + nextDelayMs);
         const nightDelayMs = msUntil8amRome(nextFireAt);
         const finalDelayMs = nightDelayMs > 0 ? nightDelayMs : nextDelayMs;
-        await waveQueue.add(
+        waveQueue.add(
             'process-wave',
             { matchId, waveNumber: waveNumber + 1 },
             { delay: finalDelayMs }
-        );
+        ).catch(err => logger.warn({ err, matchId }, 'Next wave scheduling failed'));
         const label = nightDelayMs > 0 ? `${(finalDelayMs / 60000).toFixed(0)}min (night→08:00)` : `${(finalDelayMs / 60000).toFixed(0)}min`;
         logger.info(`Next wave ${waveNumber + 1} for ${matchId} in ${label}`);
     }
