@@ -84,10 +84,12 @@ export async function handleAdminFaqFlow(text: string, club: any, jid: string): 
             await prisma.faq.create({ data: { clubId, question: newQuestion, answer: newAnswer, askedBy: askedBy || null } });
             if (playerJid) await simulateTypingAndSend(playerJid, newAnswer).catch(() => {});
             await sendMessage(jid, `Conflitto risolto ✅ — vecchia FAQ rimossa, nuova salvata e risposta inoltrata a ${askedBy || 'utente'}.`);
+            notifyPendingFaqUsers(clubId, newQuestion, newAnswer).catch(() => {});
         } else {
             // Mantiene la vecchia, non salva la nuova ma risponde all'utente con la vecchia risposta
             if (playerJid) await simulateTypingAndSend(playerJid, conflictingAnswer).catch(() => {});
             await sendMessage(jid, `Conflitto risolto — FAQ esistente mantenuta. Risposta precedente inoltrata a ${askedBy || 'utente'}.`);
+            notifyPendingFaqUsers(clubId, conflictingQuestion, conflictingAnswer).catch(() => {});
         }
         return true;
     }
@@ -106,6 +108,7 @@ export async function handleAdminFaqFlow(text: string, club: any, jid: string): 
             await prisma.faq.update({ where: { id: existingFaqId }, data: { answer: customMerge } });
             if (playerJid) await simulateTypingAndSend(playerJid, customMerge).catch(() => {});
             await sendMessage(jid, `FAQ aggiornata con la tua versione ✅ Risposta inoltrata a ${askedBy || 'utente'}.`);
+            notifyPendingFaqUsers(clubId, newQuestion, customMerge).catch(() => {});
             return true;
         }
 
@@ -115,11 +118,13 @@ export async function handleAdminFaqFlow(text: string, club: any, jid: string): 
             await prisma.faq.update({ where: { id: existingFaqId }, data: { answer: proposedMergedAnswer } });
             if (playerJid) await simulateTypingAndSend(playerJid, proposedMergedAnswer).catch(() => {});
             await sendMessage(jid, `FAQ aggiornata con la versione unificata ✅ Risposta inoltrata a ${askedBy || 'utente'}.`);
+            notifyPendingFaqUsers(clubId, newQuestion, proposedMergedAnswer).catch(() => {});
         } else {
             // Non merge: risponde all'utente con la risposta originale dell'admin (già salvata nel mergeRaw)
             const { originalAnswer } = JSON.parse(mergeRaw);
             if (playerJid) await simulateTypingAndSend(playerJid, originalAnswer).catch(() => {});
             await sendMessage(jid, `Ok, non unisco. Risposta inoltrata a ${askedBy || 'utente'} senza modifiche.`);
+            notifyPendingFaqUsers(clubId, newQuestion, originalAnswer).catch(() => {});
         }
         return true;
     }
@@ -135,6 +140,7 @@ export async function handleAdminFaqFlow(text: string, club: any, jid: string): 
             await prisma.faq.create({ data: { clubId, question, answer, askedBy: askedBy || null } });
             await redis.del(`faq:awaiting_save_confirm:${clubId}`);
             await sendMessage(jid, `Salvata come FAQ ✅`);
+            notifyPendingFaqUsers(clubId, question, answer).catch(() => {});
             return true;
         }
         if (negative) {
@@ -162,7 +168,7 @@ export async function handleAdminFaqFlow(text: string, club: any, jid: string): 
     let targetItem: PendingFaqItem | null = null;
 
     // Prefisso esplicito "N: risposta"
-    const numPrefixMatch = answerText.match(/^(\d+)\s*[:–\-]\s*/);
+    const numPrefixMatch = answerText.match(/^(\d+)[\s:–\-]+/);
     if (numPrefixMatch) {
         const idx = parseInt(numPrefixMatch[1]) - 1;
         if (idx >= 0 && idx < pendingItems.length) {
@@ -249,6 +255,7 @@ export async function handleAdminFaqFlow(text: string, club: any, jid: string): 
         await prisma.faq.create({ data: { clubId, question: targetItem.question, answer: answerText, askedBy: targetItem.askedBy || null } });
         if (targetItem.playerJid) await simulateTypingAndSend(targetItem.playerJid, answerText).catch(() => {});
         await sendMessage(jid, `Risposta inoltrata a ${targetItem.askedBy || 'utente'} e salvata come FAQ ✅${remainingNote}`);
+        notifyPendingFaqUsers(clubId, targetItem.question, answerText).catch(() => {});
         return true;
     }
 
@@ -425,7 +432,6 @@ export async function notifyPendingFaqUsers(
 
             // Risponde all'utente
             if (item.playerJid) {
-                const { simulateTypingAndSend } = await import('./whatsapp');
                 const { runWithContext } = await import('../utils/request-context');
                 await runWithContext({ correlationId: `faq-notify-${item.id}`, clubId }, () =>
                     simulateTypingAndSend(item.playerJid, faqAnswer).catch(() => {})
