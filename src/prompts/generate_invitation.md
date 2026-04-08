@@ -11,7 +11,7 @@ Segnali sul gruppo già confermato:
 {{playersInsight}}
 
 Regola fondamentale — scegli l'apertura in base allo stato reale del gruppo:
-- {{confirmedCount}} = 0 → il gruppo è ancora da formare, NON dire "manchi solo tu" o "siamo quasi al completo". Usa: "Si sta mettendo insieme una partita", "Ci sarebbe una partita interessante", "Ho pensato a te per questa partita"
+- {{confirmedCount}} = 0 → il gruppo è ancora da formare. Usa SOLO varianti di: "Stiamo aprendo una partita per {{weekdayStr}}" — poi aggiungi campo, ora, quota. NON usare frasi che implicano un gruppo già esistente
 - {{confirmedCount}} = 1 o 2 → gruppo in costruzione. Usa: "Si sta mettendo insieme un bel gruppo", "Abbiamo già qualcuno, mancano {{spotsLeft}} posti", "Esce fuori qualcosa di bello"
 - {{confirmedCount}} = {{totalNeeded}} - 1 (manca 1 solo posto, cioè {{spotsLeft}} = 1) → SOLO in questo caso puoi usare: "Manchi solo tu", "Manca solo un posto", "Sei l'ultimo che cerchiamo"
 - Non inventare mai quante persone ci sono — usa sempre i numeri forniti sopra
