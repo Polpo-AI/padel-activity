@@ -1,37 +1,37 @@
 // ─── Colori ───────────────────────────────────
 export const C = {
-  // Sfondi — tre livelli distinti per profondità visiva
-  bg:           "#06061a",   // main content background (deep navy-black)
-  surface:      "#0d0d28",   // sidebar + panel backgrounds
-  surfaceHover: "#141440",   // hover su voci sidebar/liste
-  card:         "#111132",   // card elevate su surface
+  // Sfondi — neutral puri, niente blue-tint
+  bg:           "#080808",   // main content background
+  surface:      "#111111",   // sidebar + panel backgrounds
+  surfaceHover: "#1a1a1a",   // hover su voci sidebar/liste
+  card:         "#161616",   // card elevate su surface
 
-  // Bordi — molto più visibili del precedente #1c1c2e
-  border:       "#28285e",   // bordo standard
-  borderLight:  "#3a3a7a",   // bordo su focus/highlight
+  // Bordi
+  border:       "#262626",   // bordo standard
+  borderLight:  "#383838",   // bordo su focus/highlight
 
-  // Accent primario — verde
-  accent:       "#00e5a0",
-  accentDim:    "#00e5a015",
-  accentSoft:   "#00e5a040",
+  // Accent primario — lime elettrico (sportswear energy)
+  accent:       "#c8ff00",
+  accentDim:    "#c8ff0010",
+  accentSoft:   "#c8ff0030",
 
-  // Accent secondario — indigo/violet
-  indigo:       "#7c6fff",
-  indigoDim:    "#7c6fff15",
-  indigoSoft:   "#7c6fff40",
+  // Accent secondario — violet
+  indigo:       "#a78bfa",
+  indigoDim:    "#a78bfa15",
+  indigoSoft:   "#a78bfa35",
 
   // Testi
-  text:         "#eaeaf8",
-  muted:        "#6868a8",
-  dim:          "#1e1e44",
+  text:         "#f0f0f0",
+  muted:        "#737373",
+  dim:          "#1f1f1f",
 
   // Status partite
-  open:         "#00e5a0",
-  locked:       "#4a9eff",
-  cancelled:    "#ff4a6e",
-  unfilled:     "#ff9a00",
-  warning:      "#ffcc00",
-  unavail:      "#9b5cf6",
+  open:         "#c8ff00",
+  locked:       "#3b82f6",
+  cancelled:    "#ef4444",
+  unfilled:     "#f97316",
+  warning:      "#f59e0b",
+  unavail:      "#a855f7",
 };
 
 export const STATUS = {
@@ -63,30 +63,36 @@ export const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 // ─── Stili condivisi ──────────────────────────
 export const inputSt = {
-  background: C.bg, border: `1px solid ${C.border}`, borderRadius: 8,
-  padding: "9px 12px", color: C.text, fontSize: 13, fontFamily: "inherit",
-  width: "100%", transition: "border-color 0.15s",
+  background: C.card, border: `1px solid ${C.border}`, borderRadius: 10,
+  padding: "10px 14px", color: C.text, fontSize: 13, fontFamily: "inherit",
+  width: "100%", transition: "border-color 0.15s, box-shadow 0.15s",
 };
 
 export const btnPrimary = {
-  background: C.accent, color: "#04040f", border: "none", borderRadius: 8,
-  padding: "10px 18px", fontSize: 13, fontWeight: 700, cursor: "pointer",
-  fontFamily: "inherit",
+  background: C.accent, color: "#050505", border: "none", borderRadius: 10,
+  padding: "10px 20px", fontSize: 13, fontWeight: 700, cursor: "pointer",
+  fontFamily: "inherit", transition: "opacity 0.15s, transform 0.1s",
+  letterSpacing: "0.01em",
 };
 
 export const btnSecondary = {
   background: C.indigoDim, color: C.indigo, border: `1px solid ${C.indigoSoft}`,
-  borderRadius: 8, padding: "9px 16px", fontSize: 13, fontWeight: 600, cursor: "pointer",
-  fontFamily: "inherit",
+  borderRadius: 10, padding: "9px 18px", fontSize: 13, fontWeight: 600, cursor: "pointer",
+  fontFamily: "inherit", transition: "opacity 0.15s",
 };
 
 export const btnGhost = {
   background: "transparent", color: C.muted, border: `1px solid ${C.border}`,
-  borderRadius: 6, padding: "7px 12px", fontSize: 12, cursor: "pointer",
-  fontFamily: "inherit",
+  borderRadius: 8, padding: "7px 14px", fontSize: 12, cursor: "pointer",
+  fontFamily: "inherit", transition: "border-color 0.15s, color 0.15s",
+};
+
+export const cardSt = {
+  background: C.surface, border: `1px solid ${C.border}`, borderRadius: 14,
+  padding: "20px 22px", boxShadow: "0 1px 3px rgba(0,0,0,0.4), 0 4px 16px rgba(0,0,0,0.2)",
 };
 
 export const labelSt = {
-  display: "block", fontSize: 11, color: C.muted,
-  textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6,
+  display: "block", fontSize: 10, color: C.muted,
+  textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 7, fontWeight: 600,
 };

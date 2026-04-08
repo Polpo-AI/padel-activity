@@ -33,67 +33,110 @@ export default function PadelDashboard() {
       <style>{`
         * { box-sizing: border-box; margin: 0; padding: 0; }
         @keyframes spin { to { transform: rotate(360deg); } }
-        @keyframes slideUp { from { transform: translateY(12px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
-        input:focus, select:focus { outline: none; border-color: ${C.accentSoft} !important; box-shadow: 0 0 0 3px ${C.accentDim}; }
-        button:disabled { opacity: 0.4; cursor: not-allowed; }
-        ::-webkit-scrollbar { width: 5px; } ::-webkit-scrollbar-track { background: ${C.bg}; } ::-webkit-scrollbar-thumb { background: ${C.dim}; border-radius: 3px; }
+        @keyframes slideUp { from { transform: translateY(10px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        input:focus, select:focus, textarea:focus {
+          outline: none;
+          border-color: ${C.accent}60 !important;
+          box-shadow: 0 0 0 3px ${C.accentDim} !important;
+        }
+        button:disabled { opacity: 0.35; cursor: not-allowed; }
+        button:not(:disabled):active { transform: scale(0.97); }
+        ::-webkit-scrollbar { width: 4px; height: 4px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: ${C.border}; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: ${C.muted}50; }
         input[type="date"]::-webkit-calendar-picker-indicator,
-        input[type="time"]::-webkit-calendar-picker-indicator { filter: invert(0.4); }
+        input[type="time"]::-webkit-calendar-picker-indicator { filter: invert(0.5); }
         input[type="range"] { accent-color: ${C.accent}; }
+        ::selection { background: ${C.accentSoft}; color: ${C.text}; }
       `}</style>
 
       {/* Sidebar */}
-      <div style={{ position: "fixed", left: 0, top: 0, bottom: 0, width: 210, background: C.surface, borderRight: `1px solid ${C.border}`, display: "flex", flexDirection: "column", padding: "24px 0" }}>
-        <div style={{ padding: "0 20px 24px", borderBottom: `1px solid ${C.border}` }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+      <div style={{
+        position: "fixed", left: 0, top: 0, bottom: 0, width: 220,
+        background: C.surface,
+        borderRight: `1px solid ${C.border}`,
+        display: "flex", flexDirection: "column",
+      }}>
+        {/* Logo */}
+        <div style={{ padding: "22px 20px 20px", borderBottom: `1px solid ${C.border}` }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 11 }}>
             <div style={{
-              width: 36, height: 36, borderRadius: 10, fontSize: 18,
-              background: `linear-gradient(135deg, ${C.indigoDim}, ${C.accentDim})`,
-              border: `1px solid ${C.indigo}50`,
+              width: 34, height: 34, borderRadius: 10, fontSize: 16,
+              background: `linear-gradient(135deg, ${C.accent}25, ${C.accent}08)`,
+              border: `1px solid ${C.accent}35`,
               display: "flex", alignItems: "center", justifyContent: "center",
+              boxShadow: `0 0 12px ${C.accent}20`,
             }}>🎾</div>
             <div>
-              <div style={{ fontSize: 13, fontWeight: 700, color: C.text }}>{club?.name || "Padel"}</div>
-              <div style={{ fontSize: 10, color: C.muted }}>Dashboard</div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: C.text, lineHeight: 1.2 }}>
+                {club?.name || "Padel"}
+              </div>
+              <div style={{ fontSize: 10, color: C.muted, marginTop: 2, letterSpacing: "0.05em" }}>
+                Dashboard
+              </div>
             </div>
           </div>
         </div>
 
-        <nav style={{ padding: "16px 12px", flex: 1, display: "flex", flexDirection: "column", gap: 2 }}>
+        {/* Nav */}
+        <nav style={{ padding: "12px 10px", flex: 1, display: "flex", flexDirection: "column", gap: 1, overflowY: "auto" }}>
           {NAV.map(n => {
             const active = tab === n.id;
             return (
               <button key={n.id} onClick={() => setTab(n.id)} style={{
-                display: "flex", alignItems: "center", gap: 10,
-                padding: "10px 12px", borderRadius: 8, cursor: "pointer",
-                border: active ? `1px solid ${C.indigo}35` : "1px solid transparent",
-                background: active ? C.indigoDim : "transparent",
-                color: active ? C.indigo : C.muted,
-                fontSize: 13, textAlign: "left", transition: "all 0.12s",
+                display: "flex", alignItems: "center", gap: 9,
+                padding: "9px 12px",
+                borderRadius: 8,
+                cursor: "pointer",
+                border: "none",
+                background: active ? `${C.accent}10` : "transparent",
+                color: active ? C.accent : C.muted,
+                fontSize: 12, textAlign: "left", transition: "all 0.12s",
                 fontFamily: "inherit", fontWeight: active ? 600 : 400,
+                position: "relative",
+                paddingLeft: 16,
               }}>
-                <span style={{ fontSize: 15 }}>{n.icon}</span>
+                {active && (
+                  <div style={{
+                    position: "absolute", left: 0, top: "20%", bottom: "20%",
+                    width: 3, borderRadius: 2,
+                    background: C.accent,
+                    boxShadow: `0 0 8px ${C.accent}80`,
+                  }} />
+                )}
+                <span style={{ fontSize: 14 }}>{n.icon}</span>
                 <span>{n.label}</span>
-                {active && <span style={{ marginLeft: "auto", width: 5, height: 5, borderRadius: "50%", background: C.indigo, flexShrink: 0 }} />}
               </button>
             );
           })}
         </nav>
 
-        <div style={{ padding: "16px 20px", borderTop: `1px solid ${C.border}` }}>
-          <button onClick={() => { if (confirm("Vuoi uscire dalla dashboard?")) setToken(null); }} style={{ ...btnGhost, width: "100%", fontSize: 11 }}>Esci</button>
+        {/* Footer */}
+        <div style={{ padding: "14px 10px", borderTop: `1px solid ${C.border}` }}>
+          <button
+            onClick={() => { if (confirm("Vuoi uscire dalla dashboard?")) setToken(null); }}
+            style={{ ...btnGhost, width: "100%", fontSize: 11, borderRadius: 8 }}
+          >
+            Esci
+          </button>
         </div>
       </div>
 
-      {/* Content */}
-      <div style={{ marginLeft: 210, padding: "32px 36px", maxWidth: 1300 }}>
-        <div style={{ marginBottom: 28, paddingBottom: 20, borderBottom: `1px solid ${C.border}` }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <span style={{ fontSize: 20 }}>{current?.icon}</span>
-            <div>
-              <div style={{ fontSize: 20, fontWeight: 700, color: C.text }}>{current?.label}</div>
-              <div style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>{current?.desc}</div>
-            </div>
+      {/* Main content */}
+      <div style={{ marginLeft: 220, padding: "32px 40px", maxWidth: 1320 }}>
+        {/* Page header */}
+        <div style={{ marginBottom: 32 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 6 }}>
+            <span style={{ fontSize: 22 }}>{current?.icon}</span>
+            <h1 style={{ fontSize: 22, fontWeight: 700, color: C.text, letterSpacing: "-0.02em" }}>
+              {current?.label}
+            </h1>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <div style={{ width: 28, height: 2, borderRadius: 2, background: C.accent, boxShadow: `0 0 8px ${C.accent}60` }} />
+            <div style={{ fontSize: 12, color: C.muted }}>{current?.desc}</div>
           </div>
         </div>
 
