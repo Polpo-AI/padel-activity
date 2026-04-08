@@ -26,7 +26,8 @@ export type BrainAction =
     | 'RESCHEDULE_MATCH'
     | 'FAQ_REQUEST'
     | 'REGISTER_PLAYER'
-    | 'OPEN_TO_MATCHMAKING';
+    | 'OPEN_TO_MATCHMAKING'
+    | 'SAVE_GENDER';
 
 export interface BrainResponse {
     message: string;
@@ -476,6 +477,7 @@ Raccogliere nome e cognome è la tua priorità, ma in modo completamente natural
 - Se hai solo il nome → rispondi e chiedi il cognome con leggerezza
 - MAI usare REGISTER_PLAYER senza avere sia nome che cognome certi` : `═══ STATO GIOCATORE ═══
 Nome: ${player.name || 'non registrato'}
+Genere: ${player.gender === 'MALE' ? 'uomo' : player.gender === 'FEMALE' ? 'donna' : 'SCONOSCIUTO — chiedi prima di fare matchmaking (vedi regola sotto)'}
 Livello: ${player.skillLevel > 0 ? player.skillLevel + ' (scala 1-7, dove 1=principiante, 7=agonista)' : 'da assegnare — Skill Test in attesa'}
 ${player.skillLevel <= 0 ? `NOTA SKILL TEST: questo giocatore NON ha ancora completato lo Skill Test.
 - PUÒ prenotare il campo privatamente (private: true) — per sé e i suoi amici, fino a 4 totali. Funziona SEMPRE.
@@ -542,7 +544,8 @@ Rispondi SEMPRE con JSON valido: { "message": "...", "action": "NOME", "params":
     - "voglio giocare con qualcuno", "cercatemi degli avversari", "trovami altri giocatori", "partita aperta" → private: false
     - Skill test pendente (skill ≤ 0) → sempre private: true, senza chiedere
   preferMixed: true se accetta match misto (maschi e femmine insieme), false se preferisce solo stesso sesso, null se non ha ancora espresso preferenza.
-  ⚠️ REGOLA MISTO: si applica SOLO quando private: false (matchmaking). Se preferMixed è null e private è false, prima chiedi con NONE: "Preferisci un match solo con giocatori del tuo stesso sesso o va bene anche misto?" Poi al turno successivo usa BOOK_FIELD con preferMixed impostato. Se private: true → salta la domanda (usa preferMixed: null).
+  ⚠️ REGOLA GENERE SCONOSCIUTO: se Genere è SCONOSCIUTO e private è false (matchmaking) → NON procedere con BOOK_FIELD. Prima usa NONE e chiedi: "Essendo un assistente digitale non vorrei sbagliarmi — sei un uomo o una donna? 😊" Poi al turno successivo usa SAVE_GENDER con il genere indicato, e SOLO dopo procedi con BOOK_FIELD.
+  ⚠️ REGOLA MISTO: si applica SOLO quando private: false (matchmaking) E Genere NON è SCONOSCIUTO. Se preferMixed è null e private è false, prima chiedi con NONE: "Preferisci un match solo con giocatori del tuo stesso sesso o va bene anche misto?" Poi al turno successivo usa BOOK_FIELD con preferMixed impostato. Se private: true → salta la domanda (usa preferMixed: null).
   Se manca l'orario → NONE e chiedi solo quello.
   Se c'è una partita aperta compatibile (da "PARTITE APERTE DISPONIBILI") e l'utente vuole matchmaking (private: false) → usa joinMatchId.
   ⚠️ REDIRECT: se l'orario richiesto è in fullSlots O il sistema ha appena risposto "tutti i campi occupati" → NON creare nuovo BOOK_FIELD senza joinMatchId. Prima proponi le "PARTITE APERTE DISPONIBILI" (le più complete, con meno posti liberi). Se l'utente sceglie una → BOOK_FIELD con joinMatchId. Se non vuole nessuna → suggerisci slot da freeScopertoSlots per nuova pending.
@@ -557,6 +560,7 @@ Rispondi SEMPRE con JSON valido: { "message": "...", "action": "NOME", "params":
   ⛔ ECCEZIONE 1: se il giocatore ha GIÀ una partita confermata e menziona un amico che "viene con lui" — NON usare INVITE_PREFERRED. Il campo è già prenotato, chi portano è affar loro. Rispondi che possono venire in quanti vogliono (fino a 4 totali).
   ⛔ ECCEZIONE 2: se l'utente parla di "amici", "compagni" o "persone" in modo GENERICO (es. "vengo con degli amici", "siamo un gruppo", "veniamo in 4") SENZA nomi specifici → NON usare INVITE_PREFERRED. Usa BOOK_FIELD direttamente — il campo tiene fino a 4 giocatori e il sistema gestisce il resto.
   MAI creare una partita con wave quando l'utente ha già indicato persone specifiche con cui vuole giocare.
+- SAVE_GENDER — params: { "gender": "MALE" | "FEMALE" } — utente rivela il proprio sesso. Usa SOLO dopo aver ricevuto una risposta esplicita alla domanda sul genere. Dopo il salvataggio, procedi normalmente con il flusso (es. chiedi preferMixed e poi BOOK_FIELD).
 - SAVE_NOTE — params: { "note": "..." } — utente esprime una preferenza PERMANENTE o abitudine generale (es. "voglio *sempre* giocare al coperto", "di solito preferisco il mattino", "non mi piace la terra rossa"). Riassumi in una frase breve e salva. Puoi combinare con NONE per rispondere anche in modo conversazionale — in quel caso usa SAVE_NOTE e metti la risposta nel campo "message".
   ⚠️ NON usare SAVE_NOTE quando l'utente sta chiedendo qualcosa di specifico per la prenotazione in corso (es. "vorrei il coperto" in risposta a una prenotazione → usa BOOK_FIELD o RESCHEDULE_MATCH con preferCovered:true, NON SAVE_NOTE). SAVE_NOTE è solo per preferenze dichiarate in modo esplicito e generale, non per richieste contestuali.
 - REQUEST_LESSON — params: { "day": "opzionale", "time": "opzionale" } — utente chiede di prenotare una lezione con il maestro. Rispondi con conferma che hai avvisato il maestro + durata + costo. Il maestro li contatterà per l'orario esatto.
@@ -1011,6 +1015,18 @@ export async function executeAction(
                 logger.error({ noteErr, playerId: player.id }, 'SAVE_NOTE failed silently');
             }
             return { success: true }; // best-effort — mai fallire verso l'utente
+        }
+
+        if (action === 'SAVE_GENDER') {
+            const g = params?.gender;
+            if (g !== 'MALE' && g !== 'FEMALE') return { success: true };
+            try {
+                await prisma.player.update({ where: { id: player.id }, data: { gender: g } });
+                logger.info({ playerId: player.id, gender: g }, 'SAVE_GENDER: genere aggiornato');
+            } catch (err) {
+                logger.error({ err, playerId: player.id }, 'SAVE_GENDER failed silently');
+            }
+            return { success: true };
         }
 
         if (action === 'OPEN_TO_MATCHMAKING') {
