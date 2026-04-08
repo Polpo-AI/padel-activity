@@ -1003,6 +1003,14 @@ export async function executeAction(
                 const faqKey = `faq:pending:${club.id}:${faqId}`;
                 const idsKey = `faq:pending_ids:${club.id}`;
 
+                // Dedup: controlla se questo player ha già una FAQ pending
+                // Se sì, aggiungi alla coda ma NON notificare di nuovo admin
+                const existingIds = await redis.lrange(idsKey, 0, -1);
+                const existingItems = (await Promise.all(
+                    existingIds.map(id => redis.get(`faq:pending:${club.id}:${id}`))
+                )).filter(Boolean).map(raw => JSON.parse(raw!));
+                const alreadyPending = existingItems.some((item: any) => item.playerJid === playerJidFromCtx);
+
                 await redis.set(faqKey, JSON.stringify({
                     id: faqId,
                     question,
@@ -1012,20 +1020,25 @@ export async function executeAction(
                 await redis.rpush(idsKey, faqId);
                 await redis.expire(idsKey, 7 * 24 * 3600);
 
-                // Conta quante FAQ sono in sospeso per contestualizzare la notifica
-                const pendingCount = await redis.llen(idsKey);
-                const prefix = pendingCount > 1 ? `[${pendingCount} domande in sospeso]\n` : '';
-                const suffix = pendingCount > 1
-                    ? `\n\nSe hai più domande in sospeso, inizia la risposta con il numero (es. "1: risposta...") oppure rispondi liberamente alla prima in lista.`
-                    : `\n\nRispondi qui per inoltrarla all'utente e salvarla come FAQ.`;
+                if (alreadyPending) {
+                    // Già notificato per questo player — non disturbare di nuovo admin
+                    logger.info({ playerId: player?.id, question }, 'FAQ_REQUEST: player already has pending FAQ, skipping admin notify');
+                } else {
+                    // Prima FAQ di questo player — notifica admin
+                    const pendingCount = await redis.llen(idsKey);
+                    const prefix = pendingCount > 1 ? `[${pendingCount} domande in sospeso]\n` : '';
+                    const suffix = pendingCount > 1
+                        ? `\n\nSe hai più domande in sospeso, inizia la risposta con il numero (es. "1: risposta...") oppure rispondi liberamente alla prima in lista.`
+                        : `\n\nRispondi qui per inoltrarla all'utente e salvarla come FAQ.`;
 
-                const { notifyAdmin } = await import('../utils/notify-admin');
-                await notifyAdmin(
-                    `${prefix}❓ ${player?.name || player?.phoneNumber} ha chiesto:\n"${question}"${suffix}`,
-                    `faq_pending_${faqId}`,
-                    club?.adminPhone,
-                    club?.name,
-                ).catch(() => {});
+                    const { notifyAdmin } = await import('../utils/notify-admin');
+                    await notifyAdmin(
+                        `${prefix}❓ ${player?.name || player?.phoneNumber} ha chiesto:\n"${question}"${suffix}`,
+                        `faq_pending_${faqId}`,
+                        club?.adminPhone,
+                        club?.name,
+                    ).catch(() => {});
+                }
             }
             return { success: true };
         }
