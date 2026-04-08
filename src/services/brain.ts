@@ -109,12 +109,12 @@ export async function buildBrainContext(jid: string, phoneNumber: string): Promi
         const [inv, conf, avail] = await Promise.all([
             prisma.invitation.findMany({
                 where: { playerId: player.id, status: 'PENDING', match: { status: 'OPEN' } },
-                include: { match: { include: { court: true, MatchPlayer: { where: { leftAt: null } } } } },
+                include: { match: { include: { court: true, MatchPlayer: { where: { leftAt: null }, include: { player: { select: { id: true, firstName: true, lastName: true, skillLevel: true } } } } } } },
                 orderBy: { sentAt: 'asc' },
             }),
             prisma.matchPlayer.findMany({
                 where: { playerId: player.id, leftAt: null, noShow: false, match: { status: { in: ['OPEN', 'LOCKED'] } } },
-                include: { match: { include: { court: true, MatchPlayer: { where: { leftAt: null } } } } },
+                include: { match: { include: { court: true, MatchPlayer: { where: { leftAt: null }, include: { player: { select: { id: true, firstName: true, lastName: true, skillLevel: true } } } } } } },
             }),
             player.skillLevel > 0 ? prisma.match.findMany({
                 where: {
@@ -337,7 +337,18 @@ export async function callBrain(
                 ? `campo pieno (${confirmed}/${needed})`
                 : `${confirmed}/${needed} confermati, mancano ${free}`;
             const courtType = mp.match.court?.isCovered ? '🏟️ coperto' : '☀️ scoperto';
-            return `  - ${mp.match.court?.name || 'Campo'} (${courtType}) – ${fmtDatetime(mp.match.startTime)} – ${statusLabel} [matchPlayerId:${mp.id}]`;
+            const tg = (mp.match as any).targetGender;
+            const genderLabel = tg === 'MALE' ? 'solo uomini' : tg === 'FEMALE' ? 'solo donne' : tg === 'ANY' ? 'misto' : mp.match.isMixed ? 'misto' : null;
+            const otherPlayers = (mp.match.MatchPlayer as any[])
+                .filter((other: any) => other.player?.id !== player!.id)
+                .map((other: any) => {
+                    const name = [other.player?.firstName, other.player?.lastName].filter(Boolean).join(' ') || 'Sconosciuto';
+                    const lvl = other.player?.skillLevel > 0 ? ` (Liv. ${other.player.skillLevel})` : '';
+                    return `${name}${lvl}`;
+                });
+            const playersLine = otherPlayers.length > 0 ? ` – altri confermati: ${otherPlayers.join(', ')}` : '';
+            const genderLine = genderLabel ? ` – tipo: ${genderLabel}` : '';
+            return `  - ${mp.match.court?.name || 'Campo'} (${courtType}) – ${fmtDatetime(mp.match.startTime)} – ${statusLabel}${genderLine}${playersLine} [matchPlayerId:${mp.id}]`;
         }).join('\n')
         : '  nessuno';
 
@@ -568,7 +579,7 @@ Rispondi SEMPRE con JSON valido: { "message": "...", "action": "NOME", "params":
   ⚠️ MESSAGGIO per RESCHEDULE_MATCH: usa sempre una frase neutra che non conferma il risultato — il sistema verifica disponibilità DOPO il tuo messaggio. Esempi: "Perfetto, sposto subito 🎾" / "Un momento, verifico e sposto 🎾". MAI scrivere "Ho spostato", "fatto", "prenotato" o qualsiasi frase che presuppone il successo dell'operazione.
   ⚠️ CAMBIO CAMPO STESSO ORARIO: se l'utente ha già una prenotazione privata e vuole passare al coperto (o allo scoperto) alla STESSA ora → usa BOOK_FIELD con stesso day/time e preferCovered aggiornato (NON RESCHEDULE_MATCH). Il sistema gestisce automaticamente il cambio. Messaggio: "Vedo subito se c'è il campo coperto disponibile 🎾" oppure "Verifico la disponibilità del coperto 🎾" — MAI confermare il cambio prima di sapere se il campo è libero.
 - FAQ_REQUEST — params: { "question": "testo esatto della domanda" } — usa SOLO quando l'utente fa una domanda sul circolo (orari speciali, regole particolari, eventi, iniziative) a cui NON puoi rispondere con le informazioni disponibili.
-  ⛔ NON usare FAQ_REQUEST per: stato della partita, quante persone mancano, chi è già confermato — queste info sono nella sezione PARTITE CONFERMATE sopra, rispondi direttamente.
+  ⛔ NON usare FAQ_REQUEST per: stato della partita, quante persone mancano, chi è già confermato, il livello degli altri giocatori, se la partita è mista o monogenere — tutte queste info sono nella sezione PARTITE CONFERMATE sopra (campo "altri confermati" e "tipo"), rispondi direttamente senza girare la domanda al circolo.
   ⛔ NON usare FAQ_REQUEST se la risposta è già nella sezione FAQ DEL CIRCOLO sopra — quelle le hai già, rispondi direttamente.
   Il messaggio deve dire che verifichi con il circolo e che farai sapere presto. NON usare NONE quando non sai rispondere a una domanda specifica — usa FAQ_REQUEST.
   ✅ Esempi di domande che RICHIEDONO FAQ_REQUEST (non inventare la risposta): "c'è l'assicurazione infortuni?", "avete tornei?", "si possono portare ospiti esterni?", "qual è il regolamento specifico del club?", "fate abbonamenti?", "avete docce/spogliatoi?", qualsiasi domanda su polizze, eventi speciali, regole interne, servizi non menzionati sopra.
