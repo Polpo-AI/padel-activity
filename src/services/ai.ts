@@ -171,6 +171,7 @@ export async function generateInvitation(
     socialContext?: import('./matchmaker').MatchSocialContext
 ): Promise<string> {
     const timeStr = matchTime.toLocaleTimeString('it-IT', { timeZone: 'Europe/Rome', hour: '2-digit', minute: '2-digit' });
+    const weekdayStr = matchTime.toLocaleDateString('it-IT', { timeZone: 'Europe/Rome', weekday: 'long' }); // fonte autorevole — mai lasciare a Claude
     const dateStr = matchTime.toLocaleDateString('it-IT', { timeZone: 'Europe/Rome', day: 'numeric', month: 'long' });
 
     let courtName = 'il campo';
@@ -237,8 +238,8 @@ export async function generateInvitation(
     }
 
     const fallback = isFriend
-        ? `Ciao ${playerName}! Un amico ti ha invitato a padel il ${dateStr} alle ${timeStr} · ${courtName} ${courtIcon} · €${pricePerPerson.toFixed(2)} a testa. Sei disponibile? 🎾`
-        : `Ciao ${playerName}! Partita di padel il ${dateStr} alle ${timeStr} · ${courtName} ${courtIcon}${pricePerPerson > 0 ? ` · €${pricePerPerson.toFixed(2)} a testa` : ''}. ${playersInsight} Ci sei? 🎾`;
+        ? `Ciao ${playerName}! Un amico ti ha invitato a padel ${weekdayStr} ${dateStr} alle ${timeStr} · ${courtName} ${courtIcon} · €${pricePerPerson.toFixed(2)} a testa. Sei disponibile? 🎾`
+        : `Ciao ${playerName}! Partita di padel ${weekdayStr} ${dateStr} alle ${timeStr} · ${courtName} ${courtIcon}${pricePerPerson > 0 ? ` · €${pricePerPerson.toFixed(2)} a testa` : ''}. ${playersInsight} Ci sei? 🎾`;
 
     let aiTone = '';
     if (clubId) {
@@ -259,6 +260,7 @@ export async function generateInvitation(
                         role: 'user',
                         content: loadPrompt('generate_invitation', {
                             playerName,
+                            weekdayStr,
                             dateStr,
                             timeStr,
                             courtName,

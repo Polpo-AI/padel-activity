@@ -1,7 +1,7 @@
 Scrivi un invito WhatsApp per {{playerName}} per una partita di padel.
 
 Dettagli della partita:
-- Data: {{dateStr}} alle {{timeStr}}
+- Giorno: {{weekdayStr}} {{dateStr}} alle {{timeStr}} — usa ESATTAMENTE questo giorno della settimana, non inventarlo
 - Campo: {{courtName}} ({{courtInfo}}) {{courtIcon}}
 - Quota: €{{pricePerPerson}} a testa
 - {{isFriend}}
