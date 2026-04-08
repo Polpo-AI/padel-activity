@@ -451,6 +451,16 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[], cor
                     logger.error({ err }, 'NO_OPEN_MATCH redirectGroup failed');
                     await simulateTypingAndSend(jid, 'Non ci sono partite aperte a quell\'orario. Dimmi un altro orario e vedo cosa c\'è disponibile! 🎾');
                 }
+            } else if (result.errorMessage?.includes('già una prenotazione') || result.errorMessage === 'ALREADY_BOOKED') {
+                // Prenotazione duplicata: suggerisci OPEN_TO_MATCHMAKING se è privata
+                const existingPrivate = player ? await prisma.matchPlayer.findFirst({
+                    where: { playerId: player.id, leftAt: null, match: { status: 'LOCKED', isPrivateBooking: true } },
+                }) : null;
+                if (existingPrivate) {
+                    await simulateTypingAndSend(jid, 'Hai già una prenotazione in quella fascia oraria. Vuoi che cerchi altri giocatori per completare la partita? 🎾');
+                } else {
+                    await simulateTypingAndSend(jid, 'Hai già una prenotazione in quella fascia oraria. Vuoi spostare o prenotare un orario diverso? 🎾');
+                }
             } else {
                 await simulateTypingAndSend(jid, `Ops! ${result.errorMessage} 😕`);
             }
@@ -461,15 +471,24 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[], cor
             try {
                 const newCtx = await buildBrainContext(jid, phoneNumber);
                 if (newCtx.player) {
-                    // Messaggio sintetico: il brain ha la cronologia completa,
-                    // sa da solo se c'era un intento pendente (es. prenotazione)
-                    const reCallText = '(registrazione completata — controlla la conversazione e se c\'era un intento pendente eseguilo, altrimenti rispondi NONE)';
+                    // Istruzione esplicita: esegui DIRETTAMENTE senza chiedere conferma all'utente.
+                    // Il brain deve rispondere con azione concreta (BOOK_FIELD, NONE, ecc.) e un messaggio
+                    // breve di transizione (es. "Perfetto, prenoto subito!" per BOOK_FIELD).
+                    // MAI chiedere "vuoi che prenoti?" — se c'era un intento, eseguilo subito.
+                    const reCallText = '(registrazione completata — esegui direttamente qualsiasi intento pendente SENZA chiedere conferma. Se non c\'era nessun intento specifico rispondi NONE con un breve benvenuto.)';
 
                     const { message: msg2, action: action2, params: params2 } = await callBrain(
                         newCtx,
                         reCallText,
                     );
                     if (action2 !== 'NONE' && action2 !== 'REGISTER_PLAYER' && action2 !== 'FAQ_REQUEST') {
+                        // Manda subito il messaggio di transizione del brain (es. "Perfetto, prenoto subito!")
+                        // PRIMA di eseguire l'azione, così l'utente vede il flusso completo.
+                        const { splitAtEmoji } = await import('../utils/split-message');
+                        for (const part of splitAtEmoji(msg2)) {
+                            await simulateTypingAndSend(jid, part);
+                        }
+
                         const result2 = await executeAction(action2, params2, newCtx.player, club, phoneNumber);
                         // Manda la scheda se è un booking andato a buon fine
                         if ((action2 === 'BOOK_FIELD' || action2 === 'RESCHEDULE_MATCH') && result2.success && result2.matchId) {
@@ -497,24 +516,41 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[], cor
                                     clubLocation ? `📍 ${clubLocation}` : null,
                                 ].filter(Boolean);
                                 await simulateTypingAndSend(jid, lines.join('\n'));
-                            } else if (match2?.status === 'OPEN') {
-                                // Matchmaking avviato: il brain ha già inviato "sto cercando giocatori" nel msg2
-                                // Mandiamo solo msg2 se non è stato già inviato come booking confirm
-                                await simulateTypingAndSend(jid, msg2);
                             }
+                            // Per match OPEN (matchmaking): msg2 è già stato inviato sopra
                         } else if (!result2.success && result2.errorMessage) {
                             if (result2.errorMessage === 'ONLY_COVERED_AVAILABLE') {
-                                const redis = getRedis();
-                                await redis.set(
-                                    `state:pending_covered:${jid}`,
-                                    JSON.stringify({ action: action2, params: { ...params2, preferCovered: true } }),
-                                    'EX', 300,
-                                );
-                                await simulateTypingAndSend(jid, 'Sei registrato! Per quell\'orario ho solo il coperto disponibile, ti va bene? 🏟️');
+                                const { redirectGroup } = await import('./redirect');
+                                await redirectGroup({
+                                    clubId: club?.id ?? '',
+                                    referentPhone: newCtx.player.phoneNumber,
+                                    referentJid: jid,
+                                    playerPhones: [newCtx.player.phoneNumber],
+                                    playerCount: 1,
+                                    originalMatchId: 'none',
+                                    originalStartTime: result2.requestedTime ?? new Date(),
+                                    originalSkillLevel: newCtx.player.skillLevel ?? 0,
+                                    originalCourtIsCovered: false,
+                                    reason: 'SLOT_TAKEN',
+                                    intent: 'BOOK_FIELD',
+                                });
                             } else if (result2.errorMessage === 'ALL_COURTS_TAKEN') {
-                                await simulateTypingAndSend(jid, 'Sei registrato! Purtroppo tutti i campi sono occupati a quell\'orario — dimmi un orario alternativo e trovo subito qualcosa 🎾');
+                                const { redirectGroup } = await import('./redirect');
+                                await redirectGroup({
+                                    clubId: club?.id ?? '',
+                                    referentPhone: newCtx.player.phoneNumber,
+                                    referentJid: jid,
+                                    playerPhones: [newCtx.player.phoneNumber],
+                                    playerCount: 1,
+                                    originalMatchId: 'none',
+                                    originalStartTime: result2.requestedTime ?? new Date(),
+                                    originalSkillLevel: newCtx.player.skillLevel ?? 0,
+                                    originalCourtIsCovered: params2?.preferCovered === true ? true : params2?.preferCovered === false ? false : null,
+                                    reason: 'SLOT_TAKEN',
+                                    intent: 'BOOK_FIELD',
+                                });
                             } else {
-                                await simulateTypingAndSend(jid, 'Sei registrato! Per prenotare scrivimi giorno e orario 🎾');
+                                await simulateTypingAndSend(jid, 'Per prenotare scrivimi giorno e orario 🎾');
                             }
                         }
                     }
@@ -574,6 +610,30 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[], cor
                 logger.error({ err }, 'Failed to send booking detail card');
             }
         }
+        // OPEN_TO_MATCHMAKING: prenotazione privata convertita in matchmaking, wave avviata
+        if (action === 'OPEN_TO_MATCHMAKING' && result.success && result.matchId) {
+            try {
+                const openMatch = await prisma.match.findUnique({
+                    where: { id: result.matchId },
+                    include: { court: true },
+                });
+                if (openMatch?.court) {
+                    const committed = (openMatch as any).committedPlayers ?? 1;
+                    const active = await prisma.matchPlayer.count({ where: { matchId: result.matchId, leftAt: null } });
+                    const spotsLeft = openMatch.playersNeeded - Math.max(active, committed);
+                    const timeStr = openMatch.startTime.toLocaleString('it-IT', {
+                        timeZone: 'Europe/Rome', weekday: 'long', day: 'numeric',
+                        month: 'long', hour: '2-digit', minute: '2-digit',
+                    });
+                    await simulateTypingAndSend(jid,
+                        `Cerco ${spotsLeft} giocator${spotsLeft === 1 ? 'e' : 'i'} per completare la partita di ${timeStr} 🎾`
+                    );
+                }
+            } catch (err) {
+                logger.error({ err }, 'OPEN_TO_MATCHMAKING post-action message failed');
+            }
+        }
+
         // OPT_OUT: notifica admin
         if (action === 'OPT_OUT' && player) {
             const { notifyAdmin } = await import('../utils/notify-admin');

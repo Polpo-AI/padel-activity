@@ -25,7 +25,8 @@ export type BrainAction =
     | 'REQUEST_LESSON'
     | 'RESCHEDULE_MATCH'
     | 'FAQ_REQUEST'
-    | 'REGISTER_PLAYER';
+    | 'REGISTER_PLAYER'
+    | 'OPEN_TO_MATCHMAKING';
 
 export interface BrainResponse {
     message: string;
@@ -565,7 +566,12 @@ Rispondi SEMPRE con JSON valido: { "message": "...", "action": "NOME", "params":
   ⛔ NON usare FAQ_REQUEST per: stato della partita, quante persone mancano, chi è già confermato — queste info sono nella sezione PARTITE CONFERMATE sopra, rispondi direttamente.
   ⛔ NON usare FAQ_REQUEST se la risposta è già nella sezione FAQ DEL CIRCOLO sopra — quelle le hai già, rispondi direttamente.
   Il messaggio deve dire che verifichi con il circolo e che farai sapere presto. NON usare NONE quando non sai rispondere a una domanda specifica — usa FAQ_REQUEST.
-  ✅ Esempi di domande che RICHIEDONO FAQ_REQUEST (non inventare la risposta): "c'è l'assicurazione infortuni?", "avete tornei?", "si possono portare ospiti esterni?", "qual è il regolamento specifico del club?", "fate abbonamenti?", "avete docce/spogliatoi?", qualsiasi domanda su polizze, eventi speciali, regole interne, servizi non menzionati sopra.`}
+  ✅ Esempi di domande che RICHIEDONO FAQ_REQUEST (non inventare la risposta): "c'è l'assicurazione infortuni?", "avete tornei?", "si possono portare ospiti esterni?", "qual è il regolamento specifico del club?", "fate abbonamenti?", "avete docce/spogliatoi?", qualsiasi domanda su polizze, eventi speciali, regole interne, servizi non menzionati sopra.
+- OPEN_TO_MATCHMAKING — params: { "alreadyCommitted": N } — utente ha già una prenotazione privata (LOCKED, isPrivateBooking=true) e vuole che il sistema cerchi altri giocatori per completare la partita.
+  alreadyCommitted: numero di giocatori fisici già confermati incluso il player stesso. Se l'utente dice "siamo in 3, mi manca 1" → alreadyCommitted: 3. Se non specifica quanti sono → alreadyCommitted: 1 (solo il player registrato).
+  ✅ Usa quando il giocatore ha GIÀ una partita confermata e dice: "mi manca qualcuno", "puoi cercarmi dei giocatori?", "trovami altri giocatori per questa partita", "apri al matchmaking", "siamo in X, ci manca Y".
+  ⛔ MAI usare BOOK_FIELD in questi casi: il campo è già prenotato. OPEN_TO_MATCHMAKING converte la prenotazione esistente.
+  Messaggio: usa sempre una frase che indica quanti ne stai cercando. Es. "Perfetto, cerco subito 1 giocatore per completare la partita 🎾" oppure "Cerco subito 2 giocatrici 🎾"`}
 
 ═══ REGOLA RESCHEDULE vs BOOK_FIELD ═══
 Quando il giocatore ha già partite confermate E chiede un nuovo slot, devi capire dal contesto se sta correggendo/spostando o aggiungendo:
@@ -1002,6 +1008,47 @@ export async function executeAction(
                 logger.error({ noteErr, playerId: player.id }, 'SAVE_NOTE failed silently');
             }
             return { success: true }; // best-effort — mai fallire verso l'utente
+        }
+
+        if (action === 'OPEN_TO_MATCHMAKING') {
+            // Converte una prenotazione privata esistente (LOCKED, isPrivateBooking=true) in matchmaking OPEN.
+            // Usato quando il giocatore ha già prenotato privatamente e vuole che il sistema cerchi altri giocatori.
+            // params.alreadyCommitted: numero di giocatori fisici già confermati (incluso il player stesso).
+            // Es. "siamo in 3, cerco 1" → alreadyCommitted=3 → wave cerca solo 1 persona.
+            const existingMp = await prisma.matchPlayer.findFirst({
+                where: {
+                    playerId: player.id,
+                    leftAt: null,
+                    match: { status: 'LOCKED', isPrivateBooking: true },
+                },
+                include: { match: true },
+                orderBy: { joinedAt: 'desc' },
+            });
+
+            if (!existingMp) {
+                return { success: false, errorMessage: 'Nessuna prenotazione privata attiva da convertire.' };
+            }
+
+            const alreadyCommitted = typeof params?.alreadyCommitted === 'number'
+                ? Math.max(1, Math.min(params.alreadyCommitted, existingMp.match.playersNeeded - 1))
+                : 1;
+
+            await prisma.match.update({
+                where: { id: existingMp.matchId },
+                data: {
+                    status: 'OPEN',
+                    isPrivateBooking: false,
+                    committedPlayers: alreadyCommitted,
+                },
+            });
+
+            waveQueue.add('process-wave', {
+                matchId: existingMp.matchId,
+                waveNumber: 1,
+                scheduledAt: Date.now(),
+            }, { delay: 5000 }).catch(err => logger.warn({ err, matchId: existingMp.matchId }, 'OPEN_TO_MATCHMAKING wave scheduling failed'));
+
+            return { success: true, matchId: existingMp.matchId };
         }
     } catch (err: any) {
         logger.error({ err, action, params }, 'executeAction failed');

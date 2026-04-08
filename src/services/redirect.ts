@@ -116,11 +116,15 @@ export async function redirectGroup(group: RedirectGroup): Promise<void> {
 
     await simulateTypingAndSend(group.referentJid, message);
 
-    try {
-        const { setState } = await import('./conversation-state');
-        await setState(`state:role:${group.referentJid}:AWAITING_REDIRECT_CHOICE`, { group, options }, 3600);
-    } catch (err) {
-        logger.error({ err }, 'Failed to save redirect state');
+    // Salva lo stato SOLO se ci sono opzioni da scegliere.
+    // Con options.length === 0 il messaggio invita a scrivere liberamente → il brain gestisce il prossimo turno.
+    if (options.length > 0) {
+        try {
+            const { setState } = await import('./conversation-state');
+            await setState(`state:role:${group.referentJid}:AWAITING_REDIRECT_CHOICE`, { group, options }, 3600);
+        } catch (err) {
+            logger.error({ err }, 'Failed to save redirect state');
+        }
     }
 
     for (const phone of group.playerPhones) {
@@ -552,6 +556,15 @@ export async function confirmRedirectChoice(
     pendingState: { group: RedirectGroup; options: RedirectOption[] }
 ): Promise<void> {
     const { group, options } = pendingState;
+
+    // Stato corrotto o salvato senza opzioni: pulisci e lascia gestire al brain
+    if (!options || options.length === 0) {
+        try {
+            const { clearState } = await import('./conversation-state');
+            await clearState(`state:role:${jid}:AWAITING_REDIRECT_CHOICE`);
+        } catch {}
+        return;
+    }
 
     const chosenOption = await resolveChoice(choiceText, options);
 

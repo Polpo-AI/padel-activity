@@ -66,6 +66,7 @@ model Match {
   cancelledReason   String?
   recoveryWaveCount Int           @default(0)
   isPrivateBooking  Boolean       @default(false) // true quando skill<=0: prenotazione campo privata, senza matchmaking
+  committedPlayers  Int           @default(0)     // giocatori fisici già confermati ma non nel sistema (es. "siamo in 3")
   invitations       Invitation[]
   club              Club?         @relation(fields: [clubId], references: [id])
   court             Court?        @relation(fields: [courtId], references: [id])

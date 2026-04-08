@@ -91,7 +91,10 @@ async function _processWaveInner(matchId: string, waveNumber: number, urgencyMul
         }
 
         const confirmedCount = match.MatchPlayer.filter(mp => !mp.leftAt).length;
-        const actualSpotsNeeded = match.playersNeeded - confirmedCount;
+        // committedPlayers: giocatori fisici già confermati ma non nel sistema (es. "siamo in 3").
+        // Lo slot effettivo ancora libero = playersNeeded - max(committedPlayers, confirmedCount)
+        const committedCount = Math.max(confirmedCount, (match as any).committedPlayers ?? 0);
+        const actualSpotsNeeded = match.playersNeeded - committedCount;
         const spotsNeeded = Math.max(actualSpotsNeeded, Math.round(actualSpotsNeeded * urgencyMultiplier));
 
         if (spotsNeeded <= 0) {
@@ -189,7 +192,9 @@ async function _processWaveInner(matchId: string, waveNumber: number, urgencyMul
     const { playersList, match, minutesUntilMatch, targetCount, confirmedPlayers } = context;
 
     // ── FASE 2: Invio messaggi (fuori dal lock) ───────────────────────────
-    let currentSpots = match.playersNeeded - match.MatchPlayer.filter((mp: any) => !mp.leftAt).length;
+    const matchCommitted = (match as any).committedPlayers ?? 0;
+    const activeAtStart = match.MatchPlayer.filter((mp: any) => !mp.leftAt).length;
+    let currentSpots = match.playersNeeded - Math.max(activeAtStart, matchCommitted);
     let currentStatus = 'OPEN';
 
     for (let i = 0; i < playersList.length; i++) {
@@ -203,7 +208,9 @@ async function _processWaveInner(matchId: string, waveNumber: number, urgencyMul
             });
             if (!snapshot) { currentStatus = 'DELETED'; break; }
             currentStatus = snapshot.status;
-            currentSpots = snapshot.playersNeeded - snapshot.MatchPlayer.filter((mp: any) => !mp.leftAt).length;
+            const snapshotCommitted = (snapshot as any).committedPlayers ?? 0;
+            const snapshotActive = snapshot.MatchPlayer.filter((mp: any) => !mp.leftAt).length;
+            currentSpots = snapshot.playersNeeded - Math.max(snapshotActive, snapshotCommitted);
             if (currentStatus !== 'OPEN' || currentSpots <= 0) break;
         }
 
