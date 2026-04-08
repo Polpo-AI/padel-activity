@@ -529,7 +529,8 @@ Rispondi SEMPRE con JSON valido: { "message": "...", "action": "NOME", "params":
 - ACCEPT_INVITATION — params: { "invitationId": "..." } — utente conferma presenza a partita
 - REJECT_INVITATION — params: { "invitationId": "..." } — utente declina partita
 - CANCEL_MATCH — params: { "matchPlayerId": "..." } — utente vuole annullare partecipazione confermata. ⚠️ matchPlayerId DEVE essere copiato esattamente dal tag [matchPlayerId:...] in PARTITE CONFERMATE. Se non trovi NESSUNA partita confermata → NONE e chiedi quale partita vuole cancellare.
-- BOOK_FIELD — params: { "day": "YYYY-MM-DD o oggi/domani/lunedì/martedì/...", "time": "HH:MM", "joinMatchId": "id o null", "preferCovered": false, "preferMixed": null, "private": null }
+- BOOK_FIELD — params: { "day": "YYYY-MM-DD o oggi/domani/lunedì/martedì/...", "time": "HH:MM", "joinMatchId": "id o null", "preferCovered": false, "preferMixed": null, "private": null, "committedPlayers": null }
+  committedPlayers: se l'utente dice "siamo in 2/3/..., cerco N" → numero di giocatori fisici GIÀ confermati incluso il player stesso. Es. "siamo in 3, mi manca 1" → committedPlayers: 3. Default: null (solo il player). Si usa solo con private: false (matchmaking).
   Usa quando l'utente vuole giocare/prenotare e ha fornito giorno + orario.
   preferCovered: true SOLO se l'utente lo chiede esplicitamente (es. "campo al coperto", "al chiuso"). Default: false (scoperto preferito).
   private: indica l'intento dell'utente — prenotazione privata o matchmaking.
@@ -918,7 +919,9 @@ export async function executeAction(
             const preferMixed = params.preferMixed === true ? true : params.preferMixed === false ? false : null;
             // private: true = campo privato, false = matchmaking, null = decide createNewMatchAction in base a skillLevel (backward compat)
             const privateBooking: boolean | null = params.private === true ? true : params.private === false ? false : null;
-            return await bookSlotForPlayer(startTime, player, club, params.preferCovered === true, preferMixed, privateBooking);
+            const committedPlayers = typeof params.committedPlayers === 'number'
+                ? Math.max(1, Math.min(params.committedPlayers, 3)) : null;
+            return await bookSlotForPlayer(startTime, player, club, params.preferCovered === true, preferMixed, privateBooking, committedPlayers);
         }
 
         if (action === 'OPT_OUT') {
@@ -1189,6 +1192,7 @@ async function bookSlotForPlayer(
     preferCovered: boolean = false,
     preferMixed: boolean | null = null,
     privateBooking: boolean | null = null,
+    committedPlayers: number | null = null,
 ): Promise<{ success: boolean; errorMessage?: string; matchId?: string; requestedTime?: Date }> {
     // Valida che ci siano almeno 90 minuti prima della chiusura e dopo l'apertura
     if (club?.openTime || club?.closeTime) {
@@ -1292,13 +1296,12 @@ async function bookSlotForPlayer(
             return { ...joinResult, matchId: existing.id };
         }
 
-        // Matchmaking richiesto ma nessun OPEN match compatibile trovato:
-        // segnala NO_OPEN_MATCH — messageHandler gestirà il redirect con intent MATCHMAKING.
-        // NON creare un nuovo match qui: il giocatore vuole aggiungersi a una partita esistente.
-        return { success: false, errorMessage: 'NO_OPEN_MATCH', requestedTime: startTime };
+        // Nessun OPEN match compatibile trovato: crea un nuovo OPEN match (privateBooking=false)
+        // Il player ha skill > 0 e vuole matchmaking → il sistema trova gli altri 3 via wave.
+        return await createNewMatchAction(startTime, player, club, preferCovered, preferMixed, false, committedPlayers);
     }
 
-    return await createNewMatchAction(startTime, player, club, preferCovered, preferMixed, privateBooking);
+    return await createNewMatchAction(startTime, player, club, preferCovered, preferMixed, privateBooking, committedPlayers);
 }
 
 async function createNewMatchAction(
@@ -1308,6 +1311,7 @@ async function createNewMatchAction(
     preferCovered: boolean = false,
     preferMixed: boolean | null = null,
     privateBooking: boolean | null = null,
+    committedPlayers: number | null = null,
 ): Promise<{ success: boolean; errorMessage?: string; matchId?: string; requestedTime?: Date }> {
     // Carica tutti i match esistenti a questo startTime con i loro giocatori confermati
     const occupiedMatches = await prisma.match.findMany({
@@ -1459,6 +1463,7 @@ async function createNewMatchAction(
             playersNeeded: 4,
             status: initialStatus,
             isPrivateBooking,
+            committedPlayers: (!isPrivateBooking && committedPlayers && committedPlayers > 1) ? committedPlayers : 0,
         },
     });
 
