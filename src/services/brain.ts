@@ -1011,9 +1011,8 @@ export async function executeAction(
         }
 
         if (action === 'OPEN_TO_MATCHMAKING') {
-            // Converte una prenotazione privata esistente (LOCKED, isPrivateBooking=true) in matchmaking OPEN.
-            // Usato quando il giocatore ha già prenotato privatamente e vuole che il sistema cerchi altri giocatori.
-            // params.alreadyCommitted: numero di giocatori fisici già confermati (incluso il player stesso).
+            // Cancella la prenotazione privata esistente (LOCKED) e apre un nuovo match OPEN per il matchmaking.
+            // params.alreadyCommitted: giocatori fisici già confermati (incluso il player stesso).
             // Es. "siamo in 3, cerco 1" → alreadyCommitted=3 → wave cerca solo 1 persona.
             const existingMp = await prisma.matchPlayer.findFirst({
                 where: {
@@ -1033,22 +1032,48 @@ export async function executeAction(
                 ? Math.max(1, Math.min(params.alreadyCommitted, existingMp.match.playersNeeded - 1))
                 : 1;
 
+            const oldMatch = existingMp.match;
+
+            // 1. Cancella il vecchio match privato
+            await prisma.matchPlayer.update({ where: { id: existingMp.id }, data: { leftAt: new Date() } });
+            await prisma.invitation.updateMany({
+                where: { matchId: oldMatch.id, status: 'PENDING' },
+                data: { status: 'IGNORED' },
+            });
             await prisma.match.update({
-                where: { id: existingMp.matchId },
+                where: { id: oldMatch.id },
+                data: { status: 'CANCELLED', cancelledAt: new Date(), cancelledReason: 'CONVERTED_TO_MATCHMAKING' },
+            });
+
+            // 2. Crea nuovo match OPEN sulla stessa corte e orario
+            const newMatch = await prisma.match.create({
                 data: {
+                    clubId: oldMatch.clubId,
+                    courtId: oldMatch.courtId,
+                    startTime: oldMatch.startTime,
+                    skillLevel: player.skillLevel > 0 ? player.skillLevel : 1.0,
+                    isMixed: oldMatch.isMixed,
+                    playersNeeded: oldMatch.playersNeeded,
                     status: 'OPEN',
                     isPrivateBooking: false,
                     committedPlayers: alreadyCommitted,
                 },
             });
 
+            // 3. Iscrivi il player al nuovo match
+            await prisma.matchPlayer.create({ data: { matchId: newMatch.id, playerId: player.id } });
+            await prisma.invitation.create({ data: { matchId: newMatch.id, playerId: player.id, status: 'ACCEPTED' } });
+
+            // 4. Avvia la wave per trovare gli altri giocatori
             waveQueue.add('process-wave', {
-                matchId: existingMp.matchId,
+                matchId: newMatch.id,
                 waveNumber: 1,
                 scheduledAt: Date.now(),
-            }, { delay: 5000 }).catch(err => logger.warn({ err, matchId: existingMp.matchId }, 'OPEN_TO_MATCHMAKING wave scheduling failed'));
+            }, { delay: 5000 }).catch(err => logger.warn({ err, matchId: newMatch.id }, 'OPEN_TO_MATCHMAKING wave scheduling failed'));
 
-            return { success: true, matchId: existingMp.matchId };
+            logger.info({ oldMatchId: oldMatch.id, newMatchId: newMatch.id, alreadyCommitted }, 'OPEN_TO_MATCHMAKING: cancelled private booking, created new open matchmaking');
+
+            return { success: true, matchId: newMatch.id };
         }
     } catch (err: any) {
         logger.error({ err, action, params }, 'executeAction failed');
