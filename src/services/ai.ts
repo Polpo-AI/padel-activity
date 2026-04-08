@@ -198,14 +198,19 @@ export async function generateInvitation(
     const courtInfo = courtCovered ? 'coperto' : 'scoperto';
     const courtIcon = courtCovered ? '🏠' : '☀️';
 
-    // Costruisce segnali comportamentali reali per l'AI
+    // Stato gruppo — sempre presente, indipendentemente dal numero di confermati
+    const confirmedCount = socialContext?.players.length ?? 0;
+    const spotsLeft = socialContext?.spotsLeft ?? 3;
+    const totalNeeded = confirmedCount + spotsLeft;
+
+    // Costruisce segnali comportamentali reali per l'AI (solo se ci sono già giocatori)
     let playersInsight = '';
     if (socialContext && socialContext.players.length > 0) {
         const signals: string[] = [];
 
         // Nomi (solo first name)
         const names = socialContext.players.map(p => p.name).join(', ');
-        signals.push(`Ci sono già: ${names}.`);
+        signals.push(`Già confermati: ${names}.`);
 
         // Frequenza di gioco
         const frequent = socialContext.players.filter(p => p.matchesLast30Days >= 3);
@@ -217,24 +222,19 @@ export async function generateInvitation(
         // Tasso di risposta — indica affidabilità
         const reliable = socialContext.players.filter(p => p.acceptanceRate >= 0.7);
         if (reliable.length > 0) {
-            signals.push(`${reliable.length === socialContext.players.length ? 'Sono' : 'Alcuni sono'} giocatori che rispondono sempre presente.`);
+            signals.push(`${reliable.length === socialContext.players.length ? 'Sono' : 'Alcuni sono'} giocatori affidabili.`);
         }
-
-        // Status onesto del gruppo
-        const confirmed = socialContext.players.length;
-        const total = confirmed + socialContext.spotsLeft;
-        signals.push(`Siamo in ${confirmed}/${total}.`);
 
         // Familiarità
         if (socialContext.hasPlayedWithBefore) {
-            signals.push(`${playerName} ha già giocato con loro — sa già come giocano.`);
+            signals.push(`Ha già giocato con loro.`);
         }
 
         // Fascia oraria
-        const slotLabels = { mattina: 'mattinieri doc', pomeriggio: 'pomeriggio', sera: 'dopolavoro serale' };
-        signals.push(`Fascia: ${slotLabels[socialContext.timeOfDay]}.`);
+        const slotLabels: Record<string, string> = { mattina: 'Fascia mattutina.', pomeriggio: 'Fascia pomeridiana.', sera: 'Fascia serale.' };
+        signals.push(slotLabels[socialContext.timeOfDay] ?? '');
 
-        playersInsight = signals.join(' ');
+        playersInsight = signals.filter(Boolean).join(' ');
     }
 
     const fallback = isFriend
@@ -268,7 +268,10 @@ export async function generateInvitation(
                             courtIcon,
                             pricePerPerson: pricePerPerson.toFixed(2),
                             isFriend: isFriend ? 'Invito da un amico.' : '',
-                            playersInsight,
+                            confirmedCount: String(confirmedCount),
+                            spotsLeft: String(spotsLeft),
+                            totalNeeded: String(totalNeeded),
+                            playersInsight: playersInsight || 'Il gruppo è ancora da formare.',
                         })
                     }],
                 }),
