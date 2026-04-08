@@ -1013,6 +1013,8 @@ router.patch('/players/:id', authMiddleware, async (req: Request, res: Response)
 
         // ✅ Notifica WhatsApp al cambio livello (sendMessage statico — no dynamic import per lesson 16)
         if (skillLevel !== undefined && parseFloat(skillLevel) !== player.skillLevel) {
+            const newSkill = parseFloat(skillLevel);
+
             runWithContext({ clubId }, () =>
                 sendMessage(
                     player.phoneNumber,
@@ -1020,6 +1022,37 @@ router.patch('/players/:id', authMiddleware, async (req: Request, res: Response)
                 )
             ).then(() => logger.info({ phone: player.phoneNumber, level: skillLevel }, 'Level update WA sent'))
              .catch(err => logger.error({ err }, 'Failed to send WA for level update'));
+
+            // GAP #21: cancella PENDING invitation per match fuori dal nuovo skill range
+            // Un giocatore è eleggibile per un match se:
+            //   match.skillLevel - matchLowerRange <= player.skillLevel <= match.skillLevel + matchUpperRange
+            // Equivalente: match.skillLevel deve stare in [newSkill - matchUpperRange, newSkill + matchLowerRange]
+            const club = await prisma.club.findUnique({ where: { id: clubId }, select: { matchLowerRange: true, matchUpperRange: true } });
+            if (club) {
+                const lowerRange = club.matchLowerRange ?? 1.0;
+                const upperRange = club.matchUpperRange ?? 1.0;
+                const invalidInvitations = await prisma.invitation.findMany({
+                    where: {
+                        playerId: player.id,
+                        status: 'PENDING',
+                        match: {
+                            status: 'OPEN',
+                            OR: [
+                                { skillLevel: { lt: newSkill - upperRange } },
+                                { skillLevel: { gt: newSkill + lowerRange } },
+                            ],
+                        },
+                    },
+                    select: { id: true },
+                });
+                if (invalidInvitations.length > 0) {
+                    await prisma.invitation.updateMany({
+                        where: { id: { in: invalidInvitations.map(i => i.id) } },
+                        data: { status: 'IGNORED' },
+                    });
+                    logger.info({ playerId: player.id, count: invalidInvitations.length, newSkill }, 'Cancelled out-of-range PENDING invitations after skill update');
+                }
+            }
         }
 
         res.json(updated);

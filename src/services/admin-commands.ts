@@ -851,6 +851,31 @@ async function executeAdminSteps(
                 .filter((p: any) => playerIds.includes(p.id))
                 .map((p: any) => p.name || p.phoneNumber);
             await simulateTypingAndSend(jid, `Livello aggiornato a ${newSkill} per: ${names.join(', ')}.`);
+
+            // GAP #21: cancella PENDING invitation fuori range per i player aggiornati
+            const lowerRange = club?.matchLowerRange ?? 1.0;
+            const upperRange = club?.matchUpperRange ?? 1.0;
+            const invalidInvitations = await prisma.invitation.findMany({
+                where: {
+                    playerId: { in: playerIds },
+                    status: 'PENDING',
+                    match: {
+                        status: 'OPEN',
+                        OR: [
+                            { skillLevel: { lt: newSkill - upperRange } },
+                            { skillLevel: { gt: newSkill + lowerRange } },
+                        ],
+                    },
+                },
+                select: { id: true },
+            });
+            if (invalidInvitations.length > 0) {
+                await prisma.invitation.updateMany({
+                    where: { id: { in: invalidInvitations.map((i: any) => i.id) } },
+                    data: { status: 'IGNORED' },
+                });
+                logger.info({ playerIds, count: invalidInvitations.length, newSkill }, 'Cancelled out-of-range PENDING invitations after skill update');
+            }
             continue;
         }
 
