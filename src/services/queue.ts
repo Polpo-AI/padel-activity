@@ -196,11 +196,11 @@ export async function checkSilentMatches(): Promise<void> {
                 logger.warn({ matchId: match.id, minutesLeft }, 'Silent match detected — relaunching wave');
 
                 const delayMs = 5000;
-                await waveQueue.add('process-wave', {
+                waveQueue.add('process-wave', {
                     matchId: match.id,
                     waveNumber: match.recoveryWaveCount + 1,
-                    scheduledAt: Date.now() + delayMs, // ✅ FIX D: staleness check
-                }, { delay: delayMs });
+                    scheduledAt: Date.now() + delayMs,
+                }, { delay: delayMs }).catch(err => logger.warn({ err, matchId: match.id }, 'checkSilentMatches: wave reschedule failed'));
 
                 await notifyAdminSafe(
                     `Partita rilevata senza wave attive → rilancio automatico (${Math.round(minutesLeft)} min al match).`,

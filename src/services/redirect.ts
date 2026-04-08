@@ -837,10 +837,10 @@ function buildRedirectMessage(group: RedirectGroup, options: RedirectOption[]): 
     const reason = reasonList[Math.floor(Math.random() * reasonList.length)];
 
     if (options.length === 0) {
-        const noOptionsMsg = group.originalCourtIsCovered !== null
-            ? `${reason}\n\nNon ho trovato campi ${group.originalCourtIsCovered ? 'coperti' : 'scoperti'} liberi nei prossimi giorni. Scrivimi un giorno specifico e vedo cosa c'è disponibile, oppure dimmi se va bene anche il tipo opposto 🎾`
-            : `${reason}\n\nNon ho trovato campi liberi nei prossimi giorni. Scrivimi un giorno specifico e vedo subito! 🎾`;
-        return noOptionsMsg;
+        // Quando originalCourtIsCovered !== null, findRedirectOptionsBookField ha già cercato
+        // anche il tipo opposto come fallback → se options è ancora vuoto, entrambi i tipi
+        // sono pieni → non suggerire "prova il tipo opposto" (è già stato provato).
+        return `${reason}\n\nNon ho trovato campi liberi nei prossimi giorni. Scrivimi un giorno specifico e vedo subito! 🎾`;
     }
 
     const effectiveIntent: 'BOOK_FIELD' | 'MATCHMAKING' =
