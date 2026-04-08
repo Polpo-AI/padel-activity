@@ -276,6 +276,7 @@ function CreateMatchModal({ courts, club, token, onClose, onCreated, defaultDate
   // Time range picker (UNAVAILABLE)
   const [fromHour, setFromHour] = useState("");
   const [toHour, setToHour] = useState("");
+  const [isMixed, setIsMixed] = useState(false);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState("");
 
@@ -308,7 +309,7 @@ function CreateMatchModal({ courts, club, token, onClose, onCreated, defaultDate
         startTime = selectedSlot;
         dur = duration;
       }
-      await api("/matches", token, { method: "POST", body: JSON.stringify({ courtId, startTime, skillLevel, type: matchType, duration: dur, title: title.trim() || undefined }) });
+      await api("/matches", token, { method: "POST", body: JSON.stringify({ courtId, startTime, skillLevel, type: matchType, duration: dur, title: title.trim() || undefined, isMixed: matchType === "MATCH" ? isMixed : undefined }) });
       onCreated(); onClose();
     } catch (e) { setErr(e.message); }
     finally { setSaving(false); }
@@ -405,6 +406,24 @@ function CreateMatchModal({ courts, club, token, onClose, onCreated, defaultDate
                 )}
               </div>
             )}
+          </div>
+        )}
+
+        {matchType === "MATCH" && (
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 12px", background: C.bg, borderRadius: 8, border: `1px solid ${C.dim}` }}>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 600, color: C.text }}>Partita mista</div>
+              <div style={{ fontSize: 11, color: C.muted }}>Ammette uomini e donne insieme</div>
+            </div>
+            <button onClick={() => setIsMixed(v => !v)} style={{
+              width: 44, height: 24, borderRadius: 12, border: "none", cursor: "pointer",
+              background: isMixed ? C.accent : C.dim, position: "relative", transition: "background 0.2s"
+            }}>
+              <span style={{
+                position: "absolute", top: 2, left: isMixed ? 22 : 2, width: 20, height: 20,
+                borderRadius: "50%", background: "#fff", transition: "left 0.2s"
+              }} />
+            </button>
           </div>
         )}
 

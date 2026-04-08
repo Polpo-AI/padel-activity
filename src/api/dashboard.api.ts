@@ -375,7 +375,7 @@ router.get('/matches/:id', authMiddleware, async (req: Request, res: Response) =
 
 router.post('/matches', authMiddleware, async (req: Request, res: Response) => {
     const clubId = (req as any).clubId;
-    const { courtId, startTime, skillLevel, playersNeeded = 4, type = 'MATCH', duration, title } = req.body;
+    const { courtId, startTime, skillLevel, playersNeeded = 4, type = 'MATCH', duration, title, isMixed = false } = req.body;
     if (type === 'MATCH' && playersNeeded < 2) return res.status(400).json({ error: 'playersNeeded deve essere almeno 2' });
     const playersNeededNum = parseInt(playersNeeded);
     if (isNaN(playersNeededNum) || playersNeededNum > 100 || playersNeededNum < 0) return res.status(400).json({ error: 'playersNeeded deve essere tra 0 e 100' });
@@ -420,6 +420,7 @@ router.post('/matches', authMiddleware, async (req: Request, res: Response) => {
             endTime: new Date(new Date(startTime).getTime() + (duration ? duration * 60000 : (club?.matchDuration || 90) * 60000)),
             skillLevel: parseInt(skillLevel),
             playersNeeded: parseInt(playersNeeded),
+            isMixed: matchType === 'MATCH' ? Boolean(isMixed) : false,
             status: 'OPEN',
         },
         include: { court: true },
