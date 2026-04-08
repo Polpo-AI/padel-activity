@@ -899,6 +899,20 @@ async function runDashboardTests() {
         assert(Array.isArray(body.suggestions), `suggest-level deve avere suggestions array, got: ${JSON.stringify(body)}`);
     });
 
+    await test('GET /api/dashboard/matches/suggest-level?targetGender=MALE → 200', async () => {
+        const r = await fetch(`${BASE}/api/dashboard/matches/suggest-level?targetGender=MALE`, { headers: auth() });
+        assert(r.status === 200, `Status: ${r.status}`);
+        const body = await r.json();
+        assert(Array.isArray(body.suggestions), `suggest-level MALE deve avere suggestions array, got: ${JSON.stringify(body)}`);
+    });
+
+    await test('GET /api/dashboard/matches/suggest-level?targetGender=FEMALE → 200', async () => {
+        const r = await fetch(`${BASE}/api/dashboard/matches/suggest-level?targetGender=FEMALE`, { headers: auth() });
+        assert(r.status === 200, `Status: ${r.status}`);
+        const body = await r.json();
+        assert(Array.isArray(body.suggestions), `suggest-level FEMALE deve avere suggestions array, got: ${JSON.stringify(body)}`);
+    });
+
     await test('POST /api/dashboard/matches → 201 crea match', async () => {
         // Usa 365 giorni + ora insolita per evitare conflitti con dati reali
         const futureSlot = new Date();
@@ -925,6 +939,54 @@ async function runDashboardTests() {
         const matchId = body.match?.id ?? body.id;
         assert(!!matchId, 'Match ID assente nella risposta');
         createdMatchId = matchId;
+    });
+
+    await test('POST /api/dashboard/matches con targetGender=MALE → API restituisce targetGender corretto', async () => {
+        const courtsR = await fetch(`${BASE}/api/dashboard/courts`, { headers: auth() });
+        const courts = await courtsR.json();
+        if (!courts.length) throw new Error('Nessun campo trovato');
+        const courtId = courts[courts.length - 1].id; // ultimo campo per evitare conflitti con altri test
+        const futureSlot = new Date();
+        futureSlot.setDate(futureSlot.getDate() + 366);
+        futureSlot.setUTCHours(8, 11, 0, 0);
+        const r = await fetch(`${BASE}/api/dashboard/matches`, {
+            method: 'POST', headers: auth(),
+            body: JSON.stringify({ courtId, startTime: futureSlot.toISOString(), skillLevel: 3, targetGender: 'MALE' }),
+        });
+        const body = await r.json();
+        assert(r.status === 200 || r.status === 201, `Status: ${r.status} — ${JSON.stringify(body)}`);
+        const match = body.match ?? body;
+        assert(!!match.id, 'matchId assente');
+        // Rileggi via GET per verificare che targetGender sia stato salvato
+        const r2 = await fetch(`${BASE}/api/dashboard/matches/${match.id}`, { headers: auth() });
+        const saved = await r2.json();
+        assert(saved.targetGender === 'MALE', `targetGender atteso MALE, trovato: ${saved.targetGender}`);
+        assert(saved.isMixed === false, `isMixed deve essere false per MALE, trovato: ${saved.isMixed}`);
+        // Cleanup
+        await fetch(`${BASE}/api/dashboard/matches/${match.id}/cancel`, { method: 'POST', headers: auth(), body: JSON.stringify({ reason: 'TEST' }) });
+    });
+
+    await test('POST /api/dashboard/matches con targetGender=ANY → isMixed=true', async () => {
+        const courtsR = await fetch(`${BASE}/api/dashboard/courts`, { headers: auth() });
+        const courts = await courtsR.json();
+        if (!courts.length) throw new Error('Nessun campo trovato');
+        const courtId = courts[courts.length - 1].id;
+        const futureSlot = new Date();
+        futureSlot.setDate(futureSlot.getDate() + 367);
+        futureSlot.setUTCHours(9, 17, 0, 0);
+        const r = await fetch(`${BASE}/api/dashboard/matches`, {
+            method: 'POST', headers: auth(),
+            body: JSON.stringify({ courtId, startTime: futureSlot.toISOString(), skillLevel: 3, targetGender: 'ANY' }),
+        });
+        const body = await r.json();
+        assert(r.status === 200 || r.status === 201, `Status: ${r.status} — ${JSON.stringify(body)}`);
+        const match = body.match ?? body;
+        assert(!!match.id, 'matchId assente');
+        const r2 = await fetch(`${BASE}/api/dashboard/matches/${match.id}`, { headers: auth() });
+        const saved = await r2.json();
+        assert(saved.targetGender === 'ANY', `targetGender atteso ANY, trovato: ${saved.targetGender}`);
+        assert(saved.isMixed === true, `isMixed deve essere true per ANY, trovato: ${saved.isMixed}`);
+        await fetch(`${BASE}/api/dashboard/matches/${match.id}/cancel`, { method: 'POST', headers: auth(), body: JSON.stringify({ reason: 'TEST' }) });
     });
 
     await test('POST /api/dashboard/matches/:id/cancel → 200', async () => {
