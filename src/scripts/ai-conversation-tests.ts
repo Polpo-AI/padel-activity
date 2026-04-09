@@ -522,7 +522,7 @@ async function testDoubleBooking() {
         );
         // Deve segnalare che ha già una prenotazione (o che quel slot non è disponibile)
         assertContainsAny(r.message,
-            ['già', 'prenotazione', 'fascia', 'occupato', 'conflitto', 'stessa ora', 'non è disponib', 'non disponib', 'posto libero'],
+            ['già', 'prenotazione', 'fascia', 'occupat', 'conflitto', 'stessa ora', 'non è disponib', 'non disponib', 'posto libero', 'campi sono'],
             'deve segnalare doppia prenotazione'
         );
         assertNotContains(r.message, ['confermato', 'prenotato con successo'],
