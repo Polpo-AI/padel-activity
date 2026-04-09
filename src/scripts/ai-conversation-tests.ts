@@ -42,6 +42,16 @@ async function test(name: string, fn: () => Promise<void>): Promise<void> {
         console.log(`  ✅ ${name}`);
         passed++;
     } catch (err: any) {
+        // Retry once on Claude 529 Overloaded (transient API error)
+        if (String(err?.message).includes('529') || String(err?.message).includes('overload')) {
+            try {
+                await new Promise(r => setTimeout(r, 8000));
+                await fn();
+                console.log(`  ✅ ${name} (retry)`);
+                passed++;
+                return;
+            } catch {}
+        }
         const msg = err?.message ?? String(err);
         const aiSaid = err?.aiSaid;
         console.log(`  ❌ ${name}\n     → ${msg}${aiSaid ? `\n     🤖 AI: "${aiSaid.substring(0, 120)}..."` : ''}`);
@@ -437,7 +447,7 @@ async function testOccupiedField() {
         // 2. Ritorna ONLY_COVERED_AVAILABLE (outdoor occupato → messageHandler chiede conferma)
         // 3. Menziona nella risposta la situazione del campo
         const booksCoperto = r.action === 'BOOK_FIELD' && r.actionResult?.success;
-        const onlyCoveredFlow = r.action === 'BOOK_FIELD' && r.actionResult?.errorCode === 'ONLY_COVERED_AVAILABLE';
+        const onlyCoveredFlow = r.action === 'BOOK_FIELD' && r.actionResult?.errorMessage === 'ONLY_COVERED_AVAILABLE';
         const mentionsFieldSituation = ['coperto', 'occupato', 'disponibile', 'alternativa', 'invece', 'unico'].some(k =>
             r.message.toLowerCase().includes(k));
         assert(
