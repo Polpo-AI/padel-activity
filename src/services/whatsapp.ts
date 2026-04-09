@@ -285,17 +285,28 @@ async function _doConnect(key: string, state: ClubSocketState): Promise<void> {
                         await _sendRaw(state, adminJid, '🤖 *Bot riavviato — connesso.*');
 
                         // Retry FAQ domande in attesa non inviate (WA era disconnessa)
+                        // Usa il nuovo sistema faq:pending_ids + faq:pending:{clubId}:{faqId}
                         try {
                             const { getRedis } = await import('./queue');
                             const redis = getRedis();
                             const clubId = (club as any).id || key;
-                            const pendingFaq = await redis.get(`faq:pending_question:${clubId}`);
-                            if (pendingFaq) {
-                                const { question, askedBy } = JSON.parse(pendingFaq);
-                                const msg = `🚨 *${club.name ?? 'Padel Bot'} — Alert*\n\n❓ ${askedBy || 'Un giocatore'} ha chiesto:\n"${question}"\n\nRispondi qui per salvare la tua risposta come FAQ.`;
-                                await _sendRaw(state, adminJid, msg);
-                                // NON cancellare: handleAdminFaqFlow dipende da questa chiave
-                                logger.info({ clubId, question }, 'Pending FAQ sent to admin after reconnect');
+
+                            // Cleanup chiave legacy (può essere ancora presente su istanze pre-refactor)
+                            await redis.del(`faq:pending_question:${clubId}`).catch(() => {});
+
+                            const pendingIds = await redis.lrange(`faq:pending_ids:${clubId}`, 0, -1);
+                            if (pendingIds.length > 0) {
+                                const items = (await Promise.all(
+                                    pendingIds.map((id: string) => redis.get(`faq:pending:${clubId}:${id}`))
+                                )).filter(Boolean).map((raw: string) => JSON.parse(raw!));
+
+                                if (items.length > 0) {
+                                    const prefix = items.length > 1 ? `[${items.length} domande in sospeso]\n` : '';
+                                    const first = items[0];
+                                    const msg = `${prefix}❓ ${first.askedBy || 'Un giocatore'} ha chiesto:\n"${first.question}"\n\nRispondi qui per inoltrarla all'utente e salvarla come FAQ.`;
+                                    await _sendRaw(state, adminJid, msg);
+                                    logger.info({ clubId, count: items.length, question: first.question }, 'Pending FAQ(s) sent to admin after reconnect');
+                                }
                             }
                         } catch (faqErr) {
                             logger.warn({ faqErr }, 'Failed to send pending FAQ on reconnect');
