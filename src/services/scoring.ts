@@ -215,7 +215,7 @@ export async function selectPlayersForWave(
 
     for (let i = 0; i < sortedEligible.length; i++) {
         const player = sortedEligible[i];
-        const ema = player.reliabilityScore;
+        const ema = player.reliabilityScore || PRIOR;
         currentEmaSum += ema;
         targetCount++;
         

@@ -255,7 +255,10 @@ router.get('/courts', authMiddleware, async (req: Request, res: Response) => {
 
 router.get('/matches', authMiddleware, async (req: Request, res: Response) => {
     const clubId = (req as any).clubId;
-    const { status, date, courtId } = req.query;
+    const { status, date, courtId, page, limit } = req.query;
+
+    const take = Math.min(parseInt(limit as string) || 100, 500);
+    const skip = (Math.max(parseInt(page as string) || 1, 1) - 1) * take;
 
     const where: any = { clubId };
     if (status) where.status = status;
@@ -267,20 +270,25 @@ router.get('/matches', authMiddleware, async (req: Request, res: Response) => {
         where.startTime = { gte: dayStart, lte: dayEnd };
     }
 
-    const matches = await prisma.match.findMany({
-        where,
-        include: {
-            court: true,
-            MatchPlayer: { include: { player: true } },
-            invitations: {
-                where: { status: 'PENDING' },
-                select: { id: true, playerId: true, sentAt: true },
+    const [matches, total] = await Promise.all([
+        prisma.match.findMany({
+            where,
+            include: {
+                court: true,
+                MatchPlayer: { include: { player: true } },
+                invitations: {
+                    where: { status: 'PENDING' },
+                    select: { id: true, playerId: true, sentAt: true },
+                },
             },
-        },
-        orderBy: { startTime: 'asc' },
-    });
+            orderBy: { startTime: 'asc' },
+            take,
+            skip,
+        }),
+        prisma.match.count({ where }),
+    ]);
 
-    res.json(matches);
+    res.json({ matches, total, page: Math.floor(skip / take) + 1, limit: take });
 });
 
 // ─────────────────────────────────────────────
