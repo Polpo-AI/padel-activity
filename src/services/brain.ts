@@ -110,12 +110,12 @@ export async function buildBrainContext(jid: string, phoneNumber: string): Promi
         const [inv, conf, avail] = await Promise.all([
             prisma.invitation.findMany({
                 where: { playerId: player.id, status: 'PENDING', match: { status: 'OPEN' } },
-                include: { match: { include: { court: true, MatchPlayer: { where: { leftAt: null }, include: { player: { select: { id: true, firstName: true, lastName: true, skillLevel: true } } } } } } },
+                include: { match: { include: { court: true, MatchPlayer: { where: { leftAt: null }, include: { player: { select: { id: true, name: true, skillLevel: true } } } } } } },
                 orderBy: { sentAt: 'asc' },
             }),
             prisma.matchPlayer.findMany({
                 where: { playerId: player.id, leftAt: null, noShow: false, match: { status: { in: ['OPEN', 'LOCKED'] } } },
-                include: { match: { include: { court: true, MatchPlayer: { where: { leftAt: null }, include: { player: { select: { id: true, firstName: true, lastName: true, skillLevel: true } } } } } } },
+                include: { match: { include: { court: true, MatchPlayer: { where: { leftAt: null }, include: { player: { select: { id: true, name: true, skillLevel: true } } } } } } },
             }),
             player.skillLevel > 0 ? prisma.match.findMany({
                 where: {
@@ -343,7 +343,7 @@ export async function callBrain(
             const otherPlayers = (mp.match.MatchPlayer as any[])
                 .filter((other: any) => other.player?.id !== player!.id)
                 .map((other: any) => {
-                    const name = [other.player?.firstName, other.player?.lastName].filter(Boolean).join(' ') || 'Sconosciuto';
+                    const name = other.player?.name || 'Sconosciuto';
                     const lvl = other.player?.skillLevel > 0 ? ` (Liv. ${other.player.skillLevel})` : '';
                     return `${name}${lvl}`;
                 });
@@ -844,7 +844,7 @@ export async function executeAction(
 
             const match = await prisma.match.findUnique({
                 where: { id: mp.matchId },
-                include: { MatchPlayer: { where: { leftAt: null }, include: { player: { select: { phoneNumber: true, firstName: true } } } } },
+                include: { MatchPlayer: { where: { leftAt: null }, include: { player: { select: { phoneNumber: true, name: true } } } } },
             });
             if (match?.status === 'LOCKED') {
                 if (match.isPrivateBooking) {
@@ -867,7 +867,7 @@ export async function executeAction(
                     const matchTimeStr = match.startTime.toLocaleString('it-IT', {
                         timeZone: 'Europe/Rome', weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit',
                     });
-                    const leavingName = (player as any).firstName || (player as any).name || 'Un giocatore';
+                    const leavingName = (player as any).name?.split(' ')[0] || 'Un giocatore';
                     for (const rmp of (match as any).MatchPlayer) {
                         const phone = rmp.player?.phoneNumber;
                         if (phone) {
@@ -900,7 +900,7 @@ export async function executeAction(
             // 2. Controlla quanti giocatori rimangono nel vecchio match
             const oldMatch = await prisma.match.findUnique({
                 where: { id: mp.matchId },
-                include: { MatchPlayer: { where: { leftAt: null }, include: { player: { select: { phoneNumber: true, firstName: true } } } } },
+                include: { MatchPlayer: { where: { leftAt: null }, include: { player: { select: { phoneNumber: true, name: true } } } } },
             });
             const remainingPlayers = oldMatch?.MatchPlayer.length ?? 0;
 
@@ -924,7 +924,7 @@ export async function executeAction(
                 const matchTimeStr = oldMatch.startTime.toLocaleString('it-IT', {
                     timeZone: 'Europe/Rome', weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit',
                 });
-                const leavingName = (player as any).firstName || (player as any).name || 'Un giocatore';
+                const leavingName = (player as any).name?.split(' ')[0] || 'Un giocatore';
                 for (const rmp of oldMatch.MatchPlayer) {
                     const phone = (rmp as any).player?.phoneNumber;
                     if (phone) {
