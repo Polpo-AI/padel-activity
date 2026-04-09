@@ -1515,6 +1515,7 @@ async function createNewMatchAction(
     let displacedConfirmed: { id: string; phoneNumber: string; name: string | null; skillLevel: number }[] = [];
     let displacedPendingPhones: string[] = [];
     let displacedOriginalSkill = 0;
+    let displacedIsPrivate = false;
 
     if (displacedMatchId && displacedMatchData) {
         // Fetch confirmed players e pending invitations del match che stiamo spostando
@@ -1535,6 +1536,7 @@ async function createNewMatchAction(
             }));
             displacedPendingPhones = (fullDisplacedMatch.invitations as any[]).map((inv: any) => inv.player.phoneNumber);
             displacedOriginalSkill = (fullDisplacedMatch as any).skillLevel ?? 0;
+            displacedIsPrivate = (fullDisplacedMatch as any).isPrivateBooking ?? false;
 
             // Displacement DB sync (atomico):
             // 1. Segna tutti i MatchPlayer come usciti
@@ -1611,6 +1613,7 @@ async function createNewMatchAction(
             player.clubId,
             startTime,
             displacedOriginalSkill,
+            displacedIsPrivate,
         ).catch(err => logger.warn({ err, displacedMatchId }, 'notifyDisplacedPlayers failed (fire-and-forget)'));
     }
 

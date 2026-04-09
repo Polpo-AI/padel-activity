@@ -72,7 +72,7 @@ export async function processMatchOutcomes(matchId: string): Promise<void> {
         inv => inv.status !== 'EXPIRED' || match.MatchPlayer.some(mp => mp.playerId === inv.playerId)
     );
 
-    for (const inv of match.invitations) {
+    for (const inv of unprocessed) {
         const mp = match.MatchPlayer.find(mp => mp.playerId === inv.playerId && !mp.leftAt);
         const showed = !!mp && !mp.noShow;
         const minutesUntilMatch = inv.minutesUntilMatch ?? 360;

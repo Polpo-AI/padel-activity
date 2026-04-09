@@ -121,7 +121,7 @@ export async function redirectGroup(group: RedirectGroup): Promise<void> {
     if (options.length > 0) {
         try {
             const { setState } = await import('./conversation-state');
-            await setState(`state:role:${group.referentJid}:AWAITING_REDIRECT_CHOICE`, { group, options }, 3600);
+            await setState(`state:role:${group.referentJid}:AWAITING_REDIRECT_CHOICE`, { group, options }, 600);
         } catch (err) {
             logger.error({ err }, 'Failed to save redirect state');
         }
@@ -498,6 +498,7 @@ export async function notifyDisplacedPlayers(
     clubId: string,
     originalStartTime: Date,
     originalSkillLevel: number,
+    isPrivateBooking: boolean = false,
 ): Promise<void> {
     // Notifica i pending invitations: solo avviso, no redirect
     for (const phone of pendingPlayerPhones) {
@@ -525,7 +526,7 @@ export async function notifyDisplacedPlayers(
             }
         }
 
-        // Poi redirect con intent MATCHMAKING per il referente (primo confermato)
+        // Redirect per il referente — usa intent corretto in base al tipo di partita displacata
         try {
             await redirectGroup({
                 clubId,
@@ -538,7 +539,7 @@ export async function notifyDisplacedPlayers(
                 originalSkillLevel,
                 originalCourtIsCovered: null,
                 reason: 'SLOT_TAKEN',
-                intent: 'MATCHMAKING',
+                intent: isPrivateBooking ? 'BOOK_FIELD' : 'MATCHMAKING',
             });
         } catch (err) {
             logger.warn({ err, matchId: displacedMatchId }, 'notifyDisplacedPlayers: redirectGroup failed');
@@ -569,6 +570,22 @@ export async function confirmRedirectChoice(
     const chosenOption = await resolveChoice(choiceText, options);
 
     if (!chosenOption) {
+        // Contatore tentativi falliti — dopo 2 sblocca la conversazione e lascia al brain
+        const { getRedis } = await import('./queue');
+        const redis = getRedis();
+        const attemptsKey = `redirect:attempts:${jid}`;
+        const attempts = parseInt(await redis.get(attemptsKey) ?? '0', 10) + 1;
+        await redis.set(attemptsKey, String(attempts), 'EX', 600);
+
+        if (attempts >= 2) {
+            // Sblocca: pulisce stato e lascia che il brain gestisca il prossimo messaggio
+            const { clearState } = await import('./conversation-state');
+            await clearState(`state:role:${jid}:AWAITING_REDIRECT_CHOICE`).catch(() => {});
+            await redis.del(attemptsKey);
+            await simulateTypingAndSend(jid, `Nessun problema, dimmi pure cosa preferisci e ci penso io 🎾`);
+            return;
+        }
+
         const clarifyVariants = [
             `Non ho capito quale preferisci 😅 Dimmi il numero dell'opzione o l'orario e mi metto subito!`,
             `Aiutami: scrivi il numero dell'opzione che vuoi (es. "la prima", "opzione 2") 🎾`,
@@ -682,9 +699,11 @@ async function createMatchForGroup(option: RedirectOption, group: RedirectGroup)
     const isBookField = group.intent === 'BOOK_FIELD' || group.originalSkillLevel <= 0;
 
     const referent = await prisma.player.findFirst({ where: { phoneNumber: group.referentPhone } });
-    const skillLevel = referent?.skillLevel && referent.skillLevel > 0
-        ? referent.skillLevel
-        : group.originalSkillLevel > 0 ? group.originalSkillLevel : 3.5;
+    // Priorità: originalSkillLevel del match displacato → skill attuale referente → default 3.5
+    // Non usare la skill corrente del referente come prima scelta: potrebbe essere cambiata dopo il displacement
+    const skillLevel = group.originalSkillLevel > 0
+        ? group.originalSkillLevel
+        : referent?.skillLevel && referent.skillLevel > 0 ? referent.skillLevel : 3.5;
 
     const match = await prisma.match.create({
         data: {
