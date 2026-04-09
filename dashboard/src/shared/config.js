@@ -1,14 +1,14 @@
 // ─── Colori ───────────────────────────────────
 export const C = {
-  // Sfondi — neutral puri, niente blue-tint
-  bg:           "#080808",   // main content background
-  surface:      "#111111",   // sidebar + panel backgrounds
-  surfaceHover: "#1a1a1a",   // hover su voci sidebar/liste
-  card:         "#161616",   // card elevate su surface
+  // Sfondi — neutral puri, lifted ~20pt rispetto al nero piatto
+  bg:           "#141414",   // main content background
+  surface:      "#1c1c1c",   // sidebar + panel backgrounds
+  surfaceHover: "#242424",   // hover su voci sidebar/liste
+  card:         "#222222",   // card elevate su surface
 
-  // Bordi
-  border:       "#262626",   // bordo standard
-  borderLight:  "#383838",   // bordo su focus/highlight
+  // Bordi — più visibili per gerarchia chiara
+  border:       "#303030",   // bordo standard
+  borderLight:  "#404040",   // bordo su focus/highlight
 
   // Accent primario — lime elettrico (sportswear energy)
   accent:       "#c8ff00",
@@ -22,8 +22,8 @@ export const C = {
 
   // Testi
   text:         "#f0f0f0",
-  muted:        "#737373",
-  dim:          "#1f1f1f",
+  muted:        "#909090",   // era #737373 — testi secondari più leggibili
+  dim:          "#2a2a2a",
 
   // Status partite
   open:         "#c8ff00",
