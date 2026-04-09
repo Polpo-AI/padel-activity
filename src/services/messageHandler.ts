@@ -786,12 +786,34 @@ Scrivi solo il messaggio.`;
 
         for (const mp of confirmed) await increaseReliability(mp.player.id);
 
+        // GAP #19: schedula reminder solo se mancano almeno 10 minuti all'orario previsto
+        // (1h prima del match). Con delay=0 il reminder scatta immediatamente — sbagliato.
         const reminderTime = new Date(startTime.getTime() - 60 * 60 * 1000);
-        const delay = Math.max(0, reminderTime.getTime() - Date.now());
-        await reminderQueue.add('send-reminder', { matchId, groupId, timeStr }, { delay });
+        const reminderDelay = reminderTime.getTime() - Date.now();
+        if (reminderDelay > 10 * 60 * 1000) {
+            await reminderQueue.add('send-reminder', { matchId, groupId, timeStr }, { delay: reminderDelay });
+        } else {
+            logger.info({ matchId, reminderDelay }, 'Reminder skipped — match too close to schedule a 1h reminder');
+        }
 
     } catch (err) {
         logger.error({ err }, `Error in closing sequence for match ${matchId}`);
+
+        // GAP #20: fallback — se la creazione gruppo WA fallisce, notifica i giocatori individualmente
+        try {
+            const { simulateTypingAndSend } = await import('./whatsapp');
+            const timeStr = startTime.toLocaleTimeString('it-IT', { timeZone: 'Europe/Rome', hour: '2-digit', minute: '2-digit' });
+            const dateStr = startTime.toLocaleDateString('it-IT', { timeZone: 'Europe/Rome', weekday: 'long', day: 'numeric', month: 'long' });
+            const firstNames = confirmed.map(mp => (mp.player.name || 'Giocatore').split(' ')[0]).join(', ');
+            const fallbackMsg = `Partita confermata! Siete in 4: ${firstNames}. Vi aspettiamo ${dateStr} alle ${timeStr} 🎾`;
+            for (const mp of confirmed) {
+                if (mp.player.phoneNumber && !mp.player.phoneNumber.startsWith('FRIEND_')) {
+                    simulateTypingAndSend(`${mp.player.phoneNumber}@s.whatsapp.net`, fallbackMsg).catch(() => {});
+                }
+            }
+        } catch (fallbackErr) {
+            logger.error({ fallbackErr }, 'handleMatchFilled: fallback individual notify also failed');
+        }
     }
 }
 
