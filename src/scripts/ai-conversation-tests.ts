@@ -134,34 +134,34 @@ async function setup() {
     [playerSkilled, playerNew, playerHighSkill] = await Promise.all([
         prisma.player.create({ data: {
             clubId: testClub.id, name: 'Marco Rossi',
-            phoneNumber: PHONE_SKILLED, skillLevel: 3.5, reliabilityScore: 0.8, active: true,
+            phoneNumber: PHONE_SKILLED, skillLevel: 3.5, reliabilityScore: 0.8, active: true, gender: 'MALE',
         } as any }),
         prisma.player.create({ data: {
             clubId: testClub.id, name: 'Luigi Verdi',
-            phoneNumber: PHONE_NEW, skillLevel: -1, reliabilityScore: 0.5, active: true,
+            phoneNumber: PHONE_NEW, skillLevel: -1, reliabilityScore: 0.5, active: true, gender: 'MALE',
         } as any }),
         prisma.player.create({ data: {
             clubId: testClub.id, name: 'Anna Bianchi',
-            phoneNumber: PHONE_HIGH, skillLevel: 5.5, reliabilityScore: 0.9, active: true,
+            phoneNumber: PHONE_HIGH, skillLevel: 5.5, reliabilityScore: 0.9, active: true, gender: 'FEMALE',
         } as any }),
     ]);
 
     // Player opt-out test
     await (prisma.player.create as any)({ data: {
         clubId: testClub.id, name: 'Carlo Neri',
-        phoneNumber: PHONE_OPTOUT, skillLevel: 3.5, reliabilityScore: 0.7, active: true,
+        phoneNumber: PHONE_OPTOUT, skillLevel: 3.5, reliabilityScore: 0.7, active: true, gender: 'MALE',
     }});
 
     // Player cancel test
     await (prisma.player.create as any)({ data: {
         clubId: testClub.id, name: 'Sofia Esposito',
-        phoneNumber: PHONE_CANCEL, skillLevel: 3.5, reliabilityScore: 0.75, active: true,
+        phoneNumber: PHONE_CANCEL, skillLevel: 3.5, reliabilityScore: 0.75, active: true, gender: 'FEMALE',
     }});
 
     // Player dedicato test orari (non ha storia conversazionale)
     await (prisma.player.create as any)({ data: {
         clubId: testClub.id, name: 'Luca Orari',
-        phoneNumber: PHONE_HOURS, skillLevel: 3.5, reliabilityScore: 0.8, active: true,
+        phoneNumber: PHONE_HOURS, skillLevel: 3.5, reliabilityScore: 0.8, active: true, gender: 'MALE',
     }});
 
     console.log('  Club, campi e giocatori creati.\n');
@@ -674,7 +674,7 @@ async function testBookCancelRebook() {
     // Usa PHONE_AMBIGUOUS per questo test (player dedicato)
     await (prisma.player.create as any)({ data: {
         clubId: testClub.id, name: 'Test Multiturn',
-        phoneNumber: PHONE_AMBIGUOUS, skillLevel: 3.5, reliabilityScore: 0.7, active: true,
+        phoneNumber: PHONE_AMBIGUOUS, skillLevel: 3.5, reliabilityScore: 0.7, active: true, gender: 'MALE',
     }});
 
     await test('prenota slot → conferma booking', async () => {
