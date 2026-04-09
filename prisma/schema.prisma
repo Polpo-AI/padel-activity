@@ -12,7 +12,7 @@ model Player {
   name               String?
   gender             Gender              @default(UNKNOWN)
   skillLevel         Float               @default(0)
-  reliabilityScore   Float               @default(0)
+  reliabilityScore   Float               @default(0.33)
   lastContactedAt    DateTime?
   dailyMessagesCount     Int                 @default(0)
   morningContactsToday   Int                 @default(0)
