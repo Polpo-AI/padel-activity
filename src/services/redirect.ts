@@ -89,6 +89,7 @@ export interface RedirectGroup {
     originalStartTime: Date;
     originalSkillLevel: number;         // -1 = non testato, >=1.0 = testato
     originalCourtIsCovered: boolean | null; // tipologia campo originale — null = qualsiasi
+    originalCourtName?: string;             // nome campo — per messaggi più specifici
     reason: 'CANCELLED' | 'UNFILLED' | 'SLOT_TAKEN' | 'POOL_EXHAUSTED' | 'CANCELLATION';
     clubId: string;
     // Nuovo campo intent-aware: determina quale algoritmo di ricerca usare
@@ -505,7 +506,7 @@ export async function notifyDisplacedPlayers(
         const jid = `${phone}@s.whatsapp.net`;
         try {
             await simulateTypingAndSend(jid,
-                'Il campo per cui eri stato invitato non è più disponibile. Spero di trovarti qualcosa di meglio presto! 🎾'
+                'Il posto per cui eri stato invitato non è più disponibile 😔'
             );
         } catch (err) {
             logger.warn({ err, phone }, 'notifyDisplacedPlayers: failed to notify pending player');
@@ -514,13 +515,25 @@ export async function notifyDisplacedPlayers(
 
     // Notifica i confirmed players + redirect MATCHMAKING
     if (confirmedPlayers.length > 0) {
+        // Recupera nome campo per messaggio specifico
+        let courtLabel = '';
+        try {
+            const { prisma } = await import('./db');
+            const dm = await prisma.match.findUnique({ where: { id: displacedMatchId }, include: { court: true } });
+            if (dm?.court) {
+                const timeStr = dm.startTime.toLocaleTimeString('it-IT', { timeZone: 'Europe/Rome', hour: '2-digit', minute: '2-digit' });
+                courtLabel = `${dm.court.name} alle ${timeStr}`;
+            }
+        } catch { /* ignore */ }
+
         // Invia prima la notifica a ogni confermato
         for (const p of confirmedPlayers) {
             const jid = `${p.phoneNumber}@s.whatsapp.net`;
             try {
-                await simulateTypingAndSend(jid,
-                    'Purtroppo il tuo slot è stato prenotato da qualcun altro 😕 Sto cercando subito un\'alternativa per te!'
-                );
+                const msg = courtLabel
+                    ? `Il posto al ${courtLabel} è stato preso da qualcun altro 😕 Cerco subito un'alternativa!`
+                    : `Il tuo posto è stato preso da qualcun altro 😕 Cerco subito un'alternativa!`;
+                await simulateTypingAndSend(jid, msg);
             } catch (err) {
                 logger.warn({ err, phone: p.phoneNumber }, 'notifyDisplacedPlayers: failed to notify confirmed player');
             }
@@ -908,11 +921,12 @@ function buildRedirectMessage(group: RedirectGroup, options: RedirectOption[]): 
 }
 
 function buildPlayerNotificationMessage(group: RedirectGroup): string {
-    const timeStr = group.originalStartTime.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
+    const timeStr = group.originalStartTime.toLocaleTimeString('it-IT', { timeZone: 'Europe/Rome', hour: '2-digit', minute: '2-digit' });
+    const slot = group.originalCourtName ? `${group.originalCourtName} alle ${timeStr}` : `le ${timeStr}`;
     const variants = [
-        `Ciao! Purtroppo la partita delle ${timeStr} non si è chiusa 😔 Stiamo trovando un'alternativa — ti aggiorniamo a breve 🎾`,
-        `La partita delle ${timeStr} è saltata 😕 Stiamo cercando un'altra soluzione per voi — a breve ti dico!`,
-        `Aggiornamento sulla partita delle ${timeStr}: non siamo riusciti a completarla 😔 Sto lavorando su un'alternativa!`,
+        `${slot} non è andato in porto — cerco subito un'alternativa 🎾`,
+        `Partita di ${slot} saltata 😕 Ti trovo qualcos'altro a breve!`,
+        `Non abbiamo chiuso ${slot} 😔 Sto cercando un'alternativa per te!`,
     ];
     return variants[Math.floor(Math.random() * variants.length)];
 }

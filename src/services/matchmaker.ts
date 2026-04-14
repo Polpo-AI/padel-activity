@@ -366,6 +366,7 @@ export async function checkAndCancelIfUnfillable(matchId: string): Promise<boole
 
 export interface PlayerSignal {
     name: string;
+    skillLevel: number;
     matchesLast30Days: number;
     acceptanceRate: number; // 0.0 – 1.0
 }
@@ -426,16 +427,17 @@ export async function buildMatchSocialContext(
         acceptMap.set(row.playerId, cur);
     }
 
-    // Recupera nomi
+    // Recupera nomi e livelli
     const confirmedPlayers = await prisma.player.findMany({
         where: { id: { in: confirmedPlayerIds } },
-        select: { id: true, name: true },
+        select: { id: true, name: true, skillLevel: true },
     });
 
     const players: PlayerSignal[] = confirmedPlayers.map(p => {
         const stats = acceptMap.get(p.id) ?? { accepted: 0, total: 0 };
         return {
             name: (p.name || 'Giocatore').split(' ')[0],
+            skillLevel: p.skillLevel ?? 0,
             matchesLast30Days: matchCountMap.get(p.id) ?? 0,
             acceptanceRate: stats.total > 0 ? stats.accepted / stats.total : 0,
         };

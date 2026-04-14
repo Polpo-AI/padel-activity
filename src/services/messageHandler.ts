@@ -580,31 +580,51 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[], cor
             try {
                 const match = await prisma.match.findUnique({
                     where: { id: result.matchId },
-                    include: { court: true },
+                    include: {
+                        court: true,
+                        MatchPlayer: {
+                            where: { leftAt: null },
+                            include: { player: { select: { id: true, name: true, skillLevel: true } } },
+                        },
+                    },
                 });
-                const waveWillStart = match?.status === 'OPEN';
-                if (!waveWillStart) {
-                    if (match?.court) {
-                        const { calculateSlotCost } = await import('./pricing');
-                        const totalCost = await calculateSlotCost(match.court.id, match.startTime);
-                        const pricePerPerson = totalCost > 0 ? (totalCost / 4).toFixed(2) : null;
-                        const racketPrice = (club as any)?.racketPrice != null ? `${(club as any).racketPrice}€` : null;
-                        const timeStr = match.startTime.toLocaleString('it-IT', {
-                            timeZone: 'Europe/Rome', weekday: 'long', day: 'numeric',
-                            month: 'long', hour: '2-digit', minute: '2-digit',
+                if (match?.court) {
+                    const { calculateSlotCost } = await import('./pricing');
+                    const totalCost = await calculateSlotCost(match.court.id, match.startTime);
+                    const pricePerPerson = totalCost > 0 ? (totalCost / 4).toFixed(2) : null;
+                    const racketPrice = (club as any)?.racketPrice != null ? `${(club as any).racketPrice}€` : null;
+                    const timeStr = match.startTime.toLocaleString('it-IT', {
+                        timeZone: 'Europe/Rome', weekday: 'long', day: 'numeric',
+                        month: 'long', hour: '2-digit', minute: '2-digit',
+                    });
+                    const courtType = match.court.isCovered ? '🏟️ coperto' : '☀️ all\'aperto';
+                    const waveWillStart = match.status === 'OPEN';
+
+                    // Giocatori già dentro (escludo il giocatore corrente)
+                    const otherPlayers = (match.MatchPlayer as any[])
+                        .filter((mp: any) => mp.player?.id !== player?.id)
+                        .map((mp: any) => {
+                            const lvl = mp.player?.skillLevel > 0 ? ` Lv.${mp.player.skillLevel}` : '';
+                            return `${mp.player?.name?.split(' ')[0] || '?'}${lvl}`;
                         });
-                        const courtType = match.court.isCovered ? '🏟️ coperto' : '☀️ all\'aperto';
-                        const clubLocation = [club?.address, club?.city].filter(Boolean).join(' — ');
-                        const lines = [
-                            `📋 *Prenotazione confermata*`,
-                            `📅 ${timeStr}`,
-                            `🎾 ${match.court.name} (${courtType})`,
-                            pricePerPerson ? `💶 ${pricePerPerson}€ a persona` : null,
-                            racketPrice ? `🎾 Noleggio racchetta: ${racketPrice}/persona` : null,
-                            clubLocation ? `📍 ${clubLocation}` : null,
-                        ].filter(Boolean);
-                        await simulateTypingAndSend(jid, lines.join('\n'));
-                    }
+
+                    const lines = waveWillStart ? [
+                        `📋 *Sei in lista!*`,
+                        `📅 ${timeStr}`,
+                        `🎾 ${match.court.name} (${courtType})`,
+                        pricePerPerson ? `💶 ${pricePerPerson}€ a persona` : null,
+                        otherPlayers.length > 0 ? `👥 Già dentro: ${otherPlayers.join(', ')}` : null,
+                        `⏳ Ti avviso quando siamo in 4`,
+                    ] : [
+                        `📋 *Prenotazione confermata*`,
+                        `📅 ${timeStr}`,
+                        `🎾 ${match.court.name} (${courtType})`,
+                        pricePerPerson ? `💶 ${pricePerPerson}€ a persona` : null,
+                        racketPrice ? `🎾 Noleggio racchetta: ${racketPrice}/persona` : null,
+                        otherPlayers.length > 0 ? `👥 ${otherPlayers.join(', ')}` : null,
+                        [club?.address, club?.city].filter(Boolean).join(' — ') || null,
+                    ];
+                    await simulateTypingAndSend(jid, lines.filter(Boolean).join('\n'));
                 }
             } catch (err) {
                 logger.error({ err }, 'Failed to send booking detail card');

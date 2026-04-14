@@ -208,8 +208,10 @@ export async function generateInvitation(
     if (socialContext && socialContext.players.length > 0) {
         const signals: string[] = [];
 
-        // Nomi (solo first name)
-        const names = socialContext.players.map(p => p.name).join(', ');
+        // Nomi con livello (solo first name + Lv. se disponibile)
+        const names = socialContext.players
+            .map(p => p.skillLevel > 0 ? `${p.name} (Lv.${p.skillLevel})` : p.name)
+            .join(', ');
         signals.push(`Già confermati: ${names}.`);
 
         // Frequenza di gioco

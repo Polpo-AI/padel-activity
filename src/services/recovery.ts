@@ -249,7 +249,7 @@ export async function handleMatchUnfillable(matchId: string, forceCancel: boolea
             try {
                 await simulateTypingAndSend(
                     inv.player.phoneNumber,
-                    `La partita delle ${timeStr} a ${courtName} non si terrà più 😔 Il campo è libero per chi volesse prenotare!`
+                    `${courtName} alle ${timeStr} non si gioca più 😔`
                 );
             } catch (err) {
                 logger.error({ err }, `Failed to notify pending invitation ${inv.player.phoneNumber}`);
@@ -266,14 +266,12 @@ export async function handleMatchUnfillable(matchId: string, forceCancel: boolea
                 await sleep(randomInt(2, 5) * 1000);
                 try {
                     const unfillableVariants = (match as any).isPrivateBooking ? [
-                        `La tua prenotazione per ${courtName} alle ${timeStr} è stata annullata automaticamente. Scrivimi quando vuoi prenotare di nuovo! 🎾`,
-                        `Ho dovuto liberare ${courtName} alle ${timeStr} — la prenotazione è scaduta. Quando sei pronto, prenotiamo subito!`,
-                        `La prenotazione per ${courtName} alle ${timeStr} non è andata a buon fine. Scrivimi per fissare un nuovo appuntamento 🎾`,
+                        `${courtName} alle ${timeStr} — prenotazione annullata. Scrivimi quando vuoi riprenotare 🎾`,
+                        `Ho liberato ${courtName} alle ${timeStr}, la prenotazione è scaduta. Scrivimi per una nuova!`,
                     ] : [
-                        `Mi dispiace, non siamo riusciti a trovare tutti e ${match.playersNeeded} per le ${timeStr} a ${courtName} 😔 Piuttosto che aspettare ancora, ti cerco subito una partita già quasi completa — così giochi sicuro! 🎾`,
-                        `Purtroppo la partita delle ${timeStr} a ${courtName} è saltata — mancavano ancora ${missing} ${missing === 1 ? 'giocatore' : 'giocatori'} 😕 Ho preferito non farti aspettare: sto cercando un'alternativa già attiva 🎾`,
-                        `Non ce l'abbiamo fatta stavolta: ${courtName} alle ${timeStr} è rimasto vuoto 😔 Meglio una partita sicura: ti cerco subito qualcosa di disponibile!`,
-                        `La partita delle ${timeStr} a ${courtName} non si è chiusa, mi dispiace 😔 Per non perdere altro tempo, guarda queste alternative che ho trovato per te!`,
+                        `${courtName} alle ${timeStr} non è andata — mancavano ${missing} ${missing === 1 ? 'giocatore' : 'giocatori'}. Ti cerco subito un'alternativa 🎾`,
+                        `Partita al ${courtName} alle ${timeStr} saltata 😕 Cerco subito qualcosa di disponibile!`,
+                        `Non abbiamo chiuso ${courtName} alle ${timeStr} 😔 Ti trovo un'alternativa!`,
                     ];
                     await simulateTypingAndSend(
                         mp.player.phoneNumber,
@@ -298,6 +296,7 @@ export async function handleMatchUnfillable(matchId: string, forceCancel: boolea
                         originalStartTime: match.startTime,
                         originalSkillLevel: (match as any).skillLevel ?? 0,
                         originalCourtIsCovered: match.court?.isCovered ?? null,
+                        originalCourtName: match.court?.name,
                         reason: 'UNFILLED',
                         intent: 'MATCHMAKING',
                     });
