@@ -220,7 +220,7 @@ export async function handleMatchUnfillable(matchId: string, forceCancel: boolea
     const minutesUntilMatch = (match.startTime.getTime() - now.getTime()) / 60000;
     const deadlineMinutes = match.club?.deadlineMinutesBeforeMatch ?? 60;
     const courtName = (match.court?.name ?? 'il campo') + (match.court ? (match.court.isCovered ? ' 🏠' : ' ☀️') : '');
-    const timeStr = match.startTime.toLocaleTimeString('it-IT', { timeZone: 'Europe/Rome', hour: '2-digit', minute: '2-digit' });
+    const timeStr = match.startTime.toLocaleString('it-IT', { timeZone: 'Europe/Rome', weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
     const confirmedPlayers = match.MatchPlayer.filter(mp => !mp.leftAt);
 
     if (minutesUntilMatch < deadlineMinutes || forceCancel) {

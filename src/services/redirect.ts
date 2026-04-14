@@ -521,8 +521,8 @@ export async function notifyDisplacedPlayers(
             const { prisma } = await import('./db');
             const dm = await prisma.match.findUnique({ where: { id: displacedMatchId }, include: { court: true } });
             if (dm?.court) {
-                const timeStr = dm.startTime.toLocaleTimeString('it-IT', { timeZone: 'Europe/Rome', hour: '2-digit', minute: '2-digit' });
-                courtLabel = `${dm.court.name} alle ${timeStr}`;
+                const timeStr = dm.startTime.toLocaleString('it-IT', { timeZone: 'Europe/Rome', weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+                courtLabel = `${dm.court.name} — ${timeStr}`;
             }
         } catch { /* ignore */ }
 
@@ -921,8 +921,8 @@ function buildRedirectMessage(group: RedirectGroup, options: RedirectOption[]): 
 }
 
 function buildPlayerNotificationMessage(group: RedirectGroup): string {
-    const timeStr = group.originalStartTime.toLocaleTimeString('it-IT', { timeZone: 'Europe/Rome', hour: '2-digit', minute: '2-digit' });
-    const slot = group.originalCourtName ? `${group.originalCourtName} alle ${timeStr}` : `le ${timeStr}`;
+    const timeStr = group.originalStartTime.toLocaleString('it-IT', { timeZone: 'Europe/Rome', weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+    const slot = group.originalCourtName ? `${group.originalCourtName} — ${timeStr}` : timeStr;
     const variants = [
         `${slot} non è andato in porto — cerco subito un'alternativa 🎾`,
         `Partita di ${slot} saltata 😕 Ti trovo qualcos'altro a breve!`,
