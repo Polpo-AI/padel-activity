@@ -130,7 +130,10 @@ export async function buildBrainContext(jid: string, phoneNumber: string): Promi
                         ],
                     },
                 },
-                include: { court: true, MatchPlayer: { where: { leftAt: null } } },
+                include: {
+                    court: true,
+                    MatchPlayer: { where: { leftAt: null }, include: { player: { select: { id: true, name: true, skillLevel: true } } } },
+                },
                 orderBy: { startTime: 'asc' },
                 take: 8,
             }) : Promise.resolve([]),
@@ -354,12 +357,33 @@ export async function callBrain(
         : '  nessuno';
 
     const availableStr = availableMatches.length > 0
-        ? `(ordinate per completezza — prima le quasi piene, ottime per redirect)\n` + availableMatches.map((m, i) => {
+        ? `(ordinate per completezza — prima le quasi piene)\n` + availableMatches.map((m, i) => {
             const confirmed = m.MatchPlayer?.length ?? 0;
             const spots = m.playersNeeded - confirmed;
-            return `  ${i + 1}. ${m.court?.name || 'Campo'} – ${fmtDatetime(m.startTime)} – ${confirmed}/${m.playersNeeded} confermati, mancano ${spots} [matchId:${m.id}]`;
+            const courtType = m.court?.isCovered ? '🏟️ coperto' : '☀️ scoperto';
+            const tg = (m as any).targetGender;
+            const genderLabel = tg === 'MALE' ? 'solo uomini' : tg === 'FEMALE' ? 'solo donne' : m.isMixed ? 'misto' : '';
+            const playerNames = (m.MatchPlayer as any[])
+                .map((mp: any) => {
+                    const lvl = mp.player?.skillLevel > 0 ? ` Lv.${mp.player.skillLevel}` : '';
+                    return `${mp.player?.name || '?'}${lvl}`;
+                }).join(', ');
+            const court = courts.find((c: any) => c.id === m.courtId);
+            const stdPrices = court?.prices?.filter((p: any) => !p.startDate && !p.endDate) ?? [];
+            const priceStr = stdPrices.length > 0
+                ? `€${(Math.min(...stdPrices.map((p: any) => p.price)) / 4).toFixed(0)}/persona`
+                : '';
+            return [
+                `  ${i + 1}. [matchId:${m.id}]`,
+                `${m.court?.name || 'Campo'} (${courtType})`,
+                fmtDatetime(m.startTime),
+                `mancano ${spots} posti`,
+                genderLabel,
+                priceStr,
+                playerNames ? `già dentro: ${playerNames}` : '',
+            ].filter(Boolean).join(' – ');
         }).join('\n')
-        : '  nessuna partita aperta adatta';
+        : '  nessuna partita aperta adatta al tuo livello';
 
     const cardsStr = contactCards && contactCards.length > 0
         ? contactCards.map(c => `  - ${c.name || 'Sconosciuto'}: ${c.phone}`).join('\n')
@@ -514,11 +538,16 @@ ${slotsAvailability.fullSlots.length > 0 ? `\nSlot completamente occupati (nessu
 COME USARE QUESTA INFO:
 • freeScopertoSlots è una lista di SUGGERIMENTI pre-calcolati a intervalli fissi — NON è una whitelist di orari prenotabili. Se l'utente richiede un orario SPECIFICO (es. "sabato alle 9"), quell'orario è valido anche se non appare nella lista, purché non sia in fullSlots e rientri nell'orario di apertura del circolo.
 • "quando hai disponibilità?" / "quando c'è posto?" → proponi 3-4 slot da freeScopertoSlots in modo conversazionale. Se non ci sono scoperti liberi, proponi quelli con solo coperto.
-• Se l'utente chiede un orario specifico: controlla SOLO se è in fullSlots (bloccante), prima dell'orario di apertura, o se startTime + 90 min supera l'orario di chiusura (es. chiusura 23:30 → ultimo orario valido 22:00). In tutti gli altri casi esegui BOOK_FIELD direttamente senza chiedere conferma disponibilità.
-• Matchmaking (skill > 0): se l'orario richiesto è in fullSlots → NON eseguire BOOK_FIELD. Proponi le "PARTITE APERTE DISPONIBILI" (quasi complete, usa joinMatchId). Messaggio: "Quell'orario è al completo, ma ho queste partite che cercano ancora giocatori — vuoi unirti a una di queste?" Se nessuna va bene → suggerisci slot da freeScopertoSlots per creare una nuova pending.
-• Se l'utente vuole un orario specifico pieno E non vuole alternative → BOOK_FIELD sull'orario più vicino libero da freeScopertoSlots.
-• Se l'utente riceve "tutti i campi occupati" e chiede alternative → mostra le partite quasi complete da "PARTITE APERTE DISPONIBILI" (joinMatchId) oppure slot da freeScopertoSlots per nuova pending.
-• onlyCoveredSlots: ok per solo booking, chiedi conferma; per matchmaking procedi normalmente (il sistema gestisce la conferma coperto).
+
+PRIORITÀ MATCHMAKING (private: false o intento matchmaking) — segui ESATTAMENTE quest'ordine:
+  1. L'utente chiede un orario specifico → PRIMA guarda nelle PARTITE APERTE DISPONIBILI se esiste qualcosa a quell'orario (anche su campo coperto). Se sì → usa NONE, presenta la partita con entusiasmo: campo, tipo (misto/unisex), costo, nomi dei giocatori già dentro. Chiedi conferma ("Vuoi unirti?"). NON fare BOOK_FIELD finché l'utente non conferma esplicitamente.
+  2. L'utente conferma ("sì", "perfetto", "vai") → BOOK_FIELD con joinMatchId.
+  3. Nessuna partita aperta a quell'orario → controlla fullSlots: se pieno → proponi slot da freeScopertoSlots o partite aperte ad altri orari. Se non pieno → BOOK_FIELD normalmente (campo scoperto se disponibile).
+  4. L'orario è in onlyCoveredSlots → se ci sono partite aperte su coperto → step 1. Altrimenti chiedi conferma campo coperto.
+
+⚠️ onlyCoveredSlots NON significa "slot pieno" — significa solo che i campi scoperti sono occupati da partite. Prima controlla sempre se c'è una partita joinabile in quell'orario.
+⚠️ fullSlots = nessun campo libero di nessun tipo. SOLO allora proponi alternative senza presentare partite joinabili per quell'orario (non ce ne sono).
+• Se l'utente vuole un orario fullSlots E non vuole alternative → BOOK_FIELD sull'orario più vicino libero da freeScopertoSlots.
 ${player ? `═══ INVITI IN ATTESA ═══
 ${invitationsStr}
 
@@ -527,6 +556,7 @@ ${confirmedStr}
 ⚠️ IMPORTANTE: questa sezione è l'UNICA fonte autorevole sulle prenotazioni attuali del giocatore. La cronologia della conversazione può essere obsoleta (es. partite cancellate dal circolo dopo la prenotazione). Se qui risulta "nessuno", il giocatore NON ha prenotazioni attive — indipendentemente da cosa dicono i messaggi precedenti.
 
 ═══ PARTITE APERTE DISPONIBILI ═══
+⚠️ Queste partite NON includono quelle in cui sei già iscritto (garantito dal sistema). Se per qualsiasi motivo vedi il tuo nome tra i giocatori elencati, usa NONE e non fare BOOK_FIELD.
 ${availableStr}` : ''}
 ${cardsStr ? `\n═══ CONTATTI RICEVUTI ═══\n${cardsStr}` : ''}
 
@@ -559,8 +589,8 @@ Rispondi SEMPRE con JSON valido: { "message": "...", "action": "NOME", "params":
   ⚠️ REGOLA GENERE SCONOSCIUTO: se Genere è SCONOSCIUTO e private è false (matchmaking) → NON procedere con BOOK_FIELD. Prima usa NONE e chiedi: "Essendo un assistente digitale non vorrei sbagliarmi — sei un uomo o una donna? 😊" Poi al turno successivo usa SAVE_GENDER con il genere indicato, e SOLO dopo procedi con BOOK_FIELD.
   ⚠️ REGOLA MISTO: si applica SOLO quando private: false (matchmaking) E Genere NON è SCONOSCIUTO. Se preferMixed è null e private è false, prima chiedi con NONE: "Preferisci un match solo con giocatori del tuo stesso sesso o va bene anche misto?" Poi al turno successivo usa BOOK_FIELD con preferMixed impostato. Se private: true → salta la domanda (usa preferMixed: null).
   Se manca l'orario → NONE e chiedi solo quello.
-  Se c'è una partita aperta compatibile (da "PARTITE APERTE DISPONIBILI") e l'utente vuole matchmaking (private: false) → usa joinMatchId.
-  ⚠️ REDIRECT: se l'orario richiesto è in fullSlots O il sistema ha appena risposto "tutti i campi occupati" → NON creare nuovo BOOK_FIELD senza joinMatchId. Prima proponi le "PARTITE APERTE DISPONIBILI" (le più complete, con meno posti liberi). Se l'utente sceglie una → BOOK_FIELD con joinMatchId. Se non vuole nessuna → suggerisci slot da freeScopertoSlots per nuova pending.
+  ⚠️ MATCHMAKING — REGOLA FONDAMENTALE: se esiste una partita aperta compatibile nell'orario richiesto (da "PARTITE APERTE DISPONIBILI") → NON fare BOOK_FIELD direttamente. Prima usa NONE per presentarla (campo, tipo, costo, chi c'è già) e chiedi conferma. Solo dopo la conferma dell'utente → BOOK_FIELD con joinMatchId.
+  ⚠️ REDIRECT: se l'orario richiesto è in fullSlots → NON creare nuovo BOOK_FIELD. Prima proponi le partite aperte ad altri orari da "PARTITE APERTE DISPONIBILI" o slot da freeScopertoSlots.
   Messaggio nel JSON per BOOK_FIELD (private: false, nuova partita): "Perfetto, sto cercando gli altri giocatori — ti scrivo nel gruppo quando siamo in 4. 🎾" NON menzionare mai il nome del campo, il tipo (coperto/scoperto) o altri dettagli.
   Messaggio per BOOK_FIELD (private: true): "Perfetto, prenoto subito! 🎾" — i dettagli li manda il sistema.
   Messaggio per BOOK_FIELD con joinMatchId: "Perfetto, ti aggiungo! 🎾" (breve, il sistema gestisce il resto).
