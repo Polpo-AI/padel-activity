@@ -220,7 +220,7 @@ export async function handleMatchUnfillable(matchId: string, forceCancel: boolea
     const minutesUntilMatch = (match.startTime.getTime() - now.getTime()) / 60000;
     const deadlineMinutes = match.club?.deadlineMinutesBeforeMatch ?? 60;
     const courtName = (match.court?.name ?? 'il campo') + (match.court ? (match.court.isCovered ? ' 🏠' : ' ☀️') : '');
-    const timeStr = match.startTime.toLocaleString('it-IT', { timeZone: 'Europe/Rome', weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+    const timeStr = match.startTime.toLocaleString('it-IT', { timeZone: 'Europe/Rome', weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' });
     const confirmedPlayers = match.MatchPlayer.filter(mp => !mp.leftAt);
 
     if (minutesUntilMatch < deadlineMinutes || forceCancel) {
@@ -244,12 +244,24 @@ export async function handleMatchUnfillable(matchId: string, forceCancel: boolea
         });
 
         // Notifica i pending invitations: solo avviso, NO redirect
+        const pendingVariants = [
+            `${courtName} alle ${timeStr} non si gioca più 😔`,
+            `La partita al ${courtName} alle ${timeStr} è saltata 😔`,
+            `${courtName} alle ${timeStr} annullata — non si è riempita 😕`,
+            `Purtroppo ${courtName} alle ${timeStr} non va in porto 😔`,
+            `Niente partita al ${courtName} alle ${timeStr} 😕`,
+            `${courtName} alle ${timeStr} cancellata 😔`,
+            `La partita al ${courtName} alle ${timeStr} non si gioca 😕`,
+            `${courtName} alle ${timeStr} non si è riempita, purtroppo 😔`,
+            `Saltata la partita al ${courtName} alle ${timeStr} 😕`,
+            `${courtName} alle ${timeStr}: non si gioca 😔`,
+        ];
         for (const inv of pendingInvitations) {
             await sleep(randomInt(1, 3) * 1000);
             try {
                 await simulateTypingAndSend(
                     inv.player.phoneNumber,
-                    `${courtName} alle ${timeStr} non si gioca più 😔`
+                    pendingVariants[Math.floor(Math.random() * pendingVariants.length)]
                 );
             } catch (err) {
                 logger.error({ err }, `Failed to notify pending invitation ${inv.player.phoneNumber}`);
@@ -268,10 +280,25 @@ export async function handleMatchUnfillable(matchId: string, forceCancel: boolea
                     const unfillableVariants = (match as any).isPrivateBooking ? [
                         `${courtName} alle ${timeStr} — prenotazione annullata. Scrivimi quando vuoi riprenotare 🎾`,
                         `Ho liberato ${courtName} alle ${timeStr}, la prenotazione è scaduta. Scrivimi per una nuova!`,
+                        `${courtName} alle ${timeStr} annullata — scrivimi quando vuoi riprenotare 🎾`,
+                        `La prenotazione al ${courtName} alle ${timeStr} è scaduta. Scrivimi per rifissare!`,
+                        `${courtName} alle ${timeStr}: prenotazione cancellata. Scrivimi quando sei pronto a riprenotare 🎾`,
+                        `Ho cancellato ${courtName} alle ${timeStr}. Quando vuoi riprenota pure!`,
+                        `${courtName} alle ${timeStr} non è più prenotato. Scrivimi quando vuoi un altro slot 🎾`,
+                        `Prenotazione al ${courtName} alle ${timeStr} annullata — riscrivimi quando vuoi!`,
+                        `${courtName} alle ${timeStr} liberato. Scrivimi quando vuoi prenotare di nuovo 🎾`,
+                        `Ho liberato lo slot al ${courtName} alle ${timeStr}. Rifissami quando sei pronto!`,
                     ] : [
                         `${courtName} alle ${timeStr} non è andata — mancavano ${missing} ${missing === 1 ? 'giocatore' : 'giocatori'}. Ti cerco subito un'alternativa 🎾`,
                         `Partita al ${courtName} alle ${timeStr} saltata 😕 Cerco subito qualcosa di disponibile!`,
                         `Non abbiamo chiuso ${courtName} alle ${timeStr} 😔 Ti trovo un'alternativa!`,
+                        `${courtName} alle ${timeStr} non si è riempita — mancavano ${missing} ${missing === 1 ? 'giocatore' : 'giocatori'} 😕 Mi metto subito a cercare!`,
+                        `Peccato, ${courtName} alle ${timeStr} è saltata 😔 Cerco subito qualcosa per te!`,
+                        `${courtName} alle ${timeStr} annullata — non ce l'abbiamo fatta 😕 Trovo subito un'alternativa!`,
+                        `La partita al ${courtName} alle ${timeStr} non si gioca 😔 Vediamo cosa c'è disponibile!`,
+                        `${courtName} alle ${timeStr} non è andata in porto 😕 Dammi un secondo che trovo qualcos'altro!`,
+                        `Siamo rimasti in ${confirmedPlayers.length} per ${courtName} alle ${timeStr} 😔 Ti cerco subito qualcosa!`,
+                        `${courtName} alle ${timeStr} saltata 😕 Sto già cercando un'alternativa — torno subito!`,
                     ];
                     await simulateTypingAndSend(
                         mp.player.phoneNumber,

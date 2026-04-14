@@ -521,7 +521,7 @@ export async function notifyDisplacedPlayers(
             const { prisma } = await import('./db');
             const dm = await prisma.match.findUnique({ where: { id: displacedMatchId }, include: { court: true } });
             if (dm?.court) {
-                const timeStr = dm.startTime.toLocaleString('it-IT', { timeZone: 'Europe/Rome', weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+                const timeStr = dm.startTime.toLocaleString('it-IT', { timeZone: 'Europe/Rome', weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' });
                 courtLabel = `${dm.court.name} — ${timeStr}`;
             }
         } catch { /* ignore */ }
@@ -530,9 +530,30 @@ export async function notifyDisplacedPlayers(
         for (const p of confirmedPlayers) {
             const jid = `${p.phoneNumber}@s.whatsapp.net`;
             try {
-                const msg = courtLabel
-                    ? `Il posto al ${courtLabel} è stato preso da qualcun altro 😕 Cerco subito un'alternativa!`
-                    : `Il tuo posto è stato preso da qualcun altro 😕 Cerco subito un'alternativa!`;
+                const slotTakenVariants = courtLabel ? [
+                    `Il posto al ${courtLabel} è stato preso da qualcun altro 😕 Cerco subito un'alternativa!`,
+                    `Purtroppo il ${courtLabel} è stato occupato 😔 Ti trovo qualcosa di simile!`,
+                    `${courtLabel} — qualcuno ti ha soffiato il posto 😅 Cerco subito un'alternativa!`,
+                    `Il tuo posto al ${courtLabel} è andato 😕 Mi metto subito a cercare!`,
+                    `${courtLabel} non è più tuo 😔 Dammi un secondo che trovo qualcos'altro!`,
+                    `Qualcuno ha appena preso il posto al ${courtLabel} — cerco subito un'alternativa 🎾`,
+                    `${courtLabel} occupato da qualcun altro 😕 Ti buco subito qualcosa di disponibile!`,
+                    `Il posto che avevi al ${courtLabel} è stato preso 😔 Sto cercando un'alternativa!`,
+                    `${courtLabel} è volato via 😅 Vediamo cos'altro c'è disponibile per te!`,
+                    `Mannaggia, il ${courtLabel} è stato soffiato 😔 Cerco subito!`,
+                ] : [
+                    `Il tuo posto è stato preso da qualcun altro 😕 Cerco subito un'alternativa!`,
+                    `Purtroppo il tuo slot è stato occupato 😔 Ti trovo qualcosa di simile!`,
+                    `Qualcuno ti ha soffiato il posto 😅 Cerco subito un'alternativa!`,
+                    `Il tuo posto è andato 😕 Mi metto subito a cercare!`,
+                    `Il tuo slot non è più disponibile 😔 Dammi un secondo!`,
+                    `Qualcuno ha appena preso il tuo posto — cerco subito un'alternativa 🎾`,
+                    `Il tuo slot è stato occupato 😕 Ti buco subito qualcosa di disponibile!`,
+                    `Il posto che avevi è stato preso 😔 Sto cercando un'alternativa!`,
+                    `Il tuo slot è volato via 😅 Vediamo cos'altro c'è disponibile per te!`,
+                    `Mannaggia, il tuo posto è stato soffiato 😔 Cerco subito!`,
+                ];
+                const msg = slotTakenVariants[Math.floor(Math.random() * slotTakenVariants.length)];
                 await simulateTypingAndSend(jid, msg);
             } catch (err) {
                 logger.warn({ err, phone: p.phoneNumber }, 'notifyDisplacedPlayers: failed to notify confirmed player');
@@ -921,12 +942,19 @@ function buildRedirectMessage(group: RedirectGroup, options: RedirectOption[]): 
 }
 
 function buildPlayerNotificationMessage(group: RedirectGroup): string {
-    const timeStr = group.originalStartTime.toLocaleString('it-IT', { timeZone: 'Europe/Rome', weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+    const timeStr = group.originalStartTime.toLocaleString('it-IT', { timeZone: 'Europe/Rome', weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' });
     const slot = group.originalCourtName ? `${group.originalCourtName} — ${timeStr}` : timeStr;
     const variants = [
         `${slot} non è andato in porto — cerco subito un'alternativa 🎾`,
         `Partita di ${slot} saltata 😕 Ti trovo qualcos'altro a breve!`,
         `Non abbiamo chiuso ${slot} 😔 Sto cercando un'alternativa per te!`,
+        `La partita al ${slot} è saltata — mi metto subito a cercarti qualcosa 🎾`,
+        `${slot} purtroppo non si gioca 😔 Vediamo cosa c'è disponibile!`,
+        `Niente partita al ${slot} — sono già sul pezzo per trovare un'alternativa!`,
+        `${slot} è andato, ma non ti lascio senza campo 🎾 Cerco subito!`,
+        `Partita al ${slot} cancellata 😕 Ti buco subito qualcos'altro!`,
+        `${slot} non si gioca più — dammi un secondo che trovo una soluzione 🎾`,
+        `Peccato, ${slot} non è riuscita 😔 Cerco un'alternativa!`,
     ];
     return variants[Math.floor(Math.random() * variants.length)];
 }
