@@ -451,6 +451,8 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[], cor
                     logger.error({ err }, 'NO_OPEN_MATCH redirectGroup failed');
                     await simulateTypingAndSend(jid, 'Non ci sono partite aperte a quell\'orario. Dimmi un altro orario e vedo cosa c\'è disponibile! 🎾');
                 }
+            } else if (result.errorMessage === 'GENDER_MISMATCH') {
+                await simulateTypingAndSend(jid, 'Questa partita è riservata a giocatori dello stesso genere — non posso aggiungerti. Vuoi che cerchi un\'altra partita o prenoti un campo libero? 🎾');
             } else if (result.errorMessage?.includes('già una prenotazione') || result.errorMessage === 'ALREADY_BOOKED') {
                 // Prenotazione duplicata: suggerisci OPEN_TO_MATCHMAKING se è privata
                 const existingPrivate = player ? await prisma.matchPlayer.findFirst({
@@ -625,6 +627,14 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[], cor
                         [club?.address, club?.city].filter(Boolean).join(' — ') || null,
                     ];
                     await simulateTypingAndSend(jid, lines.filter(Boolean).join('\n'));
+                }
+
+                // Bug fix: se il player è diventato il 4° (match ora LOCKED, matchmaking) → crea gruppo WA.
+                // Questo path non veniva coperto dal blocco ACCEPT_INVITATION.
+                if (match?.status === 'LOCKED' && !match.isPrivateBooking && !match.groupId) {
+                    await handleMatchFilled(result.matchId, match.startTime).catch(err =>
+                        logger.error({ err, matchId: result.matchId }, 'handleMatchFilled after BOOK_FIELD join failed')
+                    );
                 }
             } catch (err) {
                 logger.error({ err }, 'Failed to send booking detail card');

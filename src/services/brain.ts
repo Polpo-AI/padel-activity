@@ -602,6 +602,7 @@ Rispondi SEMPRE con JSON valido: { "message": "...", "action": "NOME", "params":
   ⛔ ECCEZIONE 1: se il giocatore ha GIÀ una partita confermata e menziona un amico che "viene con lui" — NON usare INVITE_PREFERRED. Il campo è già prenotato, chi portano è affar loro. Rispondi che possono venire in quanti vogliono (fino a 4 totali).
   ⛔ ECCEZIONE 2: se l'utente parla di "amici", "compagni" o "persone" in modo GENERICO (es. "vengo con degli amici", "siamo un gruppo", "veniamo in 4") SENZA nomi specifici → NON usare INVITE_PREFERRED. Usa BOOK_FIELD direttamente — il campo tiene fino a 4 giocatori e il sistema gestisce il resto.
   MAI creare una partita con wave quando l'utente ha già indicato persone specifiche con cui vuole giocare.
+  ⛔ ECCEZIONE 3 — GIOCATORI ESTERNI AL CIRCOLO: se l'utente menziona una persona che potrebbe NON essere iscritta al circolo (es. "voglio giocare con un'amica che non è iscritta", "viene un mio amico di fuori", "non è del circolo") e chiede di trovare altri giocatori → usa NONE. Spiega che il matchmaking funziona SOLO tra iscritti al circolo perché il sistema di livelli garantisce partite equilibrate. Offri come alternativa la prenotazione privata del campo (BOOK_FIELD con private: true) per giocare con chi vogliono. MAI avviare una wave per trovare altri in presenza di giocatori esterni confermati.
 - SAVE_GENDER — params: { "gender": "MALE" | "FEMALE" } — utente rivela il proprio sesso. Usa SOLO dopo aver ricevuto una risposta esplicita alla domanda sul genere. Dopo il salvataggio, procedi normalmente con il flusso (es. chiedi preferMixed e poi BOOK_FIELD).
 - SAVE_NOTE — params: { "note": "..." } — utente esprime una preferenza PERMANENTE o abitudine generale (es. "voglio *sempre* giocare al coperto", "di solito preferisco il mattino", "non mi piace la terra rossa"). Riassumi in una frase breve e salva. Puoi combinare con NONE per rispondere anche in modo conversazionale — in quel caso usa SAVE_NOTE e metti la risposta nel campo "message".
   ⚠️ NON usare SAVE_NOTE quando l'utente sta chiedendo qualcosa di specifico per la prenotazione in corso (es. "vorrei il coperto" in risposta a una prenotazione → usa BOOK_FIELD o RESCHEDULE_MATCH con preferCovered:true, NON SAVE_NOTE). SAVE_NOTE è solo per preferenze dichiarate in modo esplicito e generale, non per richieste contestuali.
@@ -1289,10 +1290,27 @@ async function joinExistingMatch(matchId: string, player: any): Promise<{ succes
             await tx.$executeRaw`SELECT 1 FROM "Match" WHERE id = ${matchId} FOR UPDATE`;
             const match = await tx.match.findUnique({
                 where: { id: matchId },
-                include: { MatchPlayer: { where: { leftAt: null } } },
+                include: { MatchPlayer: { where: { leftAt: null }, include: { player: { select: { gender: true } } } } },
             });
             if (!match || match.status !== 'OPEN') throw new Error('MATCH_CLOSED');
             if (match.MatchPlayer.length >= match.playersNeeded) throw new Error('MATCH_FULL');
+
+            // Gender compatibility check
+            if (!match.isMixed) {
+                let effectiveTargetGender: string | null = match.targetGender ?? null;
+                if (!effectiveTargetGender) {
+                    // Infer from existing participants
+                    const genders = match.MatchPlayer.map((mp: any) => mp.player?.gender).filter((g: any) => g && g !== 'UNKNOWN');
+                    if (genders.length > 0 && genders.every((g: any) => g === genders[0])) {
+                        effectiveTargetGender = genders[0];
+                    }
+                }
+                if (effectiveTargetGender && effectiveTargetGender !== 'ANY') {
+                    if (player.gender && player.gender !== 'UNKNOWN' && player.gender !== effectiveTargetGender) {
+                        throw new Error('GENDER_MISMATCH');
+                    }
+                }
+            }
 
             await tx.matchPlayer.upsert({
                 where: { matchId_playerId: { matchId, playerId: player.id } },
@@ -1315,6 +1333,7 @@ async function joinExistingMatch(matchId: string, player: any): Promise<{ succes
     } catch (err: any) {
         if (err.message === 'MATCH_CLOSED') return { success: false, errorMessage: 'La partita si è chiusa nel frattempo.' };
         if (err.message === 'MATCH_FULL') return { success: false, errorMessage: 'La partita si è riempita nel frattempo.' };
+        if (err.message === 'GENDER_MISMATCH') return { success: false, errorMessage: 'GENDER_MISMATCH' };
         throw err;
     }
 }
