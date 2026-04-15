@@ -212,7 +212,7 @@ export async function generateInvitation(
 
         // Nomi con livello (solo first name + Lv. se disponibile)
         const names = socialContext.players
-            .map(p => p.skillLevel > 0 ? `${p.name} (Lv.${p.skillLevel})` : p.name)
+            .map(p => p.skillLevel > 0 ? `${p.name} (${Number(p.skillLevel).toFixed(1)})` : p.name)
             .join(', ');
         signals.push(`Già confermati: ${names}.`);
 

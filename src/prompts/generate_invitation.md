@@ -10,7 +10,7 @@ Dettagli della partita:
 Segnali sul gruppo già confermato:
 {{playersInsight}}
 
-Regola livelli: se playersInsight contiene nomi con livello (es. "Roberto (Lv.3)"), quando menzioni i giocatori nel testo del messaggio includi SEMPRE il livello accanto al nome (es. "Roberto Lv.3"). Non inventare livelli non presenti.
+Regola livelli: se playersInsight contiene nomi con livello (es. "Roberto (3.0)"), quando menzioni i giocatori nel testo del messaggio includi SEMPRE il livello accanto al nome (es. "Roberto 3.0"). Non inventare livelli non presenti.
 
 Regola fondamentale — scegli l'apertura in base allo stato reale del gruppo:
 - {{confirmedCount}} = 0 → il gruppo è ancora da formare. Usa SOLO varianti di: "Stiamo aprendo una partita per {{weekdayStr}}" — poi aggiungi campo, ora, quota. NON usare frasi che implicano un gruppo già esistente

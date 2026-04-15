@@ -604,7 +604,7 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[], cor
                     const otherPlayers = (match.MatchPlayer as any[])
                         .filter((mp: any) => mp.player?.id !== player?.id)
                         .map((mp: any) => {
-                            const lvl = mp.player?.skillLevel > 0 ? ` Lv.${mp.player.skillLevel}` : '';
+                            const lvl = mp.player?.skillLevel > 0 ? ` (${Number(mp.player.skillLevel).toFixed(1)})` : '';
                             return `${mp.player?.name?.split(' ')[0] || '?'}${lvl}`;
                         });
 

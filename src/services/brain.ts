@@ -365,7 +365,7 @@ export async function callBrain(
             const genderLabel = tg === 'MALE' ? 'solo uomini' : tg === 'FEMALE' ? 'solo donne' : m.isMixed ? 'misto' : '';
             const playerNames = (m.MatchPlayer as any[])
                 .map((mp: any) => {
-                    const lvl = mp.player?.skillLevel > 0 ? ` Lv.${mp.player.skillLevel}` : '';
+                    const lvl = mp.player?.skillLevel > 0 ? ` (${Number(mp.player.skillLevel).toFixed(1)})` : '';
                     return `${mp.player?.name || '?'}${lvl}`;
                 }).join(', ');
             const court = courts.find((c: any) => c.id === m.courtId);
