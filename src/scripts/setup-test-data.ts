@@ -35,7 +35,7 @@ async function main() {
     await prisma.player.createMany({
         data: [
             // Davide: admin, dailyMessages=999 (escluso da wave), skill 3.5
-            { id: 'pid-davide',    phoneNumber: '393457991255', name: 'Davide De Cupis',   gender: 'MALE',   skillLevel: 3.5, reliabilityScore: 0.90, dailyMessagesCount: 999, active: true, clubId: CLUB_ID },
+            { id: 'pid-davide',    phoneNumber: '393762031767', name: 'Davide De Cupis',   gender: 'MALE',   skillLevel: 3.5, reliabilityScore: 0.90, dailyMessagesCount: 999, active: true, clubId: CLUB_ID },
             // Paola: reale, femmina, skill 3.0
             { id: 'pid-paola',     phoneNumber: '393293256828', name: 'Paola Belcastro',   gender: 'FEMALE', skillLevel: 3.0, reliabilityScore: 0.80, dailyMessagesCount: 0,   active: true, clubId: CLUB_ID },
             // Maschi sintetici
