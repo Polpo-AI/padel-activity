@@ -574,7 +574,8 @@ Rispondi SEMPRE con JSON valido: { "message": "...", "action": "NOME", "params":
 - ACCEPT_INVITATION — params: { "invitationId": "..." } — utente conferma presenza a partita
 - REJECT_INVITATION — params: { "invitationId": "..." } — utente declina partita
 - CANCEL_MATCH — params: { "matchPlayerId": "..." } — utente vuole annullare partecipazione confermata. ⚠️ matchPlayerId DEVE essere copiato esattamente dal tag [matchPlayerId:...] in PARTITE CONFERMATE. Se non trovi NESSUNA partita confermata → NONE e chiedi quale partita vuole cancellare.
-- BOOK_FIELD — params: { "day": "YYYY-MM-DD o oggi/domani/lunedì/martedì/...", "time": "HH:MM", "joinMatchId": "id o null", "preferCovered": false, "preferMixed": null, "private": null, "committedPlayers": null }
+- BOOK_FIELD — params: { "day": "YYYY-MM-DD o oggi/domani/lunedì/martedì/...", "time": "HH:MM", "joinMatchId": "id o null", "preferCovered": false, "preferMixed": null, "private": null, "committedPlayers": null, "preferredPlayerName": null }
+  preferredPlayerName: usa SOLO quando l'utente dice "io e [Nome specifico]" in una singola richiesta di matchmaking (es. "io e Fabio vorremmo giocare, ce ne trovi 2"). Imposta il nome completo. Il sistema verificherà se [Nome] è iscritto al circolo e lo inviterà prioritariamente. Se non iscritto, l'utente verrà avvisato. NON usare quando l'utente prima usa BOOK_FIELD e poi separatamente chiede INVITE_PREFERRED — in quel caso usa INVITE_PREFERRED nel turno successivo.
   committedPlayers: se l'utente dice "siamo in 2/3/..., cerco N" → numero di giocatori fisici GIÀ confermati incluso il player stesso. Es. "siamo in 3, mi manca 1" → committedPlayers: 3. Default: null (solo il player). Si usa solo con private: false (matchmaking).
   Usa quando l'utente vuole giocare/prenotare e ha fornito giorno + orario.
   preferCovered: true SOLO se l'utente lo chiede esplicitamente (es. "campo al coperto", "al chiuso"). Default: false (scoperto preferito).
@@ -601,9 +602,8 @@ Rispondi SEMPRE con JSON valido: { "message": "...", "action": "NOME", "params":
 - INVITE_PREFERRED — params: { "playerName": "Nome Cognome" } — utente vuole che una persona specifica venga coinvolta nella partita tramite matchmaking.
   ⚠️ REGOLA: usa SOLO se l'utente cita un NOME SPECIFICO (es. "voglio giocare con Marco", "ci sono io e Luca Rossi"). Il sistema verificherà se esistono nel circolo.
   ⛔ ECCEZIONE 1: se il giocatore ha GIÀ una partita confermata e menziona un amico che "viene con lui" — NON usare INVITE_PREFERRED. Il campo è già prenotato, chi portano è affar loro. Rispondi che possono venire in quanti vogliono (fino a 4 totali).
-  ⛔ ECCEZIONE 2: se l'utente parla di "amici", "compagni" o "persone" in modo GENERICO (es. "vengo con degli amici", "siamo un gruppo", "veniamo in 4") SENZA nomi specifici → NON usare INVITE_PREFERRED. Usa BOOK_FIELD direttamente — il campo tiene fino a 4 giocatori e il sistema gestisce il resto.
-  MAI creare una partita con wave quando l'utente ha già indicato persone specifiche con cui vuole giocare.
-  ⛔ ECCEZIONE 3 — GIOCATORI ESTERNI AL CIRCOLO: se l'utente menziona una persona che potrebbe NON essere iscritta al circolo (es. "voglio giocare con un'amica che non è iscritta", "viene un mio amico di fuori", "non è del circolo") e chiede di trovare altri giocatori → usa NONE. Spiega che il matchmaking funziona SOLO tra iscritti al circolo perché il sistema di livelli garantisce partite equilibrate. Offri come alternativa la prenotazione privata del campo (BOOK_FIELD con private: true) per giocare con chi vogliono. MAI avviare una wave per trovare altri in presenza di giocatori esterni confermati.
+  ⛔ ECCEZIONE 2: se l'utente parla di "amici", "compagni" o "persone" in modo GENERICO (es. "vengo con degli amici", "siamo un gruppo", "veniamo in 4") SENZA nomi specifici → NON usare INVITE_PREFERRED. Usa BOOK_FIELD direttamente — il campo tiene fino a 4 giocatori e il sistema gestisce il resto. ⚠️ ATTENZIONE: se nel messaggio compare un NOME SPECIFICO (es. "io e Fabio", "ci sono Marco e io") NON è generica — usa BOOK_FIELD con preferredPlayerName.
+  ⛔ ECCEZIONE 3 — GIOCATORI ESTERNI AL CIRCOLO: se l'utente menziona ESPLICITAMENTE che la persona NON è iscritta (es. "voglio giocare con un'amica che non è iscritta", "viene un mio amico di fuori", "non è del circolo") e chiede di trovare altri giocatori → usa NONE. Spiega che il matchmaking funziona SOLO tra iscritti al circolo perché il sistema di livelli garantisce partite equilibrate. Offri come alternativa la prenotazione privata del campo (BOOK_FIELD con private: true). MAI avviare wave in presenza di giocatori esterni confermati. Se invece l'utente cita un nome senza specificare se è iscritto → usa BOOK_FIELD con preferredPlayerName (il sistema verificherà automaticamente).
 - SAVE_GENDER — params: { "gender": "MALE" | "FEMALE" } — utente rivela il proprio sesso. Usa SOLO dopo aver ricevuto una risposta esplicita alla domanda sul genere. Dopo il salvataggio, procedi normalmente con il flusso (es. chiedi preferMixed e poi BOOK_FIELD).
 - SAVE_NOTE — params: { "note": "..." } — utente esprime una preferenza PERMANENTE o abitudine generale (es. "voglio *sempre* giocare al coperto", "di solito preferisco il mattino", "non mi piace la terra rossa"). Riassumi in una frase breve e salva. Puoi combinare con NONE per rispondere anche in modo conversazionale — in quel caso usa SAVE_NOTE e metti la risposta nel campo "message".
   ⚠️ NON usare SAVE_NOTE quando l'utente sta chiedendo qualcosa di specifico per la prenotazione in corso (es. "vorrei il coperto" in risposta a una prenotazione → usa BOOK_FIELD o RESCHEDULE_MATCH con preferCovered:true, NON SAVE_NOTE). SAVE_NOTE è solo per preferenze dichiarate in modo esplicito e generale, non per richieste contestuali.
@@ -999,7 +999,29 @@ export async function executeAction(
             const privateBooking: boolean | null = params.private === true ? true : params.private === false ? false : null;
             const committedPlayers = typeof params.committedPlayers === 'number'
                 ? Math.max(1, Math.min(params.committedPlayers, 3)) : null;
-            return await bookSlotForPlayer(startTime, player, club, params.preferCovered === true, preferMixed, privateBooking, committedPlayers);
+            const bookResult = await bookSlotForPlayer(startTime, player, club, params.preferCovered === true, preferMixed, privateBooking, committedPlayers);
+
+            // Se il brain ha indicato un giocatore preferito (es. "io e Fabio"), prova ad aggiungerlo
+            const preferredName = (params.preferredPlayerName || '').trim();
+            if (bookResult.success && bookResult.matchId && preferredName) {
+                const preferred = await findPlayerFuzzy(preferredName, player.clubId);
+                if (preferred) {
+                    const matchRow = await prisma.match.findUnique({ where: { id: bookResult.matchId }, select: { preferredPlayerIds: true } });
+                    const currentPreferred: string[] = (matchRow as any)?.preferredPlayerIds ?? [];
+                    if (!currentPreferred.includes(preferred.id)) {
+                        await prisma.match.update({
+                            where: { id: bookResult.matchId },
+                            data: { preferredPlayerIds: [...currentPreferred, preferred.id] },
+                        });
+                        logger.info({ matchId: bookResult.matchId, preferredId: preferred.id }, 'BOOK_FIELD: preferredPlayerName added to match');
+                    }
+                } else {
+                    // Booking OK ma il giocatore preferito non è nel circolo
+                    return { ...bookResult, preferredNotFound: preferredName };
+                }
+            }
+
+            return bookResult;
         }
 
         if (action === 'OPT_OUT') {

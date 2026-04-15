@@ -629,6 +629,12 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[], cor
                     await simulateTypingAndSend(jid, lines.filter(Boolean).join('\n'));
                 }
 
+                // Se il giocatore preferito non è stato trovato nel circolo, avvisa l'utente
+                if ((result as any).preferredNotFound) {
+                    const notFoundName = (result as any).preferredNotFound;
+                    await simulateTypingAndSend(jid, `${notFoundName} non risulta iscritto al circolo — ho aperto la partita per te e sto cercando altri giocatori compatibili.`);
+                }
+
                 // Bug fix: se il player è diventato il 4° (match ora LOCKED, matchmaking) → crea gruppo WA.
                 // Questo path non veniva coperto dal blocco ACCEPT_INVITATION.
                 if (match?.status === 'LOCKED' && !match.isPrivateBooking && !match.groupId) {
