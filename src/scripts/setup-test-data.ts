@@ -39,16 +39,16 @@ async function main() {
             // Paola: reale, femmina, skill 3.0
             { id: 'pid-paola',     phoneNumber: '393293256828', name: 'Paola Belcastro',   gender: 'FEMALE', skillLevel: 3.0, reliabilityScore: 0.80, dailyMessagesCount: 0,   active: true, clubId: CLUB_ID },
             // Maschi sintetici
-            { id: 'pid-roberto',   phoneNumber: '39900000001',  name: 'Roberto De Cupis',  gender: 'MALE',   skillLevel: 3.0, reliabilityScore: 0.85, dailyMessagesCount: 0,   active: true, clubId: CLUB_ID },
-            { id: 'pid-christian', phoneNumber: '39900000002',  name: 'Christian Giorgio', gender: 'MALE',   skillLevel: 3.5, reliabilityScore: 0.80, dailyMessagesCount: 0,   active: true, clubId: CLUB_ID },
-            { id: 'pid-gioele',    phoneNumber: '39900000003',  name: 'Gioele De Cupis',   gender: 'MALE',   skillLevel: 3.0, reliabilityScore: 0.75, dailyMessagesCount: 0,   active: true, clubId: CLUB_ID },
-            { id: 'pid-alessio',   phoneNumber: '39900000004',  name: 'Alessio Vannoni',   gender: 'MALE',   skillLevel: 4.0, reliabilityScore: 0.90, dailyMessagesCount: 0,   active: true, clubId: CLUB_ID },
-            { id: 'pid-sandro',    phoneNumber: '39900000005',  name: 'Alessandro Gazzè',  gender: 'MALE',   skillLevel: 4.0, reliabilityScore: 0.85, dailyMessagesCount: 0,   active: true, clubId: CLUB_ID },
-            { id: 'pid-simone',    phoneNumber: '39900000006',  name: 'Simone Gazzè',      gender: 'MALE',   skillLevel: 3.5, reliabilityScore: 0.80, dailyMessagesCount: 0,   active: true, clubId: CLUB_ID },
-            { id: 'pid-mattia',    phoneNumber: '39900000007',  name: 'Mattia Vannoni',    gender: 'MALE',   skillLevel: 3.0, reliabilityScore: 0.75, dailyMessagesCount: 0,   active: true, clubId: CLUB_ID },
-            // Femmine sintetiche
-            { id: 'pid-sharon',    phoneNumber: '39900000008',  name: 'Sharon Giorgio',    gender: 'FEMALE', skillLevel: 3.5, reliabilityScore: 0.85, dailyMessagesCount: 0,   active: true, clubId: CLUB_ID },
-            { id: 'pid-monica',    phoneNumber: '39900000009',  name: 'Monica Messih',     gender: 'FEMALE', skillLevel: 3.0, reliabilityScore: 0.80, dailyMessagesCount: 0,   active: true, clubId: CLUB_ID },
+            { id: 'pid-roberto',   phoneNumber: '393288487837', name: 'Roberto De Cupis',  gender: 'MALE',   skillLevel: 3.0, reliabilityScore: 0.85, dailyMessagesCount: 0, active: true, clubId: CLUB_ID },
+            { id: 'pid-christian', phoneNumber: '393517627462', name: 'Christian Giorgio', gender: 'MALE',   skillLevel: 3.5, reliabilityScore: 0.80, dailyMessagesCount: 0, active: true, clubId: CLUB_ID },
+            { id: 'pid-gioele',    phoneNumber: '393278588089', name: 'Gioele De Cupis',   gender: 'MALE',   skillLevel: 3.0, reliabilityScore: 0.75, dailyMessagesCount: 0, active: true, clubId: CLUB_ID },
+            { id: 'pid-alessio',   phoneNumber: '393202318987', name: 'Alessio Vannoni',   gender: 'MALE',   skillLevel: 4.0, reliabilityScore: 0.90, dailyMessagesCount: 0, active: true, clubId: CLUB_ID },
+            { id: 'pid-sandro',    phoneNumber: '393888071206', name: 'Alessandro Gazzè',  gender: 'MALE',   skillLevel: 4.0, reliabilityScore: 0.85, dailyMessagesCount: 0, active: true, clubId: CLUB_ID },
+            { id: 'pid-simone',    phoneNumber: '393278952301', name: 'Simone Gazzè',      gender: 'MALE',   skillLevel: 3.5, reliabilityScore: 0.80, dailyMessagesCount: 0, active: true, clubId: CLUB_ID },
+            { id: 'pid-mattia',    phoneNumber: '393801871482', name: 'Mattia Vannoni',    gender: 'MALE',   skillLevel: 3.0, reliabilityScore: 0.75, dailyMessagesCount: 0, active: true, clubId: CLUB_ID },
+            // Femmine
+            { id: 'pid-sharon',    phoneNumber: '393762348858', name: 'Sharon Giorgio',    gender: 'FEMALE', skillLevel: 3.5, reliabilityScore: 0.85, dailyMessagesCount: 0, active: true, clubId: CLUB_ID },
+            { id: 'pid-monica',    phoneNumber: '393498562866', name: 'Monica Messih',     gender: 'FEMALE', skillLevel: 3.0, reliabilityScore: 0.80, dailyMessagesCount: 0, active: true, clubId: CLUB_ID },
         ],
         skipDuplicates: true,
     });
