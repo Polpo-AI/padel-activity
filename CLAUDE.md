@@ -254,6 +254,24 @@ DATABASE_URL="postgresql://postgres.ildhffoxuufcbvmmqitj:<pw>@aws-1-eu-west-1.po
 - Il brain a volte risponde in linguaggio naturale (non JSON) → callBrain ha un retry a temp=0; se il retry fallisce (rate limit), restituisce fallback random
 - Ogni telefono di test deve avere una propria storia conversazionale pulita — non riusare lo stesso numero in test diversi o si accumula contesto che confonde il brain
 
+### 40. Date negli script di test: verificare sempre il giorno della settimana prima di scrivere il codice
+**Bug reale:** `setup-test-data.ts` usava `utc(2026,4,17,10)` etichettando la partita come "giovedì 17/04", ma aprile 17, 2026 è **venerdì** — tutte le 15 partite erano spostate di un giorno rispetto all'intenzione.
+**Regola:** prima di scrivere date hardcodate in script, verificare il giorno della settimana:
+```bash
+node -e "console.log(new Date(2026,3,17).toLocaleDateString('it-IT',{weekday:'long',day:'numeric',month:'long'}))"
+# → venerdì 17 aprile 2026   ← attenzione: mese 3 = aprile (0-indexed)
+```
+Oppure usare una formula mentale affidabile: 1° aprile 2026 = mercoledì → +15 giorni = giovedì 16, +16 = venerdì 17.
+**Errore frequente:** confondere il mese JavaScript (0-indexed: gennaio=0, aprile=3) con il mese umano (aprile=4). In `new Date(2026, 3, 17)` il 3 è aprile. Nella funzione `utc(y, mo, d, h)` del progetto il `mo` è 1-indexed (aprile=4) — non mischiare i due sistemi.
+
+### 41. `grep '^DIRECT_URL=' .env | cut -d'=' -f2-` non funziona se il valore è quotato
+**Bug reale:** il valore in `.env` è `DIRECT_URL="postgresql://..."` con le virgolette → `cut` restituisce `"postgresql://..."` (con le `"`) → Prisma fallisce con `EAI_AGAIN` perché l'URL è malformato.
+**Regola:** per passare `DIRECT_URL` come `DATABASE_URL` a uno script sul VPS, usare sempre il valore letterale esplicito (copiato da `grep DIRECT_URL .env`):
+```bash
+DATABASE_URL='postgresql://postgres.xxx:password@host:5432/postgres' npx tsx src/scripts/db-reset.ts
+```
+MAI fare `DATABASE_URL="$(grep '^DIRECT_URL=' .env | cut -d'=' -f2-)"` — il risultato include le virgolette interne del `.env`.
+
 ---
 
 ---
