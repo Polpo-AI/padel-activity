@@ -170,9 +170,11 @@ export async function generateInvitation(
     isFriend = false,
     socialContext?: import('./matchmaker').MatchSocialContext
 ): Promise<string> {
+    const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
     const timeStr = matchTime.toLocaleTimeString('it-IT', { timeZone: 'Europe/Rome', hour: '2-digit', minute: '2-digit' });
-    const weekdayStr = matchTime.toLocaleDateString('it-IT', { timeZone: 'Europe/Rome', weekday: 'long' }); // fonte autorevole — mai lasciare a Claude
-    const dateStr = matchTime.toLocaleDateString('it-IT', { timeZone: 'Europe/Rome', day: 'numeric', month: 'long' });
+    const weekdayStr = cap(matchTime.toLocaleDateString('it-IT', { timeZone: 'Europe/Rome', weekday: 'long' })); // fonte autorevole — mai lasciare a Claude
+    const rawDateStr = matchTime.toLocaleDateString('it-IT', { timeZone: 'Europe/Rome', day: 'numeric', month: 'long' });
+    const dateStr = rawDateStr.replace(/([a-zàèéìòù]+)$/i, m => cap(m)); // capitalizza il mese in fondo
 
     let courtName = 'il campo';
     let courtCovered = false;

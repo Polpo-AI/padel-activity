@@ -30,6 +30,17 @@ import pino from 'pino';
 
 const logger = pino({ level: 'info' });
 
+// Helper: produce "Mercoledì 15 Aprile alle 10:00" — weekday e mese capitalizzati
+function formatMatchSlot(d: Date): string {
+    const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+    const tz = { timeZone: 'Europe/Rome' } as const;
+    const weekday = cap(d.toLocaleString('it-IT', { ...tz, weekday: 'long' }));
+    const day = d.toLocaleString('it-IT', { ...tz, day: 'numeric' });
+    const month = cap(d.toLocaleString('it-IT', { ...tz, month: 'long' }));
+    const time = d.toLocaleString('it-IT', { ...tz, hour: '2-digit', minute: '2-digit' });
+    return `${weekday} ${day} ${month} alle ${time}`;
+}
+
 const FREE_SLOT_WINDOW_DAYS  = 7;    // cerca slot liberi entro 7 giorni in avanti
 const TARGET_OPTIONS = 5;
 
@@ -521,8 +532,7 @@ export async function notifyDisplacedPlayers(
             const { prisma } = await import('./db');
             const dm = await prisma.match.findUnique({ where: { id: displacedMatchId }, include: { court: true } });
             if (dm?.court) {
-                const timeStr = dm.startTime.toLocaleString('it-IT', { timeZone: 'Europe/Rome', weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' });
-                courtLabel = `${dm.court.name} — ${timeStr}`;
+                courtLabel = `${dm.court.name} — ${formatMatchSlot(dm.startTime)}`;
             }
         } catch { /* ignore */ }
 
@@ -942,18 +952,18 @@ function buildRedirectMessage(group: RedirectGroup, options: RedirectOption[]): 
 }
 
 function buildPlayerNotificationMessage(group: RedirectGroup): string {
-    const timeStr = group.originalStartTime.toLocaleString('it-IT', { timeZone: 'Europe/Rome', weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' });
+    const timeStr = formatMatchSlot(group.originalStartTime);
     const slot = group.originalCourtName ? `${group.originalCourtName} — ${timeStr}` : timeStr;
     const variants = [
-        `${slot} non è andato in porto — cerco subito un'alternativa 🎾`,
-        `Partita di ${slot} saltata 😕 Ti trovo qualcos'altro a breve!`,
-        `Non abbiamo chiuso ${slot} 😔 Sto cercando un'alternativa per te!`,
+        `${slot}: non è andato in porto — cerco subito un'alternativa 🎾`,
+        `Partita al ${slot}: saltata 😕 Ti trovo qualcos'altro a breve!`,
+        `${slot}: non abbiamo chiuso 😔 Sto cercando un'alternativa per te!`,
         `La partita al ${slot} è saltata — mi metto subito a cercarti qualcosa 🎾`,
-        `${slot} purtroppo non si gioca 😔 Vediamo cosa c'è disponibile!`,
+        `${slot}: purtroppo non si gioca 😔 Vediamo cosa c'è disponibile!`,
         `Niente partita al ${slot} — sono già sul pezzo per trovare un'alternativa!`,
-        `${slot} è andato, ma non ti lascio senza campo 🎾 Cerco subito!`,
-        `Partita al ${slot} cancellata 😕 Ti buco subito qualcos'altro!`,
-        `${slot} non si gioca più — dammi un secondo che trovo una soluzione 🎾`,
+        `${slot}: saltata, ma non ti lascio senza campo 🎾 Cerco subito!`,
+        `${slot}: partita cancellata 😕 Ti buco subito qualcos'altro!`,
+        `${slot}: non si gioca più — dammi un secondo che trovo una soluzione 🎾`,
         `Peccato, ${slot} non è riuscita 😔 Cerco un'alternativa!`,
     ];
     return variants[Math.floor(Math.random() * variants.length)];

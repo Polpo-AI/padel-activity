@@ -20,6 +20,17 @@ const logger = pino({ level: 'info' });
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 const randomInt = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1)) + min;
 
+// Helper: produce "Mercoledì 15 Aprile alle 10:00" — weekday e mese capitalizzati
+function formatMatchSlot(d: Date): string {
+    const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+    const tz = { timeZone: 'Europe/Rome' } as const;
+    const weekday = cap(d.toLocaleString('it-IT', { ...tz, weekday: 'long' }));
+    const day = d.toLocaleString('it-IT', { ...tz, day: 'numeric' });
+    const month = cap(d.toLocaleString('it-IT', { ...tz, month: 'long' }));
+    const time = d.toLocaleString('it-IT', { ...tz, hour: '2-digit', minute: '2-digit' });
+    return `${weekday} ${day} ${month} alle ${time}`;
+}
+
 // ─────────────────────────────────────────────
 // GESTIONE DISDETTA DA MATCH LOCKED
 // ─────────────────────────────────────────────
@@ -220,7 +231,7 @@ export async function handleMatchUnfillable(matchId: string, forceCancel: boolea
     const minutesUntilMatch = (match.startTime.getTime() - now.getTime()) / 60000;
     const deadlineMinutes = match.club?.deadlineMinutesBeforeMatch ?? 60;
     const courtName = (match.court?.name ?? 'il campo') + (match.court ? (match.court.isCovered ? ' 🏠' : ' ☀️') : '');
-    const timeStr = match.startTime.toLocaleString('it-IT', { timeZone: 'Europe/Rome', weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' });
+    const timeStr = formatMatchSlot(match.startTime);
     const confirmedPlayers = match.MatchPlayer.filter(mp => !mp.leftAt);
 
     if (minutesUntilMatch < deadlineMinutes || forceCancel) {
@@ -245,16 +256,16 @@ export async function handleMatchUnfillable(matchId: string, forceCancel: boolea
 
         // Notifica i pending invitations: solo avviso, NO redirect
         const pendingVariants = [
-            `${courtName} alle ${timeStr} non si gioca più 😔`,
-            `La partita al ${courtName} alle ${timeStr} è saltata 😔`,
-            `${courtName} alle ${timeStr} annullata — non si è riempita 😕`,
-            `Purtroppo ${courtName} alle ${timeStr} non va in porto 😔`,
-            `Niente partita al ${courtName} alle ${timeStr} 😕`,
-            `${courtName} alle ${timeStr} cancellata 😔`,
-            `La partita al ${courtName} alle ${timeStr} non si gioca 😕`,
-            `${courtName} alle ${timeStr} non si è riempita, purtroppo 😔`,
-            `Saltata la partita al ${courtName} alle ${timeStr} 😕`,
-            `${courtName} alle ${timeStr}: non si gioca 😔`,
+            `${courtName} — ${timeStr}: non si gioca più 😔`,
+            `La partita al ${courtName} (${timeStr}) è saltata 😔`,
+            `${courtName} — ${timeStr}: annullata, non si è riempita 😕`,
+            `Purtroppo ${courtName} — ${timeStr} non va in porto 😔`,
+            `Niente partita al ${courtName} — ${timeStr} 😕`,
+            `${courtName} — ${timeStr}: partita cancellata 😔`,
+            `La partita al ${courtName} (${timeStr}) non si gioca 😕`,
+            `${courtName} — ${timeStr}: non si è riempita, purtroppo 😔`,
+            `Saltata la partita al ${courtName} — ${timeStr} 😕`,
+            `${courtName} — ${timeStr}: partita annullata 😔`,
         ];
         for (const inv of pendingInvitations) {
             await sleep(randomInt(1, 3) * 1000);
@@ -278,27 +289,27 @@ export async function handleMatchUnfillable(matchId: string, forceCancel: boolea
                 await sleep(randomInt(2, 5) * 1000);
                 try {
                     const unfillableVariants = (match as any).isPrivateBooking ? [
-                        `${courtName} alle ${timeStr} — prenotazione annullata. Scrivimi quando vuoi riprenotare 🎾`,
-                        `Ho liberato ${courtName} alle ${timeStr}, la prenotazione è scaduta. Scrivimi per una nuova!`,
-                        `${courtName} alle ${timeStr} annullata — scrivimi quando vuoi riprenotare 🎾`,
-                        `La prenotazione al ${courtName} alle ${timeStr} è scaduta. Scrivimi per rifissare!`,
-                        `${courtName} alle ${timeStr}: prenotazione cancellata. Scrivimi quando sei pronto a riprenotare 🎾`,
-                        `Ho cancellato ${courtName} alle ${timeStr}. Quando vuoi riprenota pure!`,
-                        `${courtName} alle ${timeStr} non è più prenotato. Scrivimi quando vuoi un altro slot 🎾`,
-                        `Prenotazione al ${courtName} alle ${timeStr} annullata — riscrivimi quando vuoi!`,
-                        `${courtName} alle ${timeStr} liberato. Scrivimi quando vuoi prenotare di nuovo 🎾`,
-                        `Ho liberato lo slot al ${courtName} alle ${timeStr}. Rifissami quando sei pronto!`,
+                        `${courtName} — ${timeStr}: prenotazione annullata. Scrivimi quando vuoi riprenotare 🎾`,
+                        `Ho liberato ${courtName} (${timeStr}), la prenotazione è scaduta. Scrivimi per una nuova!`,
+                        `${courtName} — ${timeStr}: annullata. Scrivimi quando vuoi riprenotare 🎾`,
+                        `La prenotazione al ${courtName} (${timeStr}) è scaduta. Scrivimi per rifissare!`,
+                        `${courtName} — ${timeStr}: cancellata. Scrivimi quando sei pronto a riprenotare 🎾`,
+                        `Ho cancellato ${courtName} — ${timeStr}. Quando vuoi riprenota pure!`,
+                        `${courtName} (${timeStr}) non è più prenotato. Scrivimi quando vuoi un altro slot 🎾`,
+                        `Prenotazione al ${courtName} — ${timeStr} annullata. Riscrivimi quando vuoi!`,
+                        `${courtName} — ${timeStr}: slot liberato. Scrivimi quando vuoi prenotare di nuovo 🎾`,
+                        `Ho liberato ${courtName} (${timeStr}). Rifissami quando sei pronto!`,
                     ] : [
-                        `${courtName} alle ${timeStr} non è andata — mancavano ${missing} ${missing === 1 ? 'giocatore' : 'giocatori'}. Ti cerco subito un'alternativa 🎾`,
-                        `Partita al ${courtName} alle ${timeStr} saltata 😕 Cerco subito qualcosa di disponibile!`,
-                        `Non abbiamo chiuso ${courtName} alle ${timeStr} 😔 Ti trovo un'alternativa!`,
-                        `${courtName} alle ${timeStr} non si è riempita — mancavano ${missing} ${missing === 1 ? 'giocatore' : 'giocatori'} 😕 Mi metto subito a cercare!`,
-                        `Peccato, ${courtName} alle ${timeStr} è saltata 😔 Cerco subito qualcosa per te!`,
-                        `${courtName} alle ${timeStr} annullata — non ce l'abbiamo fatta 😕 Trovo subito un'alternativa!`,
-                        `La partita al ${courtName} alle ${timeStr} non si gioca 😔 Vediamo cosa c'è disponibile!`,
-                        `${courtName} alle ${timeStr} non è andata in porto 😕 Dammi un secondo che trovo qualcos'altro!`,
-                        `Siamo rimasti in ${confirmedPlayers.length} per ${courtName} alle ${timeStr} 😔 Ti cerco subito qualcosa!`,
-                        `${courtName} alle ${timeStr} saltata 😕 Sto già cercando un'alternativa — torno subito!`,
+                        `${courtName} — ${timeStr}: non è andata, mancavano ${missing} ${missing === 1 ? 'giocatore' : 'giocatori'}. Ti cerco subito un'alternativa 🎾`,
+                        `Partita al ${courtName} (${timeStr}) saltata 😕 Cerco subito qualcosa di disponibile!`,
+                        `Non abbiamo chiuso ${courtName} — ${timeStr} 😔 Ti trovo un'alternativa!`,
+                        `${courtName} — ${timeStr}: non si è riempita, mancavano ${missing} ${missing === 1 ? 'giocatore' : 'giocatori'} 😕 Mi metto subito a cercare!`,
+                        `Peccato, ${courtName} (${timeStr}) è saltata 😔 Cerco subito qualcosa per te!`,
+                        `${courtName} — ${timeStr}: non ce l'abbiamo fatta 😕 Trovo subito un'alternativa!`,
+                        `La partita al ${courtName} (${timeStr}) non si gioca 😔 Vediamo cosa c'è disponibile!`,
+                        `${courtName} — ${timeStr}: non è andata in porto 😕 Dammi un secondo che trovo qualcos'altro!`,
+                        `Siamo rimasti in ${confirmedPlayers.length} per ${courtName} (${timeStr}) 😔 Ti cerco subito qualcosa!`,
+                        `${courtName} — ${timeStr}: saltata 😕 Sto già cercando un'alternativa — torno subito!`,
                     ];
                     await simulateTypingAndSend(
                         mp.player.phoneNumber,
