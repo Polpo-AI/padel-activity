@@ -730,7 +730,9 @@ export async function handleMatchFilled(matchId: string, startTime: Date): Promi
 
     const timeStr = startTime.toLocaleTimeString('it-IT', { timeZone: 'Europe/Rome', hour: '2-digit', minute: '2-digit' });
     const dateStr = startTime.toLocaleDateString('it-IT', { timeZone: 'Europe/Rome', weekday: 'long', day: 'numeric', month: 'long' });
-    const groupName = `Padel ${timeStr} - ${match.court?.name || 'Campo'}`;
+    const shortDay = startTime.toLocaleDateString('it-IT', { timeZone: 'Europe/Rome', weekday: 'short', day: '2-digit', month: '2-digit' });
+    const courtShort = match.court?.name || 'Campo';
+    const groupName = `Padel · ${courtShort} · ${shortDay} · ${timeStr}`;
 
     // Genera messaggio di conferma warm con Haiku
     const firstNames = confirmed.map(mp => (mp.player.name || 'Giocatore').split(' ')[0]).join(', ');

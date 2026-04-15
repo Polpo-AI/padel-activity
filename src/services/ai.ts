@@ -210,11 +210,11 @@ export async function generateInvitation(
     if (socialContext && socialContext.players.length > 0) {
         const signals: string[] = [];
 
-        // Nomi con livello (solo first name + Lv. se disponibile)
-        const names = socialContext.players
-            .map(p => p.skillLevel > 0 ? `${p.name} (${Number(p.skillLevel).toFixed(1)})` : p.name)
-            .join(', ');
-        signals.push(`Già confermati: ${names}.`);
+        // Nomi con livello (solo first name + Lv. se disponibile), uno per riga
+        const nameLines = socialContext.players
+            .map(p => p.skillLevel > 0 ? `- ${p.name} (${Number(p.skillLevel).toFixed(1)})` : `- ${p.name}`)
+            .join('\n');
+        signals.push(`Già confermati:\n${nameLines}`);
 
         // Frequenza di gioco
         const frequent = socialContext.players.filter(p => p.matchesLast30Days >= 3);
