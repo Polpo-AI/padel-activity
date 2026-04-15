@@ -132,7 +132,7 @@ export async function buildBrainContext(jid: string, phoneNumber: string): Promi
                 },
                 include: {
                     court: true,
-                    MatchPlayer: { where: { leftAt: null }, include: { player: { select: { id: true, name: true, skillLevel: true } } } },
+                    MatchPlayer: { where: { leftAt: null }, include: { player: { select: { id: true, name: true, skillLevel: true, gender: true } } } },
                 },
                 orderBy: { startTime: 'asc' },
                 take: 8,
@@ -141,7 +141,8 @@ export async function buildBrainContext(jid: string, phoneNumber: string): Promi
 
         pendingInvitations = inv;
         confirmedMatches = conf;
-        availableMatches = avail;
+        // Filtra le partite gender-incompatibili: il brain non deve proporle come disponibili
+        availableMatches = (avail as any[]).filter(m => isMatchGenderCompatible(m, player.gender ?? 'UNKNOWN'));
 
         // Ordina per completezza decrescente (quasi piene prima = migliori per redirect)
         availableMatches.sort((a: any, b: any) => {
@@ -1284,6 +1285,39 @@ async function findPlayerFuzzy(name: string, clubId: string): Promise<any | null
     return bestMatch;
 }
 
+/**
+ * Verifica compatibilità di genere tra un giocatore e un match OPEN.
+ * Regole:
+ * - isMixed=true: max 2 del genere del giocatore già presenti → compatibile
+ * - isMixed=false: targetGender esplicito o inferito dai partecipanti deve coincidere
+ * - genere UNKNOWN: nessun filtro (compatibile per default)
+ */
+function isMatchGenderCompatible(
+    match: { isMixed: boolean; targetGender?: string | null; MatchPlayer: { player?: { gender?: string | null } | null }[] },
+    playerGender: string
+): boolean {
+    if (playerGender === 'UNKNOWN') return true;
+
+    if (match.isMixed) {
+        // In un match misto il bilanciamento è 2M+2F: max 2 del proprio genere
+        const myGenderCount = match.MatchPlayer.filter(mp => mp.player?.gender === playerGender).length;
+        return myGenderCount < 2;
+    } else {
+        if (match.targetGender === 'ANY') return true;
+        if (match.targetGender === 'MALE') return playerGender === 'MALE';
+        if (match.targetGender === 'FEMALE') return playerGender === 'FEMALE';
+        // Nessun targetGender esplicito: inferisci dai partecipanti
+        const participantGenders = match.MatchPlayer
+            .map(mp => mp.player?.gender)
+            .filter((g): g is string => !!g && g !== 'UNKNOWN');
+        if (participantGenders.length === 0) return true; // Match vuoto: qualsiasi genere OK
+        const firstGender = participantGenders[0];
+        const allSame = participantGenders.every(g => g === firstGender);
+        if (allSame && firstGender !== playerGender) return false;
+        return true;
+    }
+}
+
 async function joinExistingMatch(matchId: string, player: any): Promise<{ success: boolean; errorMessage?: string }> {
     try {
         await prisma.$transaction(async (tx: any) => {
@@ -1427,7 +1461,7 @@ async function bookSlotForPlayer(
         }
         const skillMin = player.skillLevel - (club?.matchLowerRange ?? 1.0);
         const skillMax = player.skillLevel + (club?.matchUpperRange ?? 1.0);
-        const existing = await prisma.match.findFirst({
+        const existingCandidates = await prisma.match.findMany({
             where: {
                 clubId: player.clubId,
                 status: 'OPEN',
@@ -1440,11 +1474,17 @@ async function bookSlotForPlayer(
                     ],
                 },
             },
-            include: { MatchPlayer: { where: { leftAt: null } } },
+            include: { MatchPlayer: { where: { leftAt: null }, include: { player: { select: { gender: true } } } } },
             orderBy: { startTime: 'asc' },
+            take: 10,
         });
 
-        if (existing && existing.MatchPlayer.length < existing.playersNeeded) {
+        // Filtra gender-compatibili: se incompatibile, salta (non bloccarsi su GENDER_MISMATCH)
+        const existing = existingCandidates.find(
+            m => m.MatchPlayer.length < m.playersNeeded && isMatchGenderCompatible(m, player.gender ?? 'UNKNOWN')
+        ) ?? null;
+
+        if (existing) {
             const joinResult = await joinExistingMatch(existing.id, player);
             return { ...joinResult, matchId: existing.id };
         }
