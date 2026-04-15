@@ -58,7 +58,7 @@ async function main() {
     console.log('[2/3] Creazione partite...');
 
     /*
-     * GIOVEDÌ 17 APRILE (domani)
+     * GIOVEDÌ 16 APRILE (domani)
      * ──────────────────────────
      * G1  10:00 C1  OPEN  solo donne (3/4)   → Davide NON la vede [gender filter]
      * G2  12:00 C3  OPEN  misto 2M già (2/4) → Davide NON la vede [isMixed max 2 same]
@@ -66,50 +66,50 @@ async function main() {
      * G4  18:00 C4  OPEN  misto 1M+1F (2/4)  → Davide PUÒ joinare (misto bilanciato)
      * G5  20:00 C1  OPEN  solo maschi (1/4)  → Davide PUÒ joinare (matchmaking normale)
      *
-     * VENERDÌ 18 APRILE
+     * VENERDÌ 17 APRILE
      * ─────────────────
      * G6  10:00 C1  OPEN  solo donne (2/4)   → Paola PUÒ, Davide NO [gender filter]
      * G7  16:00 C3  OPEN  skill 5.5 (2/4)    → Davide NON la vede [fuori skill range]
      * G8  18:00 C4  LOCKED isPrivate         → non joinabile
      *
-     * SABATO 19 APRILE
+     * SABATO 18 APRILE
      * ────────────────
      * G9  10:00 C1  OPEN  solo maschi (0/4)  → Wave parte subito (nessun giocatore)
      * G10 16:00 C3  LOCKED misto (4/4)       → piena, non joinabile
      *
-     * DOMENICA 20 APRILE
+     * DOMENICA 19 APRILE
      * ──────────────────
      * G11 10:00 C1  OPEN  solo maschi (2/4)  → Davide PUÒ (genere OK, skill OK)
      * G12 16:00 C2  OPEN  misto (1M, 0/4→1)  → background per wave
      *
-     * SETTIMANA PROSSIMA (21-25 Aprile)
+     * SETTIMANA PROSSIMA (20-24 Aprile)
      * ───────────────────────────────────
-     * G13 Lun 21 10:00 C1  OPEN  solo maschi (1/4)  → test cancellazione
-     * G14 Mer 23 16:00 C3  LOCKED private (4/4)     → background
-     * G15 Ven 25 18:00 C1  OPEN  misto (0/4)        → test reschedule
+     * G13 Lun 20 10:00 C1  OPEN  solo maschi (1/4)  → test cancellazione
+     * G14 Mer 22 16:00 C3  LOCKED private (4/4)     → background
+     * G15 Ven 24 18:00 C1  OPEN  misto (0/4)        → test reschedule
      */
 
     const matches = [
-        // ── GIOVEDÌ 17 ──
-        { id: 'g1-donne-3su4',    courtId: C1_SCOP, startTime: utc(2026,4,17,10), isMixed: false, targetGender: 'FEMALE', skillLevel: 3.0, status: 'OPEN',   isPrivateBooking: false },
-        { id: 'g2-misto-2maschi', courtId: C3_SCOP, startTime: utc(2026,4,17,12), isMixed: true,  targetGender: null,     skillLevel: 3.5, status: 'OPEN',   isPrivateBooking: false },
-        { id: 'g3-maschi-3su4',   courtId: C2_COPE, startTime: utc(2026,4,17,16), isMixed: false, targetGender: 'MALE',   skillLevel: 3.5, status: 'OPEN',   isPrivateBooking: false },
-        { id: 'g4-misto-1m1f',    courtId: C4_COPE, startTime: utc(2026,4,17,18), isMixed: true,  targetGender: null,     skillLevel: 3.5, status: 'OPEN',   isPrivateBooking: false },
-        { id: 'g5-maschi-1su4',   courtId: C1_SCOP, startTime: utc(2026,4,17,20), isMixed: false, targetGender: 'MALE',   skillLevel: 3.5, status: 'OPEN',   isPrivateBooking: false },
-        // ── VENERDÌ 18 ──
-        { id: 'g6-donne-2su4',    courtId: C1_SCOP, startTime: utc(2026,4,18,10), isMixed: false, targetGender: 'FEMALE', skillLevel: 3.0, status: 'OPEN',   isPrivateBooking: false },
-        { id: 'g7-skill-alto',    courtId: C3_SCOP, startTime: utc(2026,4,18,16), isMixed: false, targetGender: 'MALE',   skillLevel: 5.5, status: 'OPEN',   isPrivateBooking: false },
-        { id: 'g8-locked-priv',   courtId: C4_COPE, startTime: utc(2026,4,18,18), isMixed: true,  targetGender: null,     skillLevel: 3.5, status: 'LOCKED', isPrivateBooking: true  },
-        // ── SABATO 19 ──
-        { id: 'g9-vuota-wave',    courtId: C1_SCOP, startTime: utc(2026,4,19,10), isMixed: false, targetGender: 'MALE',   skillLevel: 3.5, status: 'OPEN',   isPrivateBooking: false },
-        { id: 'g10-piena-locked', courtId: C3_SCOP, startTime: utc(2026,4,19,16), isMixed: true,  targetGender: null,     skillLevel: 3.5, status: 'LOCKED', isPrivateBooking: false },
-        // ── DOMENICA 20 ──
-        { id: 'g11-maschi-2su4',  courtId: C1_SCOP, startTime: utc(2026,4,20,10), isMixed: false, targetGender: 'MALE',   skillLevel: 3.0, status: 'OPEN',   isPrivateBooking: false },
-        { id: 'g12-misto-bg',     courtId: C2_COPE, startTime: utc(2026,4,20,16), isMixed: true,  targetGender: null,     skillLevel: 3.5, status: 'OPEN',   isPrivateBooking: false },
+        // ── GIOVEDÌ 16 ──
+        { id: 'g1-donne-3su4',    courtId: C1_SCOP, startTime: utc(2026,4,16,10), isMixed: false, targetGender: 'FEMALE', skillLevel: 3.0, status: 'OPEN',   isPrivateBooking: false },
+        { id: 'g2-misto-2maschi', courtId: C3_SCOP, startTime: utc(2026,4,16,12), isMixed: true,  targetGender: null,     skillLevel: 3.5, status: 'OPEN',   isPrivateBooking: false },
+        { id: 'g3-maschi-3su4',   courtId: C2_COPE, startTime: utc(2026,4,16,16), isMixed: false, targetGender: 'MALE',   skillLevel: 3.5, status: 'OPEN',   isPrivateBooking: false },
+        { id: 'g4-misto-1m1f',    courtId: C4_COPE, startTime: utc(2026,4,16,18), isMixed: true,  targetGender: null,     skillLevel: 3.5, status: 'OPEN',   isPrivateBooking: false },
+        { id: 'g5-maschi-1su4',   courtId: C1_SCOP, startTime: utc(2026,4,16,20), isMixed: false, targetGender: 'MALE',   skillLevel: 3.5, status: 'OPEN',   isPrivateBooking: false },
+        // ── VENERDÌ 17 ──
+        { id: 'g6-donne-2su4',    courtId: C1_SCOP, startTime: utc(2026,4,17,10), isMixed: false, targetGender: 'FEMALE', skillLevel: 3.0, status: 'OPEN',   isPrivateBooking: false },
+        { id: 'g7-skill-alto',    courtId: C3_SCOP, startTime: utc(2026,4,17,16), isMixed: false, targetGender: 'MALE',   skillLevel: 5.5, status: 'OPEN',   isPrivateBooking: false },
+        { id: 'g8-locked-priv',   courtId: C4_COPE, startTime: utc(2026,4,17,18), isMixed: true,  targetGender: null,     skillLevel: 3.5, status: 'LOCKED', isPrivateBooking: true  },
+        // ── SABATO 18 ──
+        { id: 'g9-vuota-wave',    courtId: C1_SCOP, startTime: utc(2026,4,18,10), isMixed: false, targetGender: 'MALE',   skillLevel: 3.5, status: 'OPEN',   isPrivateBooking: false },
+        { id: 'g10-piena-locked', courtId: C3_SCOP, startTime: utc(2026,4,18,16), isMixed: true,  targetGender: null,     skillLevel: 3.5, status: 'LOCKED', isPrivateBooking: false },
+        // ── DOMENICA 19 ──
+        { id: 'g11-maschi-2su4',  courtId: C1_SCOP, startTime: utc(2026,4,19,10), isMixed: false, targetGender: 'MALE',   skillLevel: 3.0, status: 'OPEN',   isPrivateBooking: false },
+        { id: 'g12-misto-bg',     courtId: C2_COPE, startTime: utc(2026,4,19,16), isMixed: true,  targetGender: null,     skillLevel: 3.5, status: 'OPEN',   isPrivateBooking: false },
         // ── SETTIMANA PROSSIMA ──
-        { id: 'g13-cancel-test',  courtId: C1_SCOP, startTime: utc(2026,4,21,10), isMixed: false, targetGender: 'MALE',   skillLevel: 3.5, status: 'OPEN',   isPrivateBooking: false },
-        { id: 'g14-locked-bg',    courtId: C3_SCOP, startTime: utc(2026,4,23,16), isMixed: true,  targetGender: null,     skillLevel: 3.5, status: 'LOCKED', isPrivateBooking: true  },
-        { id: 'g15-reschedule',   courtId: C1_SCOP, startTime: utc(2026,4,25,18), isMixed: true,  targetGender: null,     skillLevel: 3.5, status: 'OPEN',   isPrivateBooking: false },
+        { id: 'g13-cancel-test',  courtId: C1_SCOP, startTime: utc(2026,4,20,10), isMixed: false, targetGender: 'MALE',   skillLevel: 3.5, status: 'OPEN',   isPrivateBooking: false },
+        { id: 'g14-locked-bg',    courtId: C3_SCOP, startTime: utc(2026,4,22,16), isMixed: true,  targetGender: null,     skillLevel: 3.5, status: 'LOCKED', isPrivateBooking: true  },
+        { id: 'g15-reschedule',   courtId: C1_SCOP, startTime: utc(2026,4,24,18), isMixed: true,  targetGender: null,     skillLevel: 3.5, status: 'OPEN',   isPrivateBooking: false },
     ] as const;
 
     for (const m of matches) {
@@ -187,26 +187,26 @@ async function main() {
 
     // ── RIEPILOGO ─────────────────────────────────────────────────────────────
     console.log('\n=== SCENARI DI TEST ===\n');
-    console.log('GIO 17/04');
+    console.log('GIO 16/04');
     console.log('  G1  10:00 C1 scoperto — OPEN solo donne (3/4) → Davide NON la vede');
     console.log('  G2  12:00 C3 scoperto — OPEN misto 2M (2/4)  → Davide NON la vede (max 2 stessi)');
     console.log('  G3  16:00 C2 coperto  — OPEN solo maschi (3/4)→ Davide PUÒ entrare → LOCKED → gruppo WA');
     console.log('  G4  18:00 C4 coperto  — OPEN misto 1M+1F (2/4)→ Davide PUÒ entrare');
     console.log('  G5  20:00 C1 scoperto — OPEN solo maschi (1/4)→ matchmaking normale');
-    console.log('VEN 18/04');
+    console.log('VEN 17/04');
     console.log('  G6  10:00 C1 scoperto — OPEN solo donne (2/4) → Paola PUÒ, Davide NO');
     console.log('  G7  16:00 C3 scoperto — OPEN skill 5.5 (2/4)  → Davide NON la vede (range ±1)');
     console.log('  G8  18:00 C4 coperto  — LOCKED privata (4/4)  → non joinabile');
-    console.log('SAB 19/04');
+    console.log('SAB 18/04');
     console.log('  G9  10:00 C1 scoperto — OPEN vuota (0/4)      → wave parte (test wave)');
     console.log('  G10 16:00 C3 scoperto — LOCKED misto (4/4)    → non joinabile');
-    console.log('DOM 20/04');
+    console.log('DOM 19/04');
     console.log('  G11 10:00 C1 scoperto — OPEN maschi (2/4)     → Davide PUÒ');
     console.log('  G12 16:00 C2 coperto  — OPEN misto (1/4)      → background wave');
     console.log('SETTIMANA PROSSIMA');
-    console.log('  G13 Lun 21 10:00 C1  — OPEN maschi (1/4)      → test cancellazione');
-    console.log('  G14 Mer 23 16:00 C3  — LOCKED privata          → background');
-    console.log('  G15 Ven 25 18:00 C1  — OPEN misto (0/4)       → test reschedule');
+    console.log('  G13 Lun 20 10:00 C1  — OPEN maschi (1/4)      → test cancellazione');
+    console.log('  G14 Mer 22 16:00 C3  — LOCKED privata          → background');
+    console.log('  G15 Ven 24 18:00 C1  — OPEN misto (0/4)       → test reschedule');
 
     await prisma.$disconnect();
     await pool.end();
