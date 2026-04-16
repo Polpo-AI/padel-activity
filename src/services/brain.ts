@@ -347,8 +347,8 @@ export async function callBrain(
             const otherPlayers = (mp.match.MatchPlayer as any[])
                 .filter((other: any) => other.player?.id !== player!.id)
                 .map((other: any) => {
-                    const name = other.player?.name || 'Sconosciuto';
-                    const lvl = other.player?.skillLevel > 0 ? ` (Liv. ${other.player.skillLevel})` : '';
+                    const name = (other.player?.name || 'Sconosciuto').split(' ')[0];
+                    const lvl = other.player?.skillLevel > 0 ? ` (${Number(other.player.skillLevel).toFixed(1)})` : '';
                     return `${name}${lvl}`;
                 });
             const playersLine = otherPlayers.length > 0 ? ` – altri confermati: ${otherPlayers.join(', ')}` : '';
@@ -367,7 +367,7 @@ export async function callBrain(
             const playerNames = (m.MatchPlayer as any[])
                 .map((mp: any) => {
                     const lvl = mp.player?.skillLevel > 0 ? ` (${Number(mp.player.skillLevel).toFixed(1)})` : '';
-                    return `${mp.player?.name || '?'}${lvl}`;
+                    return `${(mp.player?.name || '?').split(' ')[0]}${lvl}`;
                 }).join(', ');
             const court = courts.find((c: any) => c.id === m.courtId);
             const stdPrices = court?.prices?.filter((p: any) => !p.startDate && !p.endDate) ?? [];
