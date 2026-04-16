@@ -1385,6 +1385,53 @@ async function joinExistingMatch(matchId: string, player: any): Promise<{ succes
                 await tx.match.update({ where: { id: matchId }, data: { status: 'LOCKED' } });
             }
         });
+
+        // Post-join: per match misti, se un genere ha raggiunto quota 2 → notifica i PENDING di quel genere
+        try {
+            const updatedMatch = await prisma.match.findUnique({
+                where: { id: matchId },
+                include: {
+                    MatchPlayer: {
+                        where: { leftAt: null },
+                        include: { player: { select: { gender: true } } },
+                    },
+                    court: true,
+                },
+            });
+            if (updatedMatch?.isMixed) {
+                const maleCount = updatedMatch.MatchPlayer.filter((mp: any) => mp.player?.gender === 'MALE').length;
+                const femaleCount = updatedMatch.MatchPlayer.filter((mp: any) => mp.player?.gender === 'FEMALE').length;
+                const fullGender: string | null = maleCount >= 2 ? 'MALE' : femaleCount >= 2 ? 'FEMALE' : null;
+
+                if (fullGender) {
+                    // Trova invitation PENDING per giocatori del genere pieno
+                    const pendingForGender = await prisma.invitation.findMany({
+                        where: { matchId, status: 'PENDING' },
+                        include: { player: { select: { id: true, phoneNumber: true, gender: true } } },
+                    });
+                    const toNotify = pendingForGender.filter((inv: any) => inv.player?.gender === fullGender);
+
+                    if (toNotify.length > 0) {
+                        const { simulateTypingAndSend } = await import('./whatsapp');
+                        const timeStr = updatedMatch.startTime.toLocaleTimeString('it-IT', { timeZone: 'Europe/Rome', hour: '2-digit', minute: '2-digit' });
+                        const dateStr = updatedMatch.startTime.toLocaleDateString('it-IT', { timeZone: 'Europe/Rome', weekday: 'long', day: 'numeric', month: 'long' });
+                        const genderLabel = fullGender === 'MALE' ? 'uomini' : 'donne';
+                        const msg = `La partita di ${dateStr} alle ${timeStr} su ${updatedMatch.court?.name || 'campo'} ha raggiunto il massimo di ${genderLabel} — non c'è più posto per te in questa partita.`;
+
+                        for (const inv of toNotify) {
+                            await prisma.invitation.update({ where: { id: inv.id }, data: { status: 'IGNORED' } });
+                            if (inv.player?.phoneNumber) {
+                                simulateTypingAndSend(`${inv.player.phoneNumber}@s.whatsapp.net`, msg).catch(() => {});
+                            }
+                        }
+                        logger.info({ matchId, fullGender, notified: toNotify.length }, 'Mixed match gender slot full — pending notified and ignored');
+                    }
+                }
+            }
+        } catch (notifyErr) {
+            logger.warn({ notifyErr, matchId }, 'Failed to notify mixed gender-full pending invitations');
+        }
+
         return { success: true };
     } catch (err: any) {
         if (err.message === 'MATCH_CLOSED') return { success: false, errorMessage: 'La partita si è chiusa nel frattempo.' };
