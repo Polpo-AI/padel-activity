@@ -883,19 +883,22 @@ export async function executeAction(
                 },
             });
 
-            // Misto: se il genere che esce aveva raggiunto quota 2 (ora è < 2), sblocca gli IGNORED di quel genere
-            if (match?.isMixed && leavingGender !== 'UNKNOWN') {
-                const remainingOfGender = match.MatchPlayer.filter((rmp: any) => rmp.player?.gender === leavingGender).length;
-                if (remainingOfGender < 2) {
-                    // Trova invitation IGNORED per quel genere e rimuovile → tornano eleggibili per la wave
-                    const ignoredOfGender = await prisma.invitation.findMany({
+            // Misto: sblocca IGNORED di tutti i generi che hanno ancora spazio dopo l'uscita
+            if (match?.isMixed) {
+                const maleCount = match.MatchPlayer.filter((rmp: any) => rmp.player?.gender === 'MALE').length;
+                const femaleCount = match.MatchPlayer.filter((rmp: any) => rmp.player?.gender === 'FEMALE').length;
+                const gendersWithSpace: string[] = [];
+                if (maleCount < 2) gendersWithSpace.push('MALE');
+                if (femaleCount < 2) gendersWithSpace.push('FEMALE');
+                if (gendersWithSpace.length > 0) {
+                    const ignoredInvs = await prisma.invitation.findMany({
                         where: { matchId: mp.matchId, status: 'IGNORED' },
                         include: { player: { select: { gender: true } } },
                     });
-                    const toUnblock = ignoredOfGender.filter((inv: any) => inv.player?.gender === leavingGender);
+                    const toUnblock = ignoredInvs.filter((inv: any) => gendersWithSpace.includes(inv.player?.gender));
                     if (toUnblock.length > 0) {
                         await prisma.invitation.deleteMany({ where: { id: { in: toUnblock.map((i: any) => i.id) } } });
-                        logger.info({ matchId: mp.matchId, leavingGender, unblocked: toUnblock.length }, 'Mixed gender slot freed — unblocked IGNORED invitations');
+                        logger.info({ matchId: mp.matchId, gendersWithSpace, unblocked: toUnblock.length }, 'Mixed cancel — unblocked IGNORED invitations for genders with space');
                     }
                 }
             }
@@ -932,17 +935,13 @@ export async function executeAction(
                     }
                 }
             } else if (match?.status === 'OPEN') {
-                // OPEN: rilancia wave se il genere che esce aveva liberato un posto (o match non misto)
-                const remainingOfGender = match.MatchPlayer.filter((rmp: any) => rmp.player?.gender === leavingGender).length;
-                const genderSlotFreed = match.isMixed && leavingGender !== 'UNKNOWN' && remainingOfGender < 2;
-                if (genderSlotFreed) {
-                    waveQueue.add('process-wave', {
-                        matchId: mp.matchId,
-                        waveNumber: 1,
-                        scheduledAt: Date.now(),
-                    }, { delay: 30000 }).catch(err => logger.warn({ err, matchId: mp.matchId }, 'Wave relaunch after gender-slot free failed'));
-                    logger.info({ matchId: mp.matchId, leavingGender }, 'OPEN mixed match: gender slot freed — wave relaunched');
-                }
+                // OPEN: rilancia sempre la wave dopo un cancel (c'è sempre almeno un posto libero)
+                waveQueue.add('process-wave', {
+                    matchId: mp.matchId,
+                    waveNumber: 1,
+                    scheduledAt: Date.now(),
+                }, { delay: 30000 }).catch(err => logger.warn({ err, matchId: mp.matchId }, 'Wave relaunch after cancel failed'));
+                logger.info({ matchId: mp.matchId, leavingGender }, 'OPEN match: player cancelled — wave relaunched');
             }
 
             const { decreaseReliability } = await import('./scoring');
