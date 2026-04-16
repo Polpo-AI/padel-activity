@@ -150,11 +150,19 @@ export async function selectPlayersForWave(
     // null = legacy: inferisci dal genere dei partecipanti già iscritti (se isMixed=false)
     let targetGender: any = null;
     const explicitTarget = (match as any).targetGender as string | null;
+    const participants = match.MatchPlayer.filter(mp => !mp.leftAt).map(mp => mp.player).filter(Boolean);
+
     if (explicitTarget === 'MALE' || explicitTarget === 'FEMALE') {
         targetGender = explicitTarget;
-    } else if (explicitTarget !== 'ANY' && !match.isMixed) {
-        // Legacy: inferisci dai partecipanti
-        const participants = match.MatchPlayer.map(mp => mp.player).filter(Boolean);
+    } else if (match.isMixed) {
+        // Misto: se uno dei due generi ha già raggiunto 2 posti, invitare solo l'altro
+        const maleCount = participants.filter(p => p.gender === 'MALE').length;
+        const femaleCount = participants.filter(p => p.gender === 'FEMALE').length;
+        if (maleCount >= 2) targetGender = 'FEMALE';
+        else if (femaleCount >= 2) targetGender = 'MALE';
+        // altrimenti nessun filtro: entrambi i generi sono ancora disponibili
+    } else if (explicitTarget !== 'ANY') {
+        // Non-misto legacy: inferisci dai partecipanti
         if (participants.length > 0) {
             const genders = Array.from(new Set(participants.map(p => p.gender)));
             if (genders.length === 1 && genders[0] !== 'UNKNOWN') {
@@ -246,12 +254,18 @@ export async function getPlayersForRecovery(matchId: string): Promise<any[]> {
 
     let targetGender: any = null;
     const explicitTargetR = (match as any).targetGender as string | null;
+    const participantsR = match.MatchPlayer.filter(mp => !mp.leftAt).map(mp => mp.player).filter(Boolean);
+
     if (explicitTargetR === 'MALE' || explicitTargetR === 'FEMALE') {
         targetGender = explicitTargetR;
-    } else if (explicitTargetR !== 'ANY' && !match.isMixed) {
-        const participants = match.MatchPlayer.map(mp => mp.player).filter(Boolean);
-        if (participants.length > 0) {
-            const genders = Array.from(new Set(participants.map(p => p.gender)));
+    } else if (match.isMixed) {
+        const maleCount = participantsR.filter(p => p.gender === 'MALE').length;
+        const femaleCount = participantsR.filter(p => p.gender === 'FEMALE').length;
+        if (maleCount >= 2) targetGender = 'FEMALE';
+        else if (femaleCount >= 2) targetGender = 'MALE';
+    } else if (explicitTargetR !== 'ANY') {
+        if (participantsR.length > 0) {
+            const genders = Array.from(new Set(participantsR.map(p => p.gender)));
             if (genders.length === 1 && genders[0] !== 'UNKNOWN') {
                 targetGender = genders[0];
             }
