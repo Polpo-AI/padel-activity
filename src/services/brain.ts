@@ -872,12 +872,34 @@ export async function executeAction(
             const mp = await prisma.matchPlayer.findUnique({ where: { id: params.matchPlayerId } });
             if (!mp) return { success: false, errorMessage: 'Partecipazione non trovata.' };
 
+            const leavingGender: string = (player as any).gender ?? 'UNKNOWN';
             await prisma.matchPlayer.update({ where: { id: mp.id }, data: { leftAt: new Date() } });
 
             const match = await prisma.match.findUnique({
                 where: { id: mp.matchId },
-                include: { MatchPlayer: { where: { leftAt: null }, include: { player: { select: { phoneNumber: true, name: true } } } } },
+                include: {
+                    MatchPlayer: { where: { leftAt: null }, include: { player: { select: { phoneNumber: true, name: true, gender: true } } } },
+                    court: true,
+                },
             });
+
+            // Misto: se il genere che esce aveva raggiunto quota 2 (ora è < 2), sblocca gli IGNORED di quel genere
+            if (match?.isMixed && leavingGender !== 'UNKNOWN') {
+                const remainingOfGender = match.MatchPlayer.filter((rmp: any) => rmp.player?.gender === leavingGender).length;
+                if (remainingOfGender < 2) {
+                    // Trova invitation IGNORED per quel genere e rimuovile → tornano eleggibili per la wave
+                    const ignoredOfGender = await prisma.invitation.findMany({
+                        where: { matchId: mp.matchId, status: 'IGNORED' },
+                        include: { player: { select: { gender: true } } },
+                    });
+                    const toUnblock = ignoredOfGender.filter((inv: any) => inv.player?.gender === leavingGender);
+                    if (toUnblock.length > 0) {
+                        await prisma.invitation.deleteMany({ where: { id: { in: toUnblock.map((i: any) => i.id) } } });
+                        logger.info({ matchId: mp.matchId, leavingGender, unblocked: toUnblock.length }, 'Mixed gender slot freed — unblocked IGNORED invitations');
+                    }
+                }
+            }
+
             if (match?.status === 'LOCKED') {
                 if (match.isPrivateBooking) {
                     // Prenotazione privata: il campo era riservato per questo player → libera il slot
@@ -895,7 +917,7 @@ export async function executeAction(
                         scheduledAt: Date.now(),
                     }, { delay: 0 }).catch(err => logger.warn({ err, matchId: mp.matchId }, 'Wave scheduling failed'));
 
-                    // GAP #11: notifica gli altri co-giocatori che il gruppo si è riaperto
+                    // Notifica gli altri co-giocatori che il gruppo si è riaperto
                     const matchTimeStr = match.startTime.toLocaleString('it-IT', {
                         timeZone: 'Europe/Rome', weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit',
                     });
@@ -908,6 +930,18 @@ export async function executeAction(
                             ).catch(() => {});
                         }
                     }
+                }
+            } else if (match?.status === 'OPEN') {
+                // OPEN: rilancia wave se il genere che esce aveva liberato un posto (o match non misto)
+                const remainingOfGender = match.MatchPlayer.filter((rmp: any) => rmp.player?.gender === leavingGender).length;
+                const genderSlotFreed = match.isMixed && leavingGender !== 'UNKNOWN' && remainingOfGender < 2;
+                if (genderSlotFreed) {
+                    waveQueue.add('process-wave', {
+                        matchId: mp.matchId,
+                        waveNumber: 1,
+                        scheduledAt: Date.now(),
+                    }, { delay: 30000 }).catch(err => logger.warn({ err, matchId: mp.matchId }, 'Wave relaunch after gender-slot free failed'));
+                    logger.info({ matchId: mp.matchId, leavingGender }, 'OPEN mixed match: gender slot freed — wave relaunched');
                 }
             }
 
