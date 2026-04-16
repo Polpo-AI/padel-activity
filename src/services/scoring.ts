@@ -136,6 +136,7 @@ async function filterExcluded(players: any[]): Promise<any[]> {
 export async function selectPlayersForWave(
     matchId: string,
     spotsNeeded: number,
+    extraExcluded: string[] = [],
 ): Promise<{ players: any[]; targetCount: number }> {
     const match = await prisma.match.findUnique({
         where: { id: matchId },
@@ -174,6 +175,7 @@ export async function selectPlayersForWave(
     const excludedIds = [
         ...match.invitations.map(i => i.playerId),
         ...match.MatchPlayer.map(mp => mp.playerId),
+        ...extraExcluded,
     ];
 
     const skillMin = match.skillLevel - (match.club?.matchLowerRange ?? 1.0);

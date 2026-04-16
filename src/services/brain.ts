@@ -539,11 +539,18 @@ ${slotsAvailability.fullSlots.length > 0 ? `\nSlot completamente occupati (nessu
 COME USARE QUESTA INFO:
 • freeScopertoSlots è una lista di SUGGERIMENTI pre-calcolati a intervalli fissi — NON è una whitelist di orari prenotabili. Se l'utente richiede un orario SPECIFICO (es. "sabato alle 9"), quell'orario è valido anche se non appare nella lista, purché non sia in fullSlots e rientri nell'orario di apertura del circolo.
 • "quando hai disponibilità?" / "quando c'è posto?" → proponi 3-4 slot da freeScopertoSlots in modo conversazionale. Se non ci sono scoperti liberi, proponi quelli con solo coperto.
+• ⚠️ NON dedurre quale campo specifico è libero o occupato da questa sezione — conosci solo se uno slot è pieno in totale o ha solo coperti. Per i dettagli del campo assegnato aspetta l'esito di BOOK_FIELD. MAI dire "l'unico campo disponibile è X" basandoti su questa sezione.
+
+FASCE ORARIE — converti i termini naturali in orari:
+• "mattina" = 08:00–12:00
+• "pomeriggio" = 13:00–17:00
+• "sera" / "serata" = 17:30 in poi (incluse le 18:00, 18:30, 19:00, ecc.)
+• "tardo pomeriggio" = 16:00–18:00
 
 PRIORITÀ MATCHMAKING (private: false o intento matchmaking) — segui ESATTAMENTE quest'ordine:
   1. L'utente chiede un orario specifico → PRIMA guarda nelle PARTITE APERTE DISPONIBILI se esiste qualcosa a quell'orario (anche su campo coperto). Se sì → usa NONE, presenta la partita con entusiasmo: campo, tipo (misto/unisex), costo, nomi dei giocatori già dentro. Chiedi conferma ("Vuoi unirti?"). NON fare BOOK_FIELD finché l'utente non conferma esplicitamente.
   2. L'utente conferma ("sì", "perfetto", "vai") → BOOK_FIELD con joinMatchId.
-  3. Nessuna partita aperta a quell'orario → controlla fullSlots: se pieno → proponi slot da freeScopertoSlots o partite aperte ad altri orari. Se non pieno → BOOK_FIELD normalmente (campo scoperto se disponibile).
+  3. Nessuna partita aperta a quell'orario → controlla fullSlots: se pieno → proponi slot da freeScopertoSlots o partite aperte ad altri orari. Se non pieno → chiedi ESPLICITAMENTE all'utente se vuole creare una nuova partita ("Non c'è nessuna partita aperta a quell'orario. Vuoi che ne apra una e cerchi altri giocatori?"). NON fare BOOK_FIELD automaticamente senza conferma esplicita.
   4. L'orario è in onlyCoveredSlots → se ci sono partite aperte su coperto → step 1. Altrimenti chiedi conferma campo coperto.
 
 ⚠️ onlyCoveredSlots NON significa "slot pieno" — significa solo che i campi scoperti sono occupati da partite. Prima controlla sempre se c'è una partita joinabile in quell'orario.
@@ -1039,15 +1046,23 @@ export async function executeAction(
             if (bookResult.success && bookResult.matchId && preferredName) {
                 const preferred = await findPlayerFuzzy(preferredName, player.clubId);
                 if (preferred) {
-                    const matchRow = await prisma.match.findUnique({ where: { id: bookResult.matchId }, select: { preferredPlayerIds: true } });
+                    const matchRow = await prisma.match.findUnique({ where: { id: bookResult.matchId }, select: { preferredPlayerIds: true, isMixed: true } });
                     const currentPreferred: string[] = (matchRow as any)?.preferredPlayerIds ?? [];
+                    const updateData: Record<string, unknown> = {};
                     if (!currentPreferred.includes(preferred.id)) {
-                        await prisma.match.update({
-                            where: { id: bookResult.matchId },
-                            data: { preferredPlayerIds: [...currentPreferred, preferred.id] },
-                        });
-                        logger.info({ matchId: bookResult.matchId, preferredId: preferred.id }, 'BOOK_FIELD: preferredPlayerName added to match');
+                        updateData.preferredPlayerIds = [...currentPreferred, preferred.id];
                     }
+                    // Se il preferred è di genere diverso dal prenotante → match misto
+                    const bookerGender = (player as any).gender;
+                    const preferredGender = (preferred as any).gender;
+                    if (!(matchRow as any)?.isMixed && bookerGender && preferredGender && bookerGender !== preferredGender) {
+                        updateData.isMixed = true;
+                        logger.info({ matchId: bookResult.matchId, bookerGender, preferredGender }, 'BOOK_FIELD: preferred is different gender — match set to isMixed');
+                    }
+                    if (Object.keys(updateData).length > 0) {
+                        await prisma.match.update({ where: { id: bookResult.matchId }, data: updateData });
+                    }
+                    logger.info({ matchId: bookResult.matchId, preferredId: preferred.id }, 'BOOK_FIELD: preferredPlayerName added to match');
                 } else {
                     // Booking OK ma il giocatore preferito non è nel circolo
                     return { ...bookResult, preferredNotFound: preferredName };

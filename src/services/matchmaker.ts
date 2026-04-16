@@ -110,19 +110,23 @@ async function _processWaveInner(matchId: string, waveNumber: number, urgencyMul
             return null;
         }
 
+        // I preferred vengono passati come extraExcluded a selectPlayersForWave per evitare
+        // che finiscano nel pool normale E poi vengano anche prepended → doppio invito
+        const preferredIds: string[] = (match as any).preferredPlayerIds ?? [];
         const { players, targetCount } = await selectPlayersForWave(
             matchId,
             spotsNeeded,
+            waveNumber === 1 ? preferredIds : [],
         );
 
         let playersList = [...players];
 
-        if (waveNumber === 1 && match.preferredPlayerIds && match.preferredPlayerIds.length > 0) {
+        if (waveNumber === 1 && preferredIds.length > 0) {
             const isMorningForPreferred = isMorningMatchInRome(match.startTime);
             const dailyCapForPreferred = match.club?.maxDailyMessages ?? 2;
             const preferred = await prisma.player.findMany({
                 where: {
-                    id: { in: match.preferredPlayerIds },
+                    id: { in: preferredIds },
                     active: true,
                     ...(isMorningForPreferred
                         ? { morningContactsToday: { lt: dailyCapForPreferred }, avoidMorning: false }
@@ -135,10 +139,8 @@ async function _processWaveInner(matchId: string, waveNumber: number, urgencyMul
 
             for (const p of preferred) {
                 if (p.skillLevel >= skillMin && p.skillLevel <= skillMax) {
-                    if (!playersList.some(fp => fp.id === p.id)) {
-                        playersList.unshift(p);
-                        logger.info(`Adding preferred player ${p.name} (${p.id}) to Wave 1 prioritisation`);
-                    }
+                    playersList.unshift(p);
+                    logger.info(`Adding preferred player ${p.name} (${p.id}) to Wave 1 prioritisation`);
                 }
             }
         }
