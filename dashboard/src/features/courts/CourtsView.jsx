@@ -697,7 +697,7 @@ function MatchDetailModal({ matchId, token, onCancel, onClose }) {
   const pendingInvites = match?.invitations?.filter(inv => inv.status === "PENDING") || [];
   const spotsLeft = match ? match.playersNeeded - confirmed.length : 0;
 
-  const genderLabel = (g) => g === "MALE" ? "Solo uomini 👨" : g === "FEMALE" ? "Solo donne 👩" : g === "ANY" ? "Misto 🤝" : null;
+  const genderLabel = (g) => g === "MALE" ? "Solo uomini 👨" : g === "FEMALE" ? "Solo donne 👩" : (g === "ANY" || match?.isMixed) ? "Misto 🤝" : null;
   const typeIcon = match?.type === "LESSON" ? "👨‍🏫 Lezione" : match?.isPrivateBooking ? "🔒 Prenotazione privata" : "🎾 Matchmaking";
 
   return (
