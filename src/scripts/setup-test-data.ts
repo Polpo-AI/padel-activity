@@ -147,11 +147,8 @@ async function main() {
         // M1: 2 maschi (Davide si aggiunge → 3°, wave trova 4° → LOCKED+gruppo)
         { matchId: 'm1-maschi-2su4',   playerId: 'pid-roberto'   },
         { matchId: 'm1-maschi-2su4',   playerId: 'pid-christian' },
-        // M2: LOCKED privata
+        // M2: LOCKED privata — solo chi ha prenotato (gli altri si organizzano fuori sistema)
         { matchId: 'm2-locked-priv',   playerId: 'pid-alessio'   },
-        { matchId: 'm2-locked-priv',   playerId: 'pid-sandro'    },
-        { matchId: 'm2-locked-priv',   playerId: 'pid-simone'    },
-        { matchId: 'm2-locked-priv',   playerId: 'pid-mattia'    },
         // M3: 2 maschi — wave deve invitare SOLO donne
         { matchId: 'm3-misto-2m',      playerId: 'pid-simone'    },
         { matchId: 'm3-misto-2m',      playerId: 'pid-mattia'    },
@@ -165,17 +162,11 @@ async function main() {
         { matchId: 'm5-locked-misto',  playerId: 'pid-monica'    },
         // M6: 1 maschio — Gioele cancella → wave riparte 0/4
         { matchId: 'm6-cancel-test',   playerId: 'pid-gioele'    },
-        // M7: LOCKED privata
+        // M7: LOCKED privata — solo chi ha prenotato
         { matchId: 'm7-locked-priv2',  playerId: 'pid-alessio'   },
-        { matchId: 'm7-locked-priv2',  playerId: 'pid-sandro'    },
-        { matchId: 'm7-locked-priv2',  playerId: 'pid-roberto'   },
-        { matchId: 'm7-locked-priv2',  playerId: 'pid-gioele'    },
         // M8: vuota — test preferredPlayerName
-        // M9: LOCKED privata
+        // M9: LOCKED privata — solo chi ha prenotato
         { matchId: 'm9-locked-bg',     playerId: 'pid-christian' },
-        { matchId: 'm9-locked-bg',     playerId: 'pid-simone'    },
-        { matchId: 'm9-locked-bg',     playerId: 'pid-mattia'    },
-        { matchId: 'm9-locked-bg',     playerId: 'pid-sharon'    },
         // M10: 1M+1F — misto bilanciato, Davide PUÒ entrare
         { matchId: 'm10-misto-1m1f',   playerId: 'pid-roberto'   },
         { matchId: 'm10-misto-1m1f',   playerId: 'pid-paola'     },
