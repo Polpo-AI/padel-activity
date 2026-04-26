@@ -40,7 +40,7 @@ registerBatchHandler(handleBatch);
 // BATCH HANDLER
 // ─────────────────────────────────────────────
 
-export async function handleBatch(jid: string, messages: NormalizedMessage[]): Promise<void> {
+export async function handleBatch(jid: string, messages: NormalizedMessage[], retryCount = 0): Promise<void> {
     const correlationId = `${jid.split('@')[0]}-${Date.now()}`;
     // Estrai il clubId dal primo messaggio del batch (tutti appartengono allo stesso socket/club)
     const clubId = messages[0]?.clubId;
@@ -49,6 +49,17 @@ export async function handleBatch(jid: string, messages: NormalizedMessage[]): P
             await _handleBatchInner(jid, messages, correlationId, clubId);
             conversationalPhase.delete(correlationId);
         } catch (err) {
+            const isSocketError = err instanceof Error && err.message.includes('socket not available');
+            if (isSocketError && retryCount === 0) {
+                logger.warn({ correlationId, jid, clubId }, 'Socket unavailable — retrying batch in 90s');
+                conversationalPhase.delete(correlationId);
+                setTimeout(() => {
+                    handleBatch(jid, messages, 1).catch(retryErr =>
+                        logger.error({ err: retryErr, correlationId }, `Retry batch also failed for ${jid}`)
+                    );
+                }, 90_000);
+                return;
+            }
             logger.error({ err, correlationId, clubId }, `Unhandled error in handleBatch for ${jid}`);
             // Point 6: only notify user if routing already started (user expects a reply)
             if (conversationalPhase.get(correlationId)) {
