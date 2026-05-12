@@ -61,8 +61,10 @@ export async function handleBatch(jid: string, messages: NormalizedMessage[], re
                 return;
             }
             logger.error({ err, correlationId, clubId }, `Unhandled error in handleBatch for ${jid}`);
-            const { notifyAdmin } = await import('../utils/notify-admin');
-            notifyAdmin(`🔴 Errore critico handleBatch\njid: ${jid}\ncorrelationId: ${correlationId}\n${err instanceof Error ? err.message : String(err)}`).catch(() => {});
+            if (clubId) {
+                const { notifyAdminByClubId } = await import('../utils/notify-admin');
+                notifyAdminByClubId(`🔴 Errore critico handleBatch\njid: ${jid}\n${err instanceof Error ? err.message : String(err)}`, 'critical', clubId).catch(() => {});
+            }
             // Point 6: only notify user if routing already started (user expects a reply)
             if (conversationalPhase.get(correlationId)) {
                 const _fallbacks = [
