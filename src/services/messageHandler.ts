@@ -257,19 +257,18 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[], cor
             return;
         }
 
-        // Admin: conferma azioni destructive pendenti
+        // Admin: conferma azioni destructive pendenti (priorità massima)
         const { handleAdminCommand, handleAdminFaqFlow, handleAdminPendingAction } = await import('./admin-commands');
         const pendingActionHandled = await handleAdminPendingAction(combinedText, club, jid);
         if (pendingActionHandled) return;
 
-        // Admin: tenta il parsing come comando DB PRIMA del flusso FAQ
-        // (altrimenti i comandi vengono intercettati dal classificatore FAQ se c'è una domanda pending)
-        const adminHandled = await handleAdminCommand(combinedText, club, jid);
-        if (adminHandled) return;
-
-        // Admin: gestione FAQ intelligente — solo se il messaggio non era un comando DB
+        // Admin: FAQ in sospeso PRIMA dei comandi — se c'è una domanda pending il messaggio
+        // viene classificato AI contro le FAQ; solo se non gestito passa ai comandi DB
         const faqHandled = await handleAdminFaqFlow(combinedText, club, jid);
         if (faqHandled) return;
+
+        const adminHandled = await handleAdminCommand(combinedText, club, jid);
+        if (adminHandled) return;
     }
 
     const player = await prisma.player.findFirst({
