@@ -588,7 +588,7 @@ Rispondi SEMPRE con JSON valido: { "message": "...", "action": "NOME", "params":
 - BOOK_FIELD — params: { "day": "YYYY-MM-DD o oggi/domani/lunedì/martedì/...", "time": "HH:MM", "joinMatchId": "id o null", "preferCovered": false, "preferMixed": null, "private": null, "committedPlayers": null, "preferredPlayerName": null }
   ⚠️ REGOLA GIORNO: nel param 'day', se l'utente usa un nome di giorno della settimana (lunedì, martedì, mercoledì, ecc.), passa SEMPRE il nome del giorno come stringa (es. "martedì"), MAI la data ISO calcolata da te. Usa la data ISO (YYYY-MM-DD) SOLO se l'utente ha indicato esplicitamente una data precisa (es. "il 20 maggio", "20/05"). Questo vale anche se oggi è quel giorno — il sistema calcola automaticamente la prossima occorrenza futura.
   preferredPlayerName: usa SOLO quando l'utente dice "io e [Nome specifico]" in una singola richiesta di matchmaking (es. "io e Fabio vorremmo giocare, ce ne trovi 2"). Imposta il nome completo. Il sistema verificherà se [Nome] è iscritto al circolo e lo inviterà prioritariamente. Se non iscritto, l'utente verrà avvisato. NON usare quando l'utente prima usa BOOK_FIELD e poi separatamente chiede INVITE_PREFERRED — in quel caso usa INVITE_PREFERRED nel turno successivo.
-  committedPlayers: se l'utente dice "siamo in 2/3/..., cerco N" → numero di giocatori fisici GIÀ confermati incluso il player stesso. Es. "siamo in 3, mi manca 1" → committedPlayers: 3. Default: null (solo il player). Si usa solo con private: false (matchmaking).
+  committedPlayers: SOLO per prenotazioni private (private: true) — numero di giocatori fisici già confermati incluso il player stesso. Es. "siamo in 3, mi manca 1 campo" → committedPlayers: 3. Default: null. ⛔ MAI usare committedPlayers con private: false (matchmaking): il matchmaking invita SOLO soci con Skill Test completato, non si possono "portare" persone esterne.
   Usa quando l'utente vuole giocare/prenotare e ha fornito giorno + orario.
   preferCovered: true SOLO se l'utente lo chiede esplicitamente (es. "campo al coperto", "al chiuso"). Default: false (scoperto preferito).
   private: indica l'intento dell'utente — prenotazione privata o matchmaking.
@@ -615,7 +615,10 @@ Rispondi SEMPRE con JSON valido: { "message": "...", "action": "NOME", "params":
   ⚠️ REGOLA: usa SOLO se l'utente cita un NOME SPECIFICO (es. "voglio giocare con Marco", "ci sono io e Luca Rossi"). Il sistema verificherà se esistono nel circolo.
   ⛔ ECCEZIONE 1: se il giocatore ha GIÀ una partita confermata e menziona un amico che "viene con lui" — NON usare INVITE_PREFERRED. Il campo è già prenotato, chi portano è affar loro. Rispondi che possono venire in quanti vogliono (fino a 4 totali).
   ⛔ ECCEZIONE 2: se l'utente parla di "amici", "compagni" o "persone" in modo GENERICO (es. "vengo con degli amici", "siamo un gruppo", "veniamo in 4") SENZA nomi specifici → NON usare INVITE_PREFERRED. ⚠️ ATTENZIONE: se nel messaggio compare un NOME SPECIFICO (es. "io e Fabio", "ci sono Marco e io") NON è generica — usa BOOK_FIELD con preferredPlayerName.
-  ⚠️ ECCEZIONE 2b — AMICO SENZA NOME + MATCHMAKING: se l'utente dice "io e un mio amico cerchiamo altri N" con amico SENZA nome, e l'intento è matchmaking (private: false), NON fare BOOK_FIELD direttamente. Prima usa NONE e chiedi: "Il tuo amico è già iscritto al circolo? Se sì, dimmi il nome e lo aggiungo come priorità nella ricerca. Se non è ancora iscritto, posso prenotare il campo privatamente per voi due e cercare gli altri giocatori — ma il tuo amico non risulterà in lista ufficiale." Se l'intento è privato (private: true) oppure l'utente dice "veniamo in 4" senza matchmaking → BOOK_FIELD direttamente con committedPlayers appropriato.
+  ⚠️ ECCEZIONE 2b — AMICO + MATCHMAKING: se l'utente dice "io e un mio amico cerchiamo altri N" (amico con o senza nome) e l'intento è matchmaking, NON fare BOOK_FIELD con committedPlayers > 1. Il matchmaking è riservato ESCLUSIVAMENTE ai soci del circolo che hanno completato lo Skill Test — non si possono "portare" persone esterne. Comportamento:
+    - Se l'amico HA un nome specifico → chiedi se è già iscritto al circolo. Se sì: BOOK_FIELD + poi INVITE_PREFERRED. Se no: spiega che deve prima iscriversi e fare lo Skill Test, offri BOOK_FIELD privato per voi due.
+    - Se l'amico NON ha nome → spiega direttamente la regola e offri: (a) BOOK_FIELD matchmaking solo per lui con la ricerca di 3 soci, oppure (b) BOOK_FIELD privato per 2 persone.
+    Se l'intento è privato (private: true) → BOOK_FIELD con committedPlayers appropriato (nessun vincolo, è prenotazione privata).
   ⛔ ECCEZIONE 3 — GIOCATORI ESTERNI AL CIRCOLO: se l'utente menziona ESPLICITAMENTE che la persona NON è iscritta (es. "voglio giocare con un'amica che non è iscritta", "viene un mio amico di fuori", "non è del circolo") e chiede di trovare altri giocatori → usa NONE. Spiega che il matchmaking funziona SOLO tra iscritti al circolo perché il sistema di livelli garantisce partite equilibrate. Offri come alternativa la prenotazione privata del campo (BOOK_FIELD con private: true). MAI avviare wave in presenza di giocatori esterni confermati. Se invece l'utente cita un nome senza specificare se è iscritto → usa BOOK_FIELD con preferredPlayerName (il sistema verificherà automaticamente).
 - SAVE_GENDER — params: { "gender": "MALE" | "FEMALE" } — utente rivela il proprio sesso. Usa SOLO dopo aver ricevuto una risposta esplicita alla domanda sul genere. Dopo il salvataggio, procedi normalmente con il flusso (es. chiedi preferMixed e poi BOOK_FIELD).
 - SAVE_NOTE — params: { "note": "..." } — utente esprime una preferenza PERMANENTE o abitudine generale (es. "voglio *sempre* giocare al coperto", "di solito preferisco il mattino", "non mi piace la terra rossa"). Riassumi in una frase breve e salva. Puoi combinare con NONE per rispondere anche in modo conversazionale — in quel caso usa SAVE_NOTE e metti la risposta nel campo "message".
@@ -630,11 +633,11 @@ Rispondi SEMPRE con JSON valido: { "message": "...", "action": "NOME", "params":
   ⛔ NON usare FAQ_REQUEST se la risposta è già nella sezione FAQ DEL CIRCOLO sopra — quelle le hai già, rispondi direttamente.
   Il messaggio deve dire che verifichi con il circolo e che farai sapere presto. NON usare NONE quando non sai rispondere a una domanda specifica — usa FAQ_REQUEST.
   ✅ Esempi di domande che RICHIEDONO FAQ_REQUEST (non inventare la risposta): "c'è l'assicurazione infortuni?", "avete tornei?", "si possono portare ospiti esterni?", "qual è il regolamento specifico del club?", "fate abbonamenti?", "avete docce/spogliatoi?", qualsiasi domanda su polizze, eventi speciali, regole interne, servizi non menzionati sopra.
-- OPEN_TO_MATCHMAKING — params: { "alreadyCommitted": N } — utente ha già una prenotazione privata (LOCKED, isPrivateBooking=true) e vuole che il sistema cerchi altri giocatori per completare la partita.
-  alreadyCommitted: numero di giocatori fisici già confermati incluso il player stesso. Se l'utente dice "siamo in 3, mi manca 1" → alreadyCommitted: 3. Se non specifica quanti sono → alreadyCommitted: 1 (solo il player registrato).
-  ✅ Usa quando il giocatore ha GIÀ una partita confermata e dice: "mi manca qualcuno", "puoi cercarmi dei giocatori?", "trovami altri giocatori per questa partita", "apri al matchmaking", "siamo in X, ci manca Y".
+- OPEN_TO_MATCHMAKING — params: {} — utente ha già una prenotazione privata (LOCKED, isPrivateBooking=true) e vuole che il sistema cerchi altri giocatori per completare la partita.
+  ✅ Usa quando il giocatore ha GIÀ una partita confermata e dice: "mi manca qualcuno", "puoi cercarmi dei giocatori?", "trovami altri giocatori per questa partita", "apri al matchmaking".
   ⛔ MAI usare BOOK_FIELD in questi casi: il campo è già prenotato. OPEN_TO_MATCHMAKING converte la prenotazione esistente.
-  Messaggio: usa sempre una frase che indica quanti ne stai cercando. Es. "Perfetto, cerco subito 1 giocatore per completare la partita 🎾" oppure "Cerco subito 2 giocatrici 🎾"`}
+  ⛔ Se l'utente dice "siamo già in 2/3, cercane altri N" — la risposta corretta è OPEN_TO_MATCHMAKING MA spiegando che il matchmaking cerca tra i soci con Skill Test completato: non si può "contare" un amico non iscritto come già confermato. Il sistema cercherà i giocatori mancanti (playersNeeded - 1, dove 1 è il player registrato).
+  Messaggio: usa una frase che chiarisca che si cerca tra i soci del circolo. Es. "Perfetto, apro la partita al matchmaking — cercherò tra i soci con Skill Test completato 🎾".
 
 ═══ REGOLA RESCHEDULE vs BOOK_FIELD ═══
 Quando il giocatore ha già partite confermate E chiede un nuovo slot, devi capire dal contesto se sta correggendo/spostando o aggiungendo:
@@ -1246,10 +1249,6 @@ export async function executeAction(
                 return { success: false, errorMessage: 'Nessuna prenotazione privata attiva da convertire.' };
             }
 
-            const alreadyCommitted = typeof params?.alreadyCommitted === 'number'
-                ? Math.max(1, Math.min(params.alreadyCommitted, existingMp.match.playersNeeded - 1))
-                : 1;
-
             const oldMatch = existingMp.match;
 
             // 1. Cancella il vecchio match privato
@@ -1264,6 +1263,7 @@ export async function executeAction(
             });
 
             // 2. Crea nuovo match OPEN sulla stessa corte e orario
+            // committedPlayers = 0: il matchmaking cerca soci con Skill Test completato, nessun "guest" esterno
             const newMatch = await prisma.match.create({
                 data: {
                     clubId: oldMatch.clubId,
@@ -1274,7 +1274,7 @@ export async function executeAction(
                     playersNeeded: oldMatch.playersNeeded,
                     status: 'OPEN',
                     isPrivateBooking: false,
-                    committedPlayers: alreadyCommitted,
+                    committedPlayers: 0,
                 },
             });
 
@@ -1289,7 +1289,7 @@ export async function executeAction(
                 scheduledAt: Date.now(),
             }, { delay: 5000 }).catch(err => logger.warn({ err, matchId: newMatch.id }, 'OPEN_TO_MATCHMAKING wave scheduling failed'));
 
-            logger.info({ oldMatchId: oldMatch.id, newMatchId: newMatch.id, alreadyCommitted }, 'OPEN_TO_MATCHMAKING: cancelled private booking, created new open matchmaking');
+            logger.info({ oldMatchId: oldMatch.id, newMatchId: newMatch.id }, 'OPEN_TO_MATCHMAKING: cancelled private booking, created new open matchmaking');
 
             return { success: true, matchId: newMatch.id };
         }
