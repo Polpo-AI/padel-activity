@@ -1012,9 +1012,10 @@ export async function executeAction(
                 }
             }
 
-            // 3. Prenota nuovo slot — propaga la preferenza coperto/scoperto
+            // 3. Prenota nuovo slot — propaga coperto/scoperto e tipo prenotazione (privata/matchmaking)
             const preferCovered = params.preferCovered === true;
-            return await bookSlotForPlayer(startTime, player, club, preferCovered, null);
+            const wasPrivate = oldMatch?.isPrivateBooking ?? true;
+            return await bookSlotForPlayer(startTime, player, club, preferCovered, null, wasPrivate ? true : null);
         }
 
         if (action === 'REQUEST_LESSON') {
