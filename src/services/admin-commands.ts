@@ -152,8 +152,35 @@ export async function handleAdminFaqFlow(text: string, club: any, jid: string): 
         await redis.del(`faq:awaiting_save_confirm:${clubId}`);
     }
 
-    // ── Stato D: carica la coda FAQ in sospeso
+    // idsKey usato sia in Stato E che in Stato D
     const idsKey = `faq:pending_ids:${clubId}`;
+
+    // ── Stato E: conferma "covers_all" in corso
+    const coversAllRaw = await redis.get(`faq:awaiting_covers_all:${clubId}`);
+    if (coversAllRaw) {
+        const { answerText: savedAnswer, items } = JSON.parse(coversAllRaw);
+        const affirmative = /^(s[iì]|yes|ok|va bene|certo|conferm|esatto|giusto)/i.test(text.trim());
+        const negative = /^(no|nope|non|lascia perdere|skip|separa)/i.test(text.trim());
+
+        if (!affirmative && !negative) return false;
+        await redis.del(`faq:awaiting_covers_all:${clubId}`);
+
+        if (affirmative) {
+            for (const item of items) {
+                await prisma.faq.create({ data: { clubId, question: item.question, answer: savedAnswer, askedBy: item.askedBy || null } });
+                if (item.playerJid) await simulateTypingAndSend(item.playerJid, savedAnswer).catch(() => {});
+                await redis.lrem(idsKey, 1, item.id);
+                await redis.del(`faq:pending:${clubId}:${item.id}`);
+                notifyPendingFaqUsers(clubId, item.question, savedAnswer).catch(() => {});
+            }
+            await sendMessage(jid, `Risposta salvata per tutte e ${items.length} le domande e inoltrata agli utenti ✅`);
+        } else {
+            await sendMessage(jid, `Ok, rispondi separatamente. Quali domande hai in sospeso:\n${items.map((it: any, i: number) => `${i + 1}. ${it.askedBy}: "${it.question}"`).join('\n')}`);
+        }
+        return true;
+    }
+
+    // ── Stato D: carica la coda FAQ in sospeso
     const pendingIds = await redis.lrange(idsKey, 0, -1);
     if (pendingIds.length === 0) return false;
 
@@ -163,37 +190,59 @@ export async function handleAdminFaqFlow(text: string, club: any, jid: string): 
 
     if (pendingItems.length === 0) { await redis.del(idsKey); return false; }
 
-    // ── Routing: determina a quale FAQ sta rispondendo l'admin
-    let answerText = text.trim();
-    let targetItem: PendingFaqItem | null = null;
+    // ── Routing AI: classifica il messaggio admin contro tutte le FAQ in sospeso
+    const routing = await classifyFaqResponse(text.trim(), pendingItems);
 
-    // Prefisso esplicito "N: risposta"
-    const numPrefixMatch = answerText.match(/^(\d+)[\s:–\-]+/);
-    if (numPrefixMatch) {
-        const idx = parseInt(numPrefixMatch[1]) - 1;
-        if (idx >= 0 && idx < pendingItems.length) {
-            targetItem = pendingItems[idx];
-            answerText = answerText.slice(numPrefixMatch[0].length).trim();
-        }
+    // AMBIGUOUS → chiede a quale domanda si riferisce, senza numerazione
+    if (routing.type === 'ambiguous') {
+        const list = pendingItems.map(item => `• ${item.askedBy}: "${item.question}"`).join('\n');
+        await sendMessage(jid, `A quale domanda ti stai riferendo?\n\n${list}`);
+        return true;
     }
 
-    // Nessun prefisso → classifica contro tutte le FAQ in sospeso
-    if (!targetItem) {
-        const routing = await routeFaqResponse(answerText, pendingItems);
-
-        if (routing.ambiguous) {
-            // Chiede all'admin a chi sta rispondendo
-            const list = pendingItems.map((item, i) => `${i + 1}. ${item.askedBy}: "${item.question}"`).join('\n');
-            await sendMessage(jid, `A quale domanda stai rispondendo?\n\n${list}\n\nRispondi con il numero (es. "1: risposta...")`);
-            return true;
-        }
-
-        if (routing.targetIndex !== undefined && routing.targetIndex >= 0) {
-            targetItem = pendingItems[routing.targetIndex];
-        }
+    // COVERS_ALL → una risposta copre tutte le domande, chiede conferma
+    if (routing.type === 'covers_all') {
+        await redis.set(
+            `faq:awaiting_covers_all:${clubId}`,
+            JSON.stringify({ answerText: routing.answerText, items: pendingItems }),
+            'EX', 24 * 3600,
+        );
+        const domande = pendingItems.map(it => `• "${it.question}"`).join('\n');
+        await sendMessage(jid, `Questa risposta copre tutte e ${pendingItems.length} le domande?\n\n${domande}\n\nR: ${routing.answerText}\n\nRispondi sì per salvarla per ognuna, no per rispondere separatamente.`);
+        return true;
     }
 
+    // MULTI → risposte separate per FAQ diverse nello stesso messaggio
+    if (routing.type === 'multi') {
+        const rawFaqs = await prisma.faq.findMany({ where: { clubId }, select: { id: true, question: true, answer: true } });
+        const existingFaqs = rawFaqs.map(f => ({ id: f.id, question: f.question, answer: f.answer ?? '' }));
+        let savedCount = 0;
+        for (const { index, answerText } of routing.answers) {
+            const item = pendingItems[index];
+            if (!item) continue;
+            await redis.lrem(idsKey, 1, item.id);
+            await redis.del(`faq:pending:${clubId}:${item.id}`);
+            await prisma.faq.create({ data: { clubId, question: item.question, answer: answerText, askedBy: item.askedBy || null } });
+            if (item.playerJid) await simulateTypingAndSend(item.playerJid, answerText).catch(() => {});
+            notifyPendingFaqUsers(clubId, item.question, answerText).catch(() => {});
+            savedCount++;
+            // background conflict check — non blocca il flusso
+            analyzeNewFaqAgainstExisting(item.question, answerText, existingFaqs).then(async analysis => {
+                if (analysis.type === 'conflict') {
+                    await sendMessage(jid, `⚠️ Nota: la FAQ appena salvata su "${item.question}" potrebbe essere in conflitto con una esistente. Controlla la sezione FAQ nella dashboard.`).catch(() => {});
+                }
+            }).catch(() => {});
+        }
+        const remaining = await redis.llen(idsKey);
+        const remainingNote = remaining > 0 ? `\n\n⚠️ Hai ancora ${remaining} domanda${remaining > 1 ? 'e' : ''} in sospeso.` : '';
+        await sendMessage(jid, `${savedCount} risposte salvate come FAQ e inoltrate agli utenti ✅${remainingNote}`);
+        return true;
+    }
+
+    // SINGLE → risponde a una sola FAQ
+    const targetItem = pendingItems[routing.targetIndex];
     if (!targetItem) return false;
+    const answerText = routing.answerText;
 
     // Verifica che sia effettivamente una risposta
     const classification = await classifyAdminFaqResponse(targetItem.question, answerText);
@@ -206,13 +255,12 @@ export async function handleAdminFaqFlow(text: string, club: any, jid: string): 
     const remainingNote = remaining > 0 ? `\n\n⚠️ Hai ancora ${remaining} domanda${remaining > 1 ? 'e' : ''} in sospeso.` : '';
 
     if (!classification.faqWorthy) {
-        // Risposta non degna di FAQ → inoltra e basta, senza salvare
         if (targetItem.playerJid) await simulateTypingAndSend(targetItem.playerJid, answerText).catch(() => {});
         await sendMessage(jid, `Risposta inoltrata a ${targetItem.askedBy || 'utente'}.${remainingNote}`);
         return true;
     }
 
-    // ── Analisi anti-conflitto e merge prima di salvare
+    // Analisi anti-conflitto e merge
     const rawFaqs = await prisma.faq.findMany({ where: { clubId }, select: { id: true, question: true, answer: true } });
     const existingFaqs = rawFaqs.map(f => ({ id: f.id, question: f.question, answer: f.answer ?? '' }));
     const analysis = await analyzeNewFaqAgainstExisting(targetItem.question, answerText, existingFaqs);
@@ -228,7 +276,7 @@ export async function handleAdminFaqFlow(text: string, club: any, jid: string): 
             'EX', 24 * 3600,
         );
         await sendMessage(jid,
-            `⚠️ *Conflitto rilevato*\n\nHo una FAQ esistente che dice:\nD: ${analysis.existingQuestion}\nR: ${analysis.existingAnswer}\n\nLa tua nuova risposta dice:\nR: ${answerText}\n\nQuale è corretta?\n1 — tieni la FAQ esistente\n2 — sostituisci con la nuova${remainingNote}`,
+            `⚠️ *Conflitto rilevato*\n\nHo una FAQ esistente:\nD: ${analysis.existingQuestion}\nR: ${analysis.existingAnswer}\n\nLa tua nuova risposta:\nR: ${answerText}\n\nQuale è corretta? Rispondi "nuova" per aggiornare o "vecchia" per mantenere quella esistente${remainingNote}`,
         );
         return true;
     }
@@ -245,7 +293,7 @@ export async function handleAdminFaqFlow(text: string, club: any, jid: string): 
             'EX', 24 * 3600,
         );
         await sendMessage(jid,
-            `Ho trovato una FAQ simile che dice meno. Propongo di unirle:\n\nD: ${targetItem.question}\nR: ${analysis.proposedMergedAnswer}\n\nRispondi:\n• *sì* per usare questa versione unificata\n• *no* per non unire\n• oppure scrivi la tua versione preferita${remainingNote}`,
+            `Ho trovato una FAQ simile che dice meno. Propongo di unirle:\n\nD: ${targetItem.question}\nR: ${analysis.proposedMergedAnswer}\n\nRispondi sì per usare questa versione unificata, no per non unire, oppure scrivi la tua versione${remainingNote}`,
         );
         return true;
     }
@@ -259,7 +307,7 @@ export async function handleAdminFaqFlow(text: string, club: any, jid: string): 
         return true;
     }
 
-    // Confidence bassa → chiedi conferma prima di salvare (risponde subito all'utente)
+    // Confidence bassa → chiedi conferma
     if (targetItem.playerJid) await simulateTypingAndSend(targetItem.playerJid, answerText).catch(() => {});
     await redis.set(
         `faq:awaiting_save_confirm:${clubId}`,
@@ -298,6 +346,75 @@ Ha scritto: "${adminMessage}"
         if (s !== -1 && e !== -1) return JSON.parse(raw.substring(s, e + 1));
     } catch (err) { logger.error({ err }, 'classifyAdminFaqResponse failed'); }
     return { isFaqAnswer: false, confidence: 'low', faqWorthy: false };
+}
+
+type FaqRoutingResult =
+    | { type: 'single'; targetIndex: number; answerText: string }
+    | { type: 'multi'; answers: Array<{ index: number; answerText: string }> }
+    | { type: 'covers_all'; answerText: string }
+    | { type: 'ambiguous' };
+
+async function classifyFaqResponse(
+    adminText: string,
+    pendingItems: PendingFaqItem[],
+): Promise<FaqRoutingResult> {
+    if (pendingItems.length === 1) {
+        return { type: 'single', targetIndex: 0, answerText: adminText };
+    }
+
+    const list = pendingItems.map((item, i) => `[${i}] ${item.askedBy}: "${item.question}"`).join('\n');
+    const prompt = `L'admin di un circolo padel ha scritto: "${adminText}"
+
+Domande FAQ in sospeso:
+${list}
+
+Analizza il messaggio e determina:
+- "single": risponde chiaramente a UNA sola domanda (specifica quale con targetIndex 0-based)
+- "multi": contiene risposte separate a PIÙ domande diverse nello stesso messaggio
+- "covers_all": una risposta che va bene per TUTTE le domande
+- "ambiguous": non è chiaro a quale domanda risponde
+
+Estrai il testo della risposta per ogni domanda coperta.
+
+Restituisci SOLO JSON:
+{
+  "type": "single" | "multi" | "covers_all" | "ambiguous",
+  "targetIndex": number | null,
+  "answerText": "..." | null,
+  "answers": [{"index": number, "answerText": "..."}] | null
+}
+- "single": targetIndex = indice domanda, answerText = testo risposta
+- "multi": answers = array con indice e risposta per ogni domanda coperta
+- "covers_all": answerText = risposta unificata (di solito il testo completo)
+- "ambiguous": tutti null`;
+
+    try {
+        const resp = await anthropic.messages.create({
+            model: 'claude-haiku-4-5-20251001', max_tokens: 400, temperature: 0,
+            messages: [{ role: 'user', content: prompt }],
+        });
+        const raw = resp.content[0].type === 'text' ? resp.content[0].text.trim() : '';
+        const s = raw.indexOf('{'); const e = raw.lastIndexOf('}');
+        if (s !== -1 && e !== -1) {
+            const result = JSON.parse(raw.substring(s, e + 1));
+            if (result.type === 'single' && result.targetIndex !== null && result.targetIndex !== undefined) {
+                const idx = Number(result.targetIndex);
+                if (idx >= 0 && idx < pendingItems.length) {
+                    return { type: 'single', targetIndex: idx, answerText: result.answerText || adminText };
+                }
+            }
+            if (result.type === 'multi' && Array.isArray(result.answers) && result.answers.length > 0) {
+                const validAnswers = result.answers
+                    .filter((a: any) => typeof a.index === 'number' && a.index >= 0 && a.index < pendingItems.length)
+                    .map((a: any) => ({ index: Number(a.index), answerText: a.answerText || adminText }));
+                if (validAnswers.length > 0) return { type: 'multi', answers: validAnswers };
+            }
+            if (result.type === 'covers_all') {
+                return { type: 'covers_all', answerText: result.answerText || adminText };
+            }
+        }
+    } catch (err) { logger.error({ err }, 'classifyFaqResponse failed'); }
+    return { type: 'ambiguous' };
 }
 
 async function routeFaqResponse(
