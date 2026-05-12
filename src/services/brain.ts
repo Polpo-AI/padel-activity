@@ -339,9 +339,10 @@ export async function callBrain(
             const needed = mp.match.playersNeeded ?? 4;
             const free = needed - confirmed;
             const isPrivate = (mp.match as any).isPrivateBooking;
+            const typeTag = isPrivate ? 'privata' : 'matchmaking';
             const statusLabel = mp.match.status === 'LOCKED'
-                ? (isPrivate ? `prenotazione privata (${confirmed}/${needed} giocatori)` : `campo pieno (${confirmed}/${needed})`)
-                : `${confirmed}/${needed} confermati, mancano ${free}`;
+                ? (isPrivate ? `prenotazione privata (${confirmed}/${needed} giocatori)` : `campo pieno matchmaking (${confirmed}/${needed})`)
+                : `matchmaking ${confirmed}/${needed} confermati, mancano ${free}`;
             const courtType = mp.match.court?.isCovered ? '🏟️ coperto' : '☀️ scoperto';
             const tg = (mp.match as any).targetGender;
             const genderLabel = tg === 'MALE' ? 'solo uomini' : tg === 'FEMALE' ? 'solo donne' : tg === 'ANY' ? 'misto' : mp.match.isMixed ? 'misto' : null;
@@ -354,7 +355,7 @@ export async function callBrain(
                 });
             const playersLine = otherPlayers.length > 0 ? ` – altri confermati: ${otherPlayers.join(', ')}` : '';
             const genderLine = genderLabel ? ` – tipo: ${genderLabel}` : '';
-            return `  - ${mp.match.court?.name || 'Campo'} (${courtType}) – ${fmtDatetime(mp.match.startTime)} – ${statusLabel}${genderLine}${playersLine} [matchPlayerId:${mp.id}]`;
+            return `  - [tipo:${typeTag}] ${mp.match.court?.name || 'Campo'} (${courtType}) – ${fmtDatetime(mp.match.startTime)} – ${statusLabel}${genderLine}${playersLine} [matchPlayerId:${mp.id}]`;
         }).join('\n')
         : '  nessuno';
 
@@ -621,6 +622,7 @@ Rispondi SEMPRE con JSON valido: { "message": "...", "action": "NOME", "params":
   ⚠️ NON usare SAVE_NOTE quando l'utente sta chiedendo qualcosa di specifico per la prenotazione in corso (es. "vorrei il coperto" in risposta a una prenotazione → usa BOOK_FIELD o RESCHEDULE_MATCH con preferCovered:true, NON SAVE_NOTE). SAVE_NOTE è solo per preferenze dichiarate in modo esplicito e generale, non per richieste contestuali.
 - REQUEST_LESSON — params: { "day": "opzionale", "time": "opzionale" } — utente chiede di prenotare una lezione con il maestro. Rispondi con conferma che hai avvisato il maestro + durata + costo. Il maestro li contatterà per l'orario esatto.
 - RESCHEDULE_MATCH — params: { "matchPlayerId": "...", "newDay": "YYYY-MM-DD o oggi/domani/lunedì/...", "newTime": "HH:MM", "preferCovered": true/false } ⚠️ Stessa regola di BOOK_FIELD per 'newDay': nomi di giorno come stringa, MAI ISO calcolata. — utente vuole spostare una partita confermata. Cancella quella vecchia e prenota il nuovo slot. Se l'utente chiede esplicitamente il coperto → preferCovered: true. ⚠️ matchPlayerId DEVE essere copiato esattamente dal tag [matchPlayerId:...] in PARTITE CONFERMATE. Se non trovi NESSUNA partita confermata → NONE e chiedi quale partita vuole spostare.
+  ⚠️ MATCHMAKING CON ALTRI GIOCATORI: se la partita è [tipo:matchmaking] e ci sono altri giocatori già confermati ("altri confermati: ...") → NON usare RESCHEDULE_MATCH. Usa NONE e spiega che non puoi spostare una partita a cui altri si sono già iscritti, ma può uscire e gli altri continueranno: "Vuoi che ti tolga dalla partita? Gli altri giocatori continueranno a giocare e il sistema cercherà un sostituto." Se l'utente conferma → CANCEL_MATCH. Può poi prenotare un nuovo slot separatamente.
   ⚠️ MESSAGGIO per RESCHEDULE_MATCH: usa sempre una frase neutra che non conferma il risultato — il sistema verifica disponibilità DOPO il tuo messaggio. Esempi: "Perfetto, sposto subito 🎾" / "Un momento, verifico e sposto 🎾". MAI scrivere "Ho spostato", "fatto", "prenotato" o qualsiasi frase che presuppone il successo dell'operazione.
   ⚠️ CAMBIO CAMPO STESSO ORARIO: se l'utente ha già una prenotazione privata e vuole passare al coperto (o allo scoperto) alla STESSA ora → usa BOOK_FIELD con stesso day/time e preferCovered aggiornato (NON RESCHEDULE_MATCH). Il sistema gestisce automaticamente il cambio. Messaggio: "Vedo subito se c'è il campo coperto disponibile 🎾" oppure "Verifico la disponibilità del coperto 🎾" — MAI confermare il cambio prima di sapere se il campo è libero.
 - FAQ_REQUEST — params: { "question": "testo esatto della domanda" } — usa SOLO quando l'utente fa una domanda sul circolo (orari speciali, regole particolari, eventi, iniziative) a cui NON puoi rispondere con le informazioni disponibili.
@@ -987,9 +989,11 @@ export async function executeAction(
                     where: { id: mp.matchId },
                     data: { status: 'CANCELLED', cancelledAt: new Date(), cancelledReason: 'RESCHEDULED' },
                 });
-            } else if (oldMatch?.status === 'LOCKED' && !oldMatch.isPrivateBooking) {
-                // Matchmaking LOCKED con giocatori rimasti → riapri e rilancia wave
-                await prisma.match.update({ where: { id: mp.matchId }, data: { status: 'OPEN' } });
+            } else if (!oldMatch?.isPrivateBooking) {
+                // Matchmaking con altri giocatori rimasti (OPEN o LOCKED) → riapri se LOCKED, rilancia wave, notifica
+                if (oldMatch?.status === 'LOCKED') {
+                    await prisma.match.update({ where: { id: mp.matchId }, data: { status: 'OPEN' } });
+                }
                 waveQueue.add('process-wave', {
                     matchId: mp.matchId,
                     waveNumber: 1,
@@ -997,12 +1001,11 @@ export async function executeAction(
                     scheduledAt: Date.now(),
                 }, { delay: 0 }).catch(err => logger.warn({ err, matchId: mp.matchId }, 'Wave scheduling failed'));
 
-                // GAP #11: notifica gli altri co-giocatori che il gruppo si è riaperto
-                const matchTimeStr = oldMatch.startTime.toLocaleString('it-IT', {
+                const matchTimeStr = oldMatch!.startTime.toLocaleString('it-IT', {
                     timeZone: 'Europe/Rome', weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit',
                 });
                 const leavingName = (player as any).name?.split(' ')[0] || 'Un giocatore';
-                for (const rmp of oldMatch.MatchPlayer) {
+                for (const rmp of oldMatch!.MatchPlayer) {
                     const phone = (rmp as any).player?.phoneNumber;
                     if (phone) {
                         simulateTypingAndSend(`${phone}@s.whatsapp.net`,
