@@ -1126,39 +1126,48 @@ export async function executeAction(
         }
 
         if (action === 'FAQ_REQUEST') {
-            const question = (params.question || '').trim();
-            if (question && club?.id) {
+            const rawQuestion = (params.question || '').trim();
+            if (rawQuestion && club?.id) {
                 const redis = getRedis();
                 const { getContextStore } = await import('../utils/request-context');
                 const playerJidFromCtx = getContextStore()?.jid;
-
-                // ID univoco per questa FAQ — evita sovrascrittura se più utenti chiedono contemporaneamente
-                const faqId = `${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
-                const faqKey = `faq:pending:${club.id}:${faqId}`;
                 const idsKey = `faq:pending_ids:${club.id}`;
+                const askedByLabel = player?.name || player?.phoneNumber;
 
-                // Dedup: controlla se questo player ha già una FAQ pending
-                // Se sì, aggiungi alla coda ma NON notificare di nuovo admin
+                // Splitta domande multi-topic: "Hai il bar? C'è parcheggio?" → 2 FAQ separate
+                const subQuestions = rawQuestion
+                    .split('?')
+                    .map(s => s.trim())
+                    .filter(s => s.length > 5)
+                    .map(s => s + '?');
+
+                // Dedup: controlla se questo player ha già FAQ pending con lo stesso testo
                 const existingIds = await redis.lrange(idsKey, 0, -1);
                 const existingItems = (await Promise.all(
                     existingIds.map(id => redis.get(`faq:pending:${club.id}:${id}`))
                 )).filter(Boolean).map(raw => JSON.parse(raw!));
-                const alreadyPending = existingItems.some((item: any) => item.playerJid === playerJidFromCtx);
+                const existingQuestions = new Set(existingItems.map((item: any) => item.question?.toLowerCase().trim()));
 
-                await redis.set(faqKey, JSON.stringify({
-                    id: faqId,
-                    question,
-                    askedBy: player?.name || player?.phoneNumber,
-                    playerJid: playerJidFromCtx,
-                }), 'EX', 7 * 24 * 3600);
-                await redis.rpush(idsKey, faqId);
-                await redis.expire(idsKey, 7 * 24 * 3600);
+                for (const question of subQuestions) {
+                    if (existingQuestions.has(question.toLowerCase().trim())) {
+                        logger.info({ question }, 'FAQ_REQUEST: duplicate question skipped');
+                        continue;
+                    }
 
-                if (alreadyPending) {
-                    // Già notificato per questo player — non disturbare di nuovo admin
-                    logger.info({ playerId: player?.id, question }, 'FAQ_REQUEST: player already has pending FAQ, skipping admin notify');
-                } else {
-                    // Prima FAQ di questo player — notifica admin
+                    const faqId = `${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+                    const faqKey = `faq:pending:${club.id}:${faqId}`;
+
+                    await redis.set(faqKey, JSON.stringify({
+                        id: faqId,
+                        question,
+                        askedBy: askedByLabel,
+                        playerJid: playerJidFromCtx,
+                    }), 'EX', 7 * 24 * 3600);
+                    await redis.rpush(idsKey, faqId);
+                    await redis.expire(idsKey, 7 * 24 * 3600);
+
+                    existingQuestions.add(question.toLowerCase().trim());
+
                     const pendingCount = await redis.llen(idsKey);
                     const prefix = pendingCount > 1 ? `[${pendingCount} domande in sospeso]\n` : '';
                     const suffix = pendingCount > 1
@@ -1167,7 +1176,7 @@ export async function executeAction(
 
                     const { notifyAdmin } = await import('../utils/notify-admin');
                     await notifyAdmin(
-                        `${prefix}❓ ${player?.name || player?.phoneNumber} ha chiesto:\n"${question}"${suffix}`,
+                        `${prefix}❓ ${askedByLabel} ha chiesto:\n"${question}"${suffix}`,
                         `faq_pending_${faqId}`,
                         club?.adminPhone,
                         club?.name,
