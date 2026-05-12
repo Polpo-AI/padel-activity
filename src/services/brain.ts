@@ -338,8 +338,9 @@ export async function callBrain(
             const confirmed = mp.match.MatchPlayer?.length ?? 0;
             const needed = mp.match.playersNeeded ?? 4;
             const free = needed - confirmed;
+            const isPrivate = (mp.match as any).isPrivateBooking;
             const statusLabel = mp.match.status === 'LOCKED'
-                ? `campo pieno (${confirmed}/${needed})`
+                ? (isPrivate ? `prenotazione privata (${confirmed}/${needed} giocatori)` : `campo pieno (${confirmed}/${needed})`)
                 : `${confirmed}/${needed} confermati, mancano ${free}`;
             const courtType = mp.match.court?.isCovered ? '🏟️ coperto' : '☀️ scoperto';
             const tg = (mp.match as any).targetGender;
@@ -579,7 +580,9 @@ Rispondi SEMPRE con JSON valido: { "message": "...", "action": "NOME", "params":
 
 - NONE — risposta conversazionale, nessuna operazione DB. Usa per saluti, domande, info, ringraziamenti, qualsiasi cosa non richieda un'azione specifica
 - ACCEPT_INVITATION — params: { "invitationId": "..." } — utente conferma presenza a partita
+  ⚠️ AMBIGUITÀ: se ci sono più inviti PENDING e la risposta è generica ("sì", "ok", "ci sono") senza riferimento chiaro a uno specifico → usa NONE e chiedi a quale partita si riferisce, elencandole brevemente.
 - REJECT_INVITATION — params: { "invitationId": "..." } — utente declina partita
+  ⚠️ AMBIGUITÀ: stessa regola — se ci sono più inviti e la risposta è generica ("no", "non posso") → chiedi per quale partita.
 - CANCEL_MATCH — params: { "matchPlayerId": "..." } — utente vuole annullare partecipazione confermata. ⚠️ matchPlayerId DEVE essere copiato esattamente dal tag [matchPlayerId:...] in PARTITE CONFERMATE. Se non trovi NESSUNA partita confermata → NONE e chiedi quale partita vuole cancellare.
 - BOOK_FIELD — params: { "day": "YYYY-MM-DD o oggi/domani/lunedì/martedì/...", "time": "HH:MM", "joinMatchId": "id o null", "preferCovered": false, "preferMixed": null, "private": null, "committedPlayers": null, "preferredPlayerName": null }
   ⚠️ REGOLA GIORNO: nel param 'day', se l'utente usa un nome di giorno della settimana (lunedì, martedì, mercoledì, ecc.), passa SEMPRE il nome del giorno come stringa (es. "martedì"), MAI la data ISO calcolata da te. Usa la data ISO (YYYY-MM-DD) SOLO se l'utente ha indicato esplicitamente una data precisa (es. "il 20 maggio", "20/05"). Questo vale anche se oggi è quel giorno — il sistema calcola automaticamente la prossima occorrenza futura.
