@@ -473,6 +473,15 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[], cor
                     logger.error({ err }, 'NO_OPEN_MATCH redirectGroup failed');
                     await simulateTypingAndSend(jid, 'Non ci sono partite aperte a quell\'orario. Dimmi un altro orario e vedo cosa c\'è disponibile! 🎾');
                 }
+            } else if (result.errorMessage === 'NO_PRIVATE_BOOKING_TO_CONVERT') {
+                const _msgs = [
+                    'Non trovo nessuna prenotazione privata da aprire al matchmaking. Hai già una partita prenotata privatamente?',
+                    'Non vedo prenotazioni private attive al momento. Vuoi prenotare un campo e poi aprirlo al matchmaking?',
+                    'Hmm, non ho trovato una prenotazione privata da convertire. Ce l\'hai già una partita fissa o vuoi crearne una?',
+                    'Non risulta nessuna prenotazione privata aperta. Vuoi che prenoti il campo adesso e poi cerchiamo altri giocatori?',
+                    'Non trovo partite private da aprire. Hai già prenotato qualcosa, o vuoi iniziare da zero?',
+                ];
+                await simulateTypingAndSend(jid, _msgs[Math.floor(Math.random() * _msgs.length)]);
             } else if (result.errorMessage === 'GENDER_MISMATCH') {
                 await simulateTypingAndSend(jid, 'Questa partita è riservata a giocatori dello stesso genere — non posso aggiungerti. Vuoi che cerchi un\'altra partita o prenoti un campo libero? 🎾');
             } else if (result.errorMessage?.includes('già una prenotazione') || result.errorMessage === 'ALREADY_BOOKED') {

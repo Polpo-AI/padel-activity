@@ -1246,7 +1246,7 @@ export async function executeAction(
             });
 
             if (!existingMp) {
-                return { success: false, errorMessage: 'Nessuna prenotazione privata attiva da convertire.' };
+                return { success: false, errorMessage: 'NO_PRIVATE_BOOKING_TO_CONVERT' };
             }
 
             const oldMatch = existingMp.match;
