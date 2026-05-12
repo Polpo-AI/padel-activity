@@ -61,10 +61,19 @@ export async function handleBatch(jid: string, messages: NormalizedMessage[], re
                 return;
             }
             logger.error({ err, correlationId, clubId }, `Unhandled error in handleBatch for ${jid}`);
+            const { notifyAdmin } = await import('../utils/notify-admin');
+            notifyAdmin(`🔴 Errore critico handleBatch\njid: ${jid}\ncorrelationId: ${correlationId}\n${err instanceof Error ? err.message : String(err)}`).catch(() => {});
             // Point 6: only notify user if routing already started (user expects a reply)
             if (conversationalPhase.get(correlationId)) {
+                const _fallbacks = [
+                    "Scusa, ho perso il filo per un attimo. Puoi ripetere?",
+                    "Mi è scappato qualcosa di mano, riprova!",
+                    "Non ho capito bene, puoi riscrivere?",
+                    "Scusami, c'è stato un intoppo. Riesci a rimandarlo?",
+                    "Ho avuto un momento di confusione, riprova pure!",
+                ];
                 try {
-                    await simulateTypingAndSend(jid, ["Scusa, ho avuto un piccolo problema tecnico 😅 Puoi ripetere?", "Ops, qualcosa è andato storto 🙈 Riprova!", "Mi sono inceppato un attimo 😅 Puoi riscrivere?"][Math.floor(Math.random() * 3)]);
+                    await simulateTypingAndSend(jid, _fallbacks[Math.floor(Math.random() * _fallbacks.length)]);
                 } catch {}
             }
             conversationalPhase.delete(correlationId);
