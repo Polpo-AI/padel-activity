@@ -155,6 +155,25 @@ export async function handleAdminFaqFlow(text: string, club: any, jid: string): 
     // idsKey usato sia in Stato E che in Stato D
     const idsKey = `faq:pending_ids:${clubId}`;
 
+    // ── Stato F: conferma versione migliorata risposta FAQ
+    const improvementRaw = await redis.get(`faq:awaiting_improvement:${clubId}`);
+    if (improvementRaw) {
+        const { question, originalAnswer, improvedAnswer, askedBy, playerJid } = JSON.parse(improvementRaw);
+        await redis.del(`faq:awaiting_improvement:${clubId}`);
+
+        const affirmative = /^(s[iì]|yes|ok|va bene|certo|conferm|esatto|giusto|migliora|usa questa|usala)/i.test(text.trim());
+        const negative = /^(no|nope|originale|lascia|tieni|va bene cos)/i.test(text.trim());
+        const finalAnswer = affirmative ? improvedAnswer : (negative ? originalAnswer : text.trim());
+
+        await prisma.faq.create({ data: { clubId, question, answer: finalAnswer, askedBy: askedBy || null } });
+        if (playerJid) await simulateTypingAndSend(playerJid, finalAnswer).catch(() => {});
+        const remAfterImpr = await redis.llen(idsKey);
+        const remNoteImpr = remAfterImpr > 0 ? `\n\n⚠️ Hai ancora ${remAfterImpr} domanda${remAfterImpr > 1 ? 'e' : ''} in sospeso.` : '';
+        await sendMessage(jid, `FAQ salvata e risposta inoltrata a ${askedBy || 'utente'} ✅${remNoteImpr}`);
+        notifyPendingFaqUsers(clubId, question, finalAnswer).catch(() => {});
+        return true;
+    }
+
     // ── Stato E: conferma "covers_all" in corso
     const coversAllRaw = await redis.get(`faq:awaiting_covers_all:${clubId}`);
     if (coversAllRaw) {
@@ -216,26 +235,43 @@ export async function handleAdminFaqFlow(text: string, club: any, jid: string): 
     if (routing.type === 'multi') {
         const rawFaqs = await prisma.faq.findMany({ where: { clubId }, select: { id: true, question: true, answer: true } });
         const existingFaqs = rawFaqs.map(f => ({ id: f.id, question: f.question, answer: f.answer ?? '' }));
-        let savedCount = 0;
-        for (const { index, answerText } of routing.answers) {
+
+        // Salvataggio + improvement check in parallelo per ogni risposta
+        const results = await Promise.all(routing.answers.map(async ({ index, answerText }) => {
             const item = pendingItems[index];
-            if (!item) continue;
+            if (!item) return null;
             await redis.lrem(idsKey, 1, item.id);
             await redis.del(`faq:pending:${clubId}:${item.id}`);
             await prisma.faq.create({ data: { clubId, question: item.question, answer: answerText, askedBy: item.askedBy || null } });
             if (item.playerJid) await simulateTypingAndSend(item.playerJid, answerText).catch(() => {});
             notifyPendingFaqUsers(clubId, item.question, answerText).catch(() => {});
-            savedCount++;
-            // background conflict check — non blocca il flusso
-            analyzeNewFaqAgainstExisting(item.question, answerText, existingFaqs).then(async analysis => {
-                if (analysis.type === 'conflict') {
-                    await sendMessage(jid, `⚠️ Nota: la FAQ appena salvata su "${item.question}" potrebbe essere in conflitto con una esistente. Controlla la sezione FAQ nella dashboard.`).catch(() => {});
-                }
-            }).catch(() => {});
-        }
+            // conflict check + improvement check in parallelo
+            const [, suggestion] = await Promise.all([
+                analyzeNewFaqAgainstExisting(item.question, answerText, existingFaqs).then(async analysis => {
+                    if (analysis.type === 'conflict') {
+                        await sendMessage(jid, `⚠️ La FAQ su "${item.question}" potrebbe essere in conflitto con una esistente. Controlla la dashboard.`).catch(() => {});
+                    }
+                }).catch(() => {}),
+                suggestFaqImprovement(item.question, answerText),
+            ]);
+            return { question: item.question, suggestion };
+        }));
+
+        const savedCount = results.filter(Boolean).length;
         const remaining = await redis.llen(idsKey);
         const remainingNote = remaining > 0 ? `\n\n⚠️ Hai ancora ${remaining} domanda${remaining > 1 ? 'e' : ''} in sospeso.` : '';
-        await sendMessage(jid, `${savedCount} risposte salvate come FAQ e inoltrate agli utenti ✅${remainingNote}`);
+
+        // Note miglioramenti (non-bloccanti, a fine messaggio)
+        const improvementNotes = results
+            .filter((r): r is { question: string; suggestion: { hasSuggestions: true; improvedAnswer: string; notes: string[] } } =>
+                !!r && r.suggestion.hasSuggestions === true)
+            .map(r => `📝 "${r.question}":\n${r.suggestion.notes.map(n => `  • ${n}`).join('\n')}\n  → Suggerito: "${r.suggestion.improvedAnswer}"`);
+
+        const notesBlock = improvementNotes.length > 0
+            ? `\n\n${improvementNotes.join('\n\n')}\n\nPuoi modificare le FAQ dalla dashboard.`
+            : '';
+
+        await sendMessage(jid, `${savedCount} risposte salvate come FAQ e inoltrate agli utenti ✅${remainingNote}${notesBlock}`);
         return true;
     }
 
@@ -298,7 +334,20 @@ export async function handleAdminFaqFlow(text: string, club: any, jid: string): 
         return true;
     }
 
-    // clean → salva e inoltra
+    // clean → analisi miglioramenti prima di salvare
+    const suggestion = await suggestFaqImprovement(targetItem.question, answerText);
+    if (suggestion.hasSuggestions) {
+        await redis.set(
+            `faq:awaiting_improvement:${clubId}`,
+            JSON.stringify({ question: targetItem.question, originalAnswer: answerText, improvedAnswer: suggestion.improvedAnswer, askedBy: targetItem.askedBy, playerJid: targetItem.playerJid }),
+            'EX', 24 * 3600,
+        );
+        const notesStr = suggestion.notes.map(n => `• ${n}`).join('\n');
+        await sendMessage(jid, `📝 Note sulla risposta:\n${notesStr}\n\nVersione suggerita:\n"${suggestion.improvedAnswer}"\n\nRispondi sì per usarla, no per tenere l'originale, oppure scrivi la tua versione.${remainingNote}`);
+        return true;
+    }
+
+    // Nessun miglioramento necessario — salva e inoltra
     if (classification.confidence === 'high') {
         await prisma.faq.create({ data: { clubId, question: targetItem.question, answer: answerText, askedBy: targetItem.askedBy || null } });
         if (targetItem.playerJid) await simulateTypingAndSend(targetItem.playerJid, answerText).catch(() => {});
@@ -346,6 +395,54 @@ Ha scritto: "${adminMessage}"
         if (s !== -1 && e !== -1) return JSON.parse(raw.substring(s, e + 1));
     } catch (err) { logger.error({ err }, 'classifyAdminFaqResponse failed'); }
     return { isFaqAnswer: false, confidence: 'low', faqWorthy: false };
+}
+
+async function suggestFaqImprovement(
+    question: string,
+    answer: string,
+): Promise<{ hasSuggestions: false } | { hasSuggestions: true; improvedAnswer: string; notes: string[] }> {
+    const prompt = `Sei un assistente che aiuta a migliorare le risposte FAQ di un circolo padel prima di salvarle.
+
+DOMANDA: "${question}"
+RISPOSTA ATTUALE: "${answer}"
+
+Analizza la risposta e verifica:
+1. COMPLETEZZA: mancano informazioni importanti che l'utente si aspetterebbe? (es. prezzi, orari, dettagli pratici)
+2. GRAMMATICA/SINTASSI: errori di ortografia, punteggiatura, apostrofi mancanti, spaziatura
+3. MORFOLOGIA: articoli errati, accordi di genere/numero, preposizioni
+4. CHIAREZZA: la risposta è chiara e ben formulata?
+
+Se la risposta è già completa e corretta, restituisci {"hasSuggestions":false}.
+
+Se ci sono miglioramenti possibili, restituisci:
+{"hasSuggestions":true,"improvedAnswer":"la versione migliorata completa","notes":["cosa manca o è stato corretto"]}
+
+Regole per la versione migliorata:
+- Mantieni lo stesso tono dell'originale (informale se informale, formale se formale)
+- Per informazioni mancanti (es. prezzo): usa frasi come "verifica con la segreteria per i dettagli" se il dato non è noto — non inventare mai numeri specifici non menzionati
+- Correggi errori grammaticali/sintattici (apostrofi, accordi, punteggiatura)
+- Rimani conciso`;
+
+    try {
+        const resp = await anthropic.messages.create({
+            model: 'claude-haiku-4-5-20251001', max_tokens: 400, temperature: 0,
+            messages: [{ role: 'user', content: prompt }],
+        });
+        const raw = resp.content[0].type === 'text' ? resp.content[0].text.trim() : '';
+        const s = raw.indexOf('{'); const e = raw.lastIndexOf('}');
+        if (s !== -1 && e !== -1) {
+            const result = JSON.parse(raw.substring(s, e + 1));
+            if (result.hasSuggestions === false) return { hasSuggestions: false };
+            if (result.hasSuggestions === true && result.improvedAnswer) {
+                return {
+                    hasSuggestions: true,
+                    improvedAnswer: result.improvedAnswer,
+                    notes: Array.isArray(result.notes) ? result.notes : [],
+                };
+            }
+        }
+    } catch (err) { logger.error({ err }, 'suggestFaqImprovement failed'); }
+    return { hasSuggestions: false };
 }
 
 type FaqRoutingResult =
