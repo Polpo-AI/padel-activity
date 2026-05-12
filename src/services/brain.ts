@@ -582,6 +582,7 @@ Rispondi SEMPRE con JSON valido: { "message": "...", "action": "NOME", "params":
 - REJECT_INVITATION — params: { "invitationId": "..." } — utente declina partita
 - CANCEL_MATCH — params: { "matchPlayerId": "..." } — utente vuole annullare partecipazione confermata. ⚠️ matchPlayerId DEVE essere copiato esattamente dal tag [matchPlayerId:...] in PARTITE CONFERMATE. Se non trovi NESSUNA partita confermata → NONE e chiedi quale partita vuole cancellare.
 - BOOK_FIELD — params: { "day": "YYYY-MM-DD o oggi/domani/lunedì/martedì/...", "time": "HH:MM", "joinMatchId": "id o null", "preferCovered": false, "preferMixed": null, "private": null, "committedPlayers": null, "preferredPlayerName": null }
+  ⚠️ REGOLA GIORNO: nel param `day`, se l'utente usa un nome di giorno della settimana (lunedì, martedì, mercoledì, ecc.), passa SEMPRE il nome del giorno come stringa (es. "martedì"), MAI la data ISO calcolata da te. Usa la data ISO (YYYY-MM-DD) SOLO se l'utente ha indicato esplicitamente una data precisa (es. "il 20 maggio", "20/05"). Questo vale anche se oggi è quel giorno — il sistema calcola automaticamente la prossima occorrenza futura.
   preferredPlayerName: usa SOLO quando l'utente dice "io e [Nome specifico]" in una singola richiesta di matchmaking (es. "io e Fabio vorremmo giocare, ce ne trovi 2"). Imposta il nome completo. Il sistema verificherà se [Nome] è iscritto al circolo e lo inviterà prioritariamente. Se non iscritto, l'utente verrà avvisato. NON usare quando l'utente prima usa BOOK_FIELD e poi separatamente chiede INVITE_PREFERRED — in quel caso usa INVITE_PREFERRED nel turno successivo.
   committedPlayers: se l'utente dice "siamo in 2/3/..., cerco N" → numero di giocatori fisici GIÀ confermati incluso il player stesso. Es. "siamo in 3, mi manca 1" → committedPlayers: 3. Default: null (solo il player). Si usa solo con private: false (matchmaking).
   Usa quando l'utente vuole giocare/prenotare e ha fornito giorno + orario.
@@ -616,7 +617,7 @@ Rispondi SEMPRE con JSON valido: { "message": "...", "action": "NOME", "params":
 - SAVE_NOTE — params: { "note": "..." } — utente esprime una preferenza PERMANENTE o abitudine generale (es. "voglio *sempre* giocare al coperto", "di solito preferisco il mattino", "non mi piace la terra rossa"). Riassumi in una frase breve e salva. Puoi combinare con NONE per rispondere anche in modo conversazionale — in quel caso usa SAVE_NOTE e metti la risposta nel campo "message".
   ⚠️ NON usare SAVE_NOTE quando l'utente sta chiedendo qualcosa di specifico per la prenotazione in corso (es. "vorrei il coperto" in risposta a una prenotazione → usa BOOK_FIELD o RESCHEDULE_MATCH con preferCovered:true, NON SAVE_NOTE). SAVE_NOTE è solo per preferenze dichiarate in modo esplicito e generale, non per richieste contestuali.
 - REQUEST_LESSON — params: { "day": "opzionale", "time": "opzionale" } — utente chiede di prenotare una lezione con il maestro. Rispondi con conferma che hai avvisato il maestro + durata + costo. Il maestro li contatterà per l'orario esatto.
-- RESCHEDULE_MATCH — params: { "matchPlayerId": "...", "newDay": "YYYY-MM-DD o oggi/domani/lunedì/...", "newTime": "HH:MM", "preferCovered": true/false } — utente vuole spostare una partita confermata. Cancella quella vecchia e prenota il nuovo slot. Se l'utente chiede esplicitamente il coperto → preferCovered: true. ⚠️ matchPlayerId DEVE essere copiato esattamente dal tag [matchPlayerId:...] in PARTITE CONFERMATE. Se non trovi NESSUNA partita confermata → NONE e chiedi quale partita vuole spostare.
+- RESCHEDULE_MATCH — params: { "matchPlayerId": "...", "newDay": "YYYY-MM-DD o oggi/domani/lunedì/...", "newTime": "HH:MM", "preferCovered": true/false } ⚠️ Stessa regola di BOOK_FIELD per `newDay`: nomi di giorno come stringa, MAI ISO calcolata. — utente vuole spostare una partita confermata. Cancella quella vecchia e prenota il nuovo slot. Se l'utente chiede esplicitamente il coperto → preferCovered: true. ⚠️ matchPlayerId DEVE essere copiato esattamente dal tag [matchPlayerId:...] in PARTITE CONFERMATE. Se non trovi NESSUNA partita confermata → NONE e chiedi quale partita vuole spostare.
   ⚠️ MESSAGGIO per RESCHEDULE_MATCH: usa sempre una frase neutra che non conferma il risultato — il sistema verifica disponibilità DOPO il tuo messaggio. Esempi: "Perfetto, sposto subito 🎾" / "Un momento, verifico e sposto 🎾". MAI scrivere "Ho spostato", "fatto", "prenotato" o qualsiasi frase che presuppone il successo dell'operazione.
   ⚠️ CAMBIO CAMPO STESSO ORARIO: se l'utente ha già una prenotazione privata e vuole passare al coperto (o allo scoperto) alla STESSA ora → usa BOOK_FIELD con stesso day/time e preferCovered aggiornato (NON RESCHEDULE_MATCH). Il sistema gestisce automaticamente il cambio. Messaggio: "Vedo subito se c'è il campo coperto disponibile 🎾" oppure "Verifico la disponibilità del coperto 🎾" — MAI confermare il cambio prima di sapere se il campo è libero.
 - FAQ_REQUEST — params: { "question": "testo esatto della domanda" } — usa SOLO quando l'utente fa una domanda sul circolo (orari speciali, regole particolari, eventi, iniziative) a cui NON puoi rispondere con le informazioni disponibili.
@@ -1853,6 +1854,13 @@ function parseBookingDateTime(day: string, time: string): Date | null {
     } else if (/^\d{4}-\d{2}-\d{2}$/.test(day)) {
         const [y, mo, d] = day.split('-').map(Number);
         targetDate = new Date(Date.UTC(y, mo - 1, d, 12, 0));
+        // safety: se il brain ha passato una data ISO già passata (es. ha risolto
+        // "martedì" a oggi invece di passare il nome del giorno), avanza di 7 giorni
+        const candidate = buildRomeTime(targetDate, h, m);
+        if (candidate && candidate.getTime() < now.getTime() - 5 * 60 * 1000) {
+            logger.warn({ day, time }, 'parseBookingDateTime: ISO date in the past, advancing 7 days');
+            targetDate.setDate(targetDate.getDate() + 7);
+        }
     } else {
         const dayMap: Record<string, number> = {
             domenica: 0, lunedì: 1, martedì: 2, mercoledì: 3,
