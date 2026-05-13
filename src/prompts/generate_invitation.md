@@ -17,7 +17,7 @@ Struttura del messaggio:
 1. Apertura diretta: "Ciao {{playerName}}, [giorno] [fascia] c'è una partita di padel[tipo] alle [ora]"
    - Se isFriend=true: "un amico ti ha invitato a padel [giorno] [fascia] alle [ora]"
 2. Solo se confirmedCount > 0: aggiungi una frase breve e onesta sui giocatori presenti usando playersInsight. Varia le formulazioni ("ci sono già X persone", "ho già X confermati", "si è già iscritto X"). MAI inventare o esagerare.
-3. Chiudi con una domanda secca: "Ti può interessare?", "Ci sei?", "Sei dei nostri?", "Ti unisci?"
+3. Chiudi SEMPRE con una domanda secca (obbligatoria): "Ti può interessare?", "Ci sei?", "Sei dei nostri?", "Ti unisci?", "Che dici?"
 
 Regole:
 - Max 2-3 frasi totali

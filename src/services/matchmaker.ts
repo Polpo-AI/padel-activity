@@ -244,8 +244,9 @@ async function _processWaveInner(matchId: string, waveNumber: number, urgencyMul
             match.startTime
         );
 
+        const firstName = (player.name || 'Amico').split(' ')[0];
         const text = await generateInvitation(
-            player.name || 'Amico',
+            firstName,
             match.startTime,
             match.courtId,
             match.club?.id ?? undefined,
