@@ -214,18 +214,17 @@ export async function generateInvitation(
     const spotsLeft = socialContext?.spotsLeft ?? 3;
     const totalNeeded = confirmedCount + spotsLeft;
 
-    // Segnali sui giocatori confermati — solo fatti veri, mai inventati
+    // Segnali sui giocatori confermati — solo fatti veri, mai nomi, mai inventati
     let playersInsight = '';
     if (socialContext && socialContext.players.length > 0) {
-        const signals: string[] = [];
-        const nameLines = socialContext.players
-            .map(p => p.skillLevel > 0 ? `- ${p.name} (${Number(p.skillLevel).toFixed(1)})` : `- ${p.name}`)
-            .join('\n');
-        signals.push(`Già confermati:\n${nameLines}`);
-        if (socialContext.hasPlayedWithBefore) signals.push(`Ha già giocato con loro.`);
-        const frequent = socialContext.players.filter(p => p.matchesLast30Days >= 3);
-        if (frequent.length > 0) signals.push(`${frequent.map(p => p.name).join(' e ')} ${frequent.length === 1 ? 'gioca' : 'giocano'} spesso.`);
-        playersInsight = signals.filter(Boolean).join(' ');
+        const n = socialContext.players.length;
+        const avgSkill = socialContext.players.filter(p => p.skillLevel > 0).map(p => p.skillLevel);
+        const skillHint = avgSkill.length > 0
+            ? ` di livello ${Math.min(...avgSkill).toFixed(1)}–${Math.max(...avgSkill).toFixed(1)}`
+            : '';
+        const signals: string[] = [`Ci sono già ${n} ${n === 1 ? 'persona confermata' : 'persone confermate'}${skillHint}.`];
+        if (socialContext.hasPlayedWithBefore) signals.push(`Ha già giocato con loro in passato.`);
+        playersInsight = signals.join(' ');
     }
 
     const matchTypeStr = matchTypeLabel ? ` ${matchTypeLabel}` : '';
