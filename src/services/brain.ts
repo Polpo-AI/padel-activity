@@ -950,7 +950,8 @@ export async function executeAction(
                         const { dissolveGroup } = await import('./whatsapp');
                         dissolveGroup(
                             (match as any).groupId,
-                            `${leavingName} non può più venire alla partita di ${matchTimeStr}. Sciogliamo il gruppo — appena troviamo un sostituto ve ne creo uno nuovo 🎾`
+                            `${leavingName} non può più venire alla partita di ${matchTimeStr}. Sciogliamo il gruppo — appena troviamo un sostituto ve ne creo uno nuovo 🎾`,
+                            club?.id,
                         ).catch(err => logger.warn({ err, matchId: mp.matchId }, 'dissolveGroup failed'));
                         matchUpdate.groupId = null;
                     }

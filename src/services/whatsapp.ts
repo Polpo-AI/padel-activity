@@ -600,13 +600,13 @@ export async function createGroupAndAddPlayers(
  * Invia un messaggio finale nel gruppo, rimuove tutti i partecipanti e fa uscire il bot.
  * Azzera il gruppo WA dopo che una partita LOCKED si è riaperta per sostituzione.
  */
-export async function dissolveGroup(groupJid: string, finalMessage: string): Promise<void> {
+export async function dissolveGroup(groupJid: string, finalMessage: string, explicitClubId?: string): Promise<void> {
     if (process.env.DRY_RUN === 'true') {
         logger.info(`[DRY RUN] Would dissolve group ${groupJid}`);
         return;
     }
 
-    const clubId = currentClubId();
+    const clubId = explicitClubId || currentClubId();
     const cs = await waitForSocket(clubId);
     const sock = cs.sock!;
 
