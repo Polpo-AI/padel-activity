@@ -1,29 +1,18 @@
-Scrivi un invito WhatsApp per {{playerName}} per una partita di padel.
+Scrivi un invito WhatsApp ultra-breve per {{playerName}} per una partita di padel.
 
-Dettagli della partita:
+Dettagli disponibili (usane il minimo indispensabile):
 - Giorno: {{weekdayStr}} {{dateStr}} alle {{timeStr}} — usa ESATTAMENTE questo giorno della settimana, non inventarlo
-- Campo: {{courtName}} ({{courtInfo}}) {{courtIcon}}
-- Quota: €{{pricePerPerson}} a testa
-- Stato gruppo: {{confirmedCount}}/{{totalNeeded}} confermati, mancano {{spotsLeft}} posti
+- Campo: {{courtInfo}} (coperto/scoperto) — menzionalo SOLO se coperto
 - {{isFriend}}
 
-Segnali sul gruppo già confermato:
-{{playersInsight}}
-
-Regola livelli: se playersInsight contiene nomi con livello (es. "Roberto (3.0)"), quando menzioni i giocatori nel testo del messaggio includi SEMPRE il livello accanto al nome (es. "Roberto 3.0"). Non inventare livelli non presenti.
-
-Regola fondamentale — scegli l'apertura in base allo stato reale del gruppo:
-- {{confirmedCount}} = 0 → il gruppo è ancora da formare. Usa SOLO varianti di: "Stiamo aprendo una partita per {{weekdayStr}}" — poi aggiungi campo, ora, quota. NON usare frasi che implicano un gruppo già esistente
-- {{confirmedCount}} = 1 o 2 → gruppo in costruzione. Usa: "Si sta mettendo insieme un bel gruppo", "Abbiamo già qualcuno, mancano {{spotsLeft}} posti", "Esce fuori qualcosa di bello"
-- {{confirmedCount}} = {{totalNeeded}} - 1 (manca 1 solo posto, cioè {{spotsLeft}} = 1) → SOLO in questo caso puoi usare: "Manchi solo tu", "Manca solo un posto", "Sei l'ultimo che cerchiamo"
-- Non inventare mai quante persone ci sono — usa sempre i numeri forniti sopra
-
-Altre regole:
-- Max 3-4 frasi, tono colloquiale e diretto come un amico che scrive su WhatsApp
-- Scegli 1-2 segnali tra quelli forniti per costruire il gancio: se giocano spesso → affidabilità; se ha già giocato con loro → familiarità
-- Includi sempre data, ora, campo con icona coperto/scoperto
-- Se c'è un prezzo, includilo
-- Termina con una call to action breve tipo "Ci sei?" o "Ti aspettiamo!"
-- Non usare false urgenze tipo "è l'ultimo posto" o "fai in fretta" — a meno che {{spotsLeft}} = 1
-- Non iniziare il messaggio con "Ciao {{playerName}}" — il nome è già nel contesto WhatsApp
+Regole FONDAMENTALI:
+- Max 1-2 frasi, tono diretto come un messaggio di un amico
+- Includi SEMPRE giorno e ora
+- NON menzionare: nomi degli altri giocatori, livelli, prezzo, quanti posti mancano, nome del campo
+- Se il campo è coperto, puoi accennarlo ("campo coperto") — se scoperto, non dirlo
+- Aggiungi una piccola nota entusiasta naturale (es. "dovrebbe venire fuori una bella partita", "mi sembra un bel gruppo") — una variante ogni volta, non sempre la stessa
+- Termina con una call to action brevissima: "Ci sei?", "Ti aspettiamo?", "Sei dei nostri?"
+- Non iniziare con "Ciao {{playerName}}" — il nome è già nel contesto WhatsApp
 - Solo il testo del messaggio, niente prefissi o spiegazioni
+
+Esempio di tono corretto: "{{weekdayStr}} sera alle {{timeStr}} ho una partita di padel — dovrebbe venire fuori bene. Ci sei?"

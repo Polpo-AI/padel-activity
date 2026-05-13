@@ -329,7 +329,15 @@ export async function callBrain(
     const invitationsStr = pendingInvitations.length > 0
         ? pendingInvitations.map((inv, i) => {
             const spots = inv.match.playersNeeded - inv.match.MatchPlayer.length;
-            return `  ${i + 1}. ${inv.match.court?.name || 'Campo'} – ${fmtDatetime(inv.match.startTime)} – mancano ${spots} posti [invitationId:${inv.id}]`;
+            const courtType = inv.match.court?.isCovered ? 'coperto' : 'scoperto';
+            const players = (inv.match.MatchPlayer as any[])
+                .map((mp: any) => {
+                    const firstName = (mp.player?.name || 'Giocatore').split(' ')[0];
+                    const lvl = mp.player?.skillLevel > 0 ? ` (${Number(mp.player.skillLevel).toFixed(1)})` : '';
+                    return `${firstName}${lvl}`;
+                }).join(', ');
+            const playersStr = players ? ` – già dentro: ${players}` : '';
+            return `  ${i + 1}. ${inv.match.court?.name || 'Campo'} (${courtType}) – ${fmtDatetime(inv.match.startTime)} – mancano ${spots} posti${playersStr} [invitationId:${inv.id}]`;
         }).join('\n')
         : '  nessuno';
 
@@ -583,6 +591,7 @@ Rispondi SEMPRE con JSON valido: { "message": "...", "action": "NOME", "params":
 - NONE — risposta conversazionale, nessuna operazione DB. Usa per saluti, domande, info, ringraziamenti, qualsiasi cosa non richieda un'azione specifica
 - ACCEPT_INVITATION — params: { "invitationId": "..." } — utente conferma presenza a partita
   ⚠️ AMBIGUITÀ: se ci sono più inviti PENDING e la risposta è generica ("sì", "ok", "ci sono") senza riferimento chiaro a uno specifico → usa NONE e chiedi a quale partita si riferisce, elencandole brevemente.
+  ⚠️ DETTAGLI ON-DEMAND: se l'utente chiede info sulla partita ("chi c'è?", "quanti siete?", "che livello?", "campo coperto?", "dimmi di più") → usa NONE e rispondi con elenco puntato usando i dati da INVITI PENDING (giocatori già dentro + livello + coperto/scoperto). Aggiungi una frase di empowerment breve e naturale ("secondo me esce bene", "mi sembra un bel gruppo", "dovrebbe essere una bella partita"). NON usare FAQ_REQUEST per queste info — le hai già.
 - REJECT_INVITATION — params: { "invitationId": "..." } — utente declina partita
   ⚠️ AMBIGUITÀ: stessa regola — se ci sono più inviti e la risposta è generica ("no", "non posso") → chiedi per quale partita.
 - CANCEL_MATCH — params: { "matchPlayerId": "..." } — utente vuole annullare partecipazione confermata. ⚠️ matchPlayerId DEVE essere copiato esattamente dal tag [matchPlayerId:...] in PARTITE CONFERMATE. Se non trovi NESSUNA partita confermata → NONE e chiedi quale partita vuole cancellare.

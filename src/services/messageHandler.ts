@@ -770,46 +770,24 @@ export async function handleMatchFilled(matchId: string, startTime: Date): Promi
     const courtShort = match.court?.name || 'Campo';
     const groupName = `Padel · ${courtShort} · ${shortDay} · ${timeStr}`;
 
-    // Genera messaggio di conferma warm con Haiku
-    const firstNames = confirmed.map(mp => (mp.player.name || 'Giocatore').split(' ')[0]).join(', ');
-    const courtLabel = `${match.court?.name || 'il campo'} (${match.court?.isCovered ? 'coperto 🏠' : 'all\'aperto ☀️'})`;
-    let confirmationMsg = `Partita confermata! 🎾 Siamo in 4: ${firstNames}.\n📅 ${dateStr} alle ${timeStr} — ${courtLabel}\nBuon divertimento a tutti! 💪`;
-    try {
-        const { anthropic } = await import('./ai');
-        const aiTone = (match.club as any)?.aiTone || 'calda, entusiasta, colloquiale';
-        const prompt = `Scrivi un messaggio WhatsApp da mandare in un gruppo padel quando la partita si è appena riempita.
-TONO: ${aiTone}
-CONTESTO: ${firstNames} giocheranno ${dateStr} alle ${timeStr} su ${courtLabel}.
-REGOLE: max 3 frasi, caldo ed entusiasta ma non esagerato, includi orario e nomi, niente markdown (no asterischi), emoji con parsimonia.
-Scrivi solo il messaggio.`;
-        const resp = await anthropic.messages.create({
-            model: 'claude-haiku-4-5-20251001',
-            max_tokens: 150,
-            temperature: 0.8,
-            messages: [{ role: 'user', content: prompt }],
-        });
-        if (resp.content[0].type === 'text') confirmationMsg = resp.content[0].text.trim();
-    } catch { /* usa fallback */ }
-
-    // Scheda dettagli: campo, prezzo, indirizzo — accodata dopo il messaggio AI nel gruppo
-    let detailCard: string | null = null;
+    // Scheda riepilogativa — unico messaggio inviato nel gruppo alla creazione
+    let confirmationMsg = `📋 *Riepilogo partita*\n📅 ${dateStr} alle ${timeStr}\n🎾 ${match.court?.name || 'Campo'} (${match.court?.isCovered ? '🏟️ coperto' : '☀️ scoperto'})`;
     try {
         const { calculateSlotCost } = await import('./pricing');
         const totalCost = await calculateSlotCost(match.court!.id, startTime);
         const pricePerPerson = totalCost > 0 ? (totalCost / 4).toFixed(2) : null;
         const racketPrice = (match.club as any)?.racketPrice != null ? `${(match.club as any).racketPrice}€` : null;
-        const courtType = match.court?.isCovered ? '🏟️ coperto' : '☀️ all\'aperto';
         const clubLocation = [(match.club as any)?.address, (match.club as any)?.city].filter(Boolean).join(' — ');
         const lines = [
-            `📋 *Dettagli partita*`,
+            `📋 *Riepilogo partita*`,
             `📅 ${dateStr} alle ${timeStr}`,
-            `🎾 ${match.court?.name || 'Campo'} (${courtType})`,
+            `🎾 ${match.court?.name || 'Campo'} (${match.court?.isCovered ? '🏟️ coperto' : '☀️ scoperto'})`,
             pricePerPerson ? `💶 ${pricePerPerson}€ a persona` : null,
             racketPrice ? `🎾 Noleggio racchetta: ${racketPrice}/persona` : null,
             clubLocation ? `📍 ${clubLocation}` : null,
         ].filter(Boolean);
-        detailCard = lines.join('\n');
-    } catch { /* non bloccare la creazione del gruppo */ }
+        confirmationMsg = lines.join('\n');
+    } catch { /* usa il fallback sopra */ }
 
     // Filter players that have a valid JID/Phone for the WhatsApp group
     // Guests or placeholder players (with fake identifiers) won't be added to the physical group
@@ -820,12 +798,6 @@ Scrivi solo il messaggio.`;
     try {
         const groupId = await createGroupAndAddPlayers(groupName, playerPhones, confirmationMsg);
         await prisma.match.update({ where: { id: matchId }, data: { groupId } });
-
-        // Invia scheda dettagli nel gruppo dopo il messaggio di benvenuto
-        if (detailCard && groupId) {
-            const { simulateTypingAndSend } = await import('./whatsapp');
-            await simulateTypingAndSend(groupId, detailCard).catch(() => {});
-        }
 
         // Notifica i PENDING rimasti e dirottali
         const pendingInvs = await prisma.invitation.findMany({
