@@ -168,7 +168,8 @@ export async function generateInvitation(
     courtId: string | null | undefined,
     clubId?: string | null,
     isFriend = false,
-    socialContext?: import('./matchmaker').MatchSocialContext
+    socialContext?: import('./matchmaker').MatchSocialContext,
+    matchType?: { isMixed: boolean; targetGender: string | null }
 ): Promise<string> {
     const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
     const timeStr = matchTime.toLocaleTimeString('it-IT', { timeZone: 'Europe/Rome', hour: '2-digit', minute: '2-digit' });
@@ -198,52 +199,39 @@ export async function generateInvitation(
     }
 
     const courtInfo = courtCovered ? 'coperto' : 'scoperto';
-    const courtIcon = courtCovered ? '🏠' : '☀️';
 
-    // Stato gruppo — sempre presente, indipendentemente dal numero di confermati
+    // Fascia oraria leggibile dal timestamp (fonte autorevole, non da Claude)
+    const hour = matchTime.toLocaleString('it-IT', { timeZone: 'Europe/Rome', hour: 'numeric', hour12: false });
+    const hourNum = parseInt(hour, 10);
+    const timeOfDay = hourNum < 13 ? 'mattina' : hourNum < 18 ? 'pomeriggio' : 'sera';
+
+    // Tipo partita leggibile
+    const tg = matchType?.targetGender;
+    const matchTypeLabel = tg === 'MALE' ? 'maschile' : tg === 'FEMALE' ? 'femminile' : matchType?.isMixed ? 'mista' : '';
+
+    // Stato gruppo
     const confirmedCount = socialContext?.players.length ?? 0;
     const spotsLeft = socialContext?.spotsLeft ?? 3;
     const totalNeeded = confirmedCount + spotsLeft;
 
-    // Costruisce segnali comportamentali reali per l'AI (solo se ci sono già giocatori)
+    // Segnali sui giocatori confermati — solo fatti veri, mai inventati
     let playersInsight = '';
     if (socialContext && socialContext.players.length > 0) {
         const signals: string[] = [];
-
-        // Nomi con livello (solo first name + Lv. se disponibile), uno per riga
         const nameLines = socialContext.players
             .map(p => p.skillLevel > 0 ? `- ${p.name} (${Number(p.skillLevel).toFixed(1)})` : `- ${p.name}`)
             .join('\n');
         signals.push(`Già confermati:\n${nameLines}`);
-
-        // Frequenza di gioco
+        if (socialContext.hasPlayedWithBefore) signals.push(`Ha già giocato con loro.`);
         const frequent = socialContext.players.filter(p => p.matchesLast30Days >= 3);
-        if (frequent.length > 0) {
-            const freqNames = frequent.map(p => p.name).join(' e ');
-            signals.push(`${freqNames} ${frequent.length === 1 ? 'gioca' : 'giocano'} più volte a settimana.`);
-        }
-
-        // Tasso di risposta — indica affidabilità
-        const reliable = socialContext.players.filter(p => p.acceptanceRate >= 0.7);
-        if (reliable.length > 0) {
-            signals.push(`${reliable.length === socialContext.players.length ? 'Sono' : 'Alcuni sono'} giocatori affidabili.`);
-        }
-
-        // Familiarità
-        if (socialContext.hasPlayedWithBefore) {
-            signals.push(`Ha già giocato con loro.`);
-        }
-
-        // Fascia oraria
-        const slotLabels: Record<string, string> = { mattina: 'Fascia mattutina.', pomeriggio: 'Fascia pomeridiana.', sera: 'Fascia serale.' };
-        signals.push(slotLabels[socialContext.timeOfDay] ?? '');
-
+        if (frequent.length > 0) signals.push(`${frequent.map(p => p.name).join(' e ')} ${frequent.length === 1 ? 'gioca' : 'giocano'} spesso.`);
         playersInsight = signals.filter(Boolean).join(' ');
     }
 
+    const matchTypeStr = matchTypeLabel ? ` ${matchTypeLabel}` : '';
     const fallback = isFriend
-        ? `Ciao ${playerName}! Un amico ti ha invitato a padel ${weekdayStr} ${dateStr} alle ${timeStr} · ${courtName} ${courtIcon} · €${pricePerPerson.toFixed(2)} a testa. Sei disponibile? 🎾`
-        : `Ciao ${playerName}! Partita di padel ${weekdayStr} ${dateStr} alle ${timeStr} · ${courtName} ${courtIcon}${pricePerPerson > 0 ? ` · €${pricePerPerson.toFixed(2)} a testa` : ''}. ${playersInsight} Ci sei? 🎾`;
+        ? `Ciao ${playerName}, un amico ti ha invitato a padel ${weekdayStr} ${timeOfDay} alle ${timeStr}. Sei disponibile?`
+        : `Ciao ${playerName}, ${weekdayStr.toLowerCase()} ${timeOfDay} c'è una partita di padel${matchTypeStr} alle ${timeStr}. Ti può interessare?`;
 
     let aiTone = '';
     if (clubId) {
@@ -257,25 +245,22 @@ export async function generateInvitation(
             const result = await withRetry(
                 () => anthropic.messages.create({
                     model: 'claude-haiku-4-5-20251001',
-                    max_tokens: 220,
+                    max_tokens: 180,
                     temperature: 0.8,
-                    system: aiTone || 'Sei il bot di un circolo padel. Scrivi messaggi brevi, diretti e coinvolgenti in italiano. Vai subito al punto.',
+                    system: aiTone || 'Sei il bot di un circolo padel. Scrivi messaggi brevi e colloquiali in italiano, come un amico che scrive su WhatsApp.',
                     messages: [{
                         role: 'user',
                         content: loadPrompt('generate_invitation', {
                             playerName,
                             weekdayStr,
-                            dateStr,
+                            timeOfDay,
                             timeStr,
-                            courtName,
                             courtInfo,
-                            courtIcon,
-                            pricePerPerson: pricePerPerson.toFixed(2),
-                            isFriend: isFriend ? 'Invito da un amico.' : '',
+                            matchTypeLabel: matchTypeLabel || '',
+                            isFriend: isFriend ? 'true' : 'false',
                             confirmedCount: String(confirmedCount),
                             spotsLeft: String(spotsLeft),
-                            totalNeeded: String(totalNeeded),
-                            playersInsight: playersInsight || 'Il gruppo è ancora da formare.',
+                            playersInsight: playersInsight || '',
                         })
                     }],
                 }),

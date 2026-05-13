@@ -1,18 +1,30 @@
-Scrivi un invito WhatsApp ultra-breve per {{playerName}} per una partita di padel.
+Scrivi un invito WhatsApp per {{playerName}} per una partita di padel.
 
-Dettagli disponibili (usane il minimo indispensabile):
-- Giorno: {{weekdayStr}} {{dateStr}} alle {{timeStr}} — usa ESATTAMENTE questo giorno della settimana, non inventarlo
-- Campo: {{courtInfo}} (coperto/scoperto) — menzionalo SOLO se coperto
-- {{isFriend}}
+Dati certi (usa ESATTAMENTE questi, non inventare nulla):
+- Giorno: {{weekdayStr}} (usa esattamente questo nome del giorno)
+- Fascia: {{timeOfDay}} (mattina/pomeriggio/sera)
+- Ora: {{timeStr}}
+- Tipo partita: {{matchTypeLabel}} (maschile/femminile/mista — vuoto se non specificato)
+- Campo: {{courtInfo}} (scoperto/coperto — menziona SOLO se coperto)
+- Amico che invita: {{isFriend}} (true/false)
 
-Regole FONDAMENTALI:
-- Max 1-2 frasi, tono diretto come un messaggio di un amico
-- Includi SEMPRE giorno e ora
-- NON menzionare: nomi degli altri giocatori, livelli, prezzo, quanti posti mancano, nome del campo
-- Se il campo è coperto, puoi accennarlo ("campo coperto") — se scoperto, non dirlo
-- Aggiungi una piccola nota entusiasta naturale (es. "dovrebbe venire fuori una bella partita", "mi sembra un bel gruppo") — una variante ogni volta, non sempre la stessa
-- Termina con una call to action brevissima: "Ci sei?", "Ti aspettiamo?", "Sei dei nostri?"
-- Non iniziare con "Ciao {{playerName}}" — il nome è già nel contesto WhatsApp
-- Solo il testo del messaggio, niente prefissi o spiegazioni
+Stato del gruppo (usa solo fatti veri):
+- Confermati: {{confirmedCount}}
+- Posti liberi: {{spotsLeft}}
+- Info giocatori: {{playersInsight}} (vuoto se il gruppo è ancora da formare — NON inventare presenze)
 
-Esempio di tono corretto: "{{weekdayStr}} sera alle {{timeStr}} ho una partita di padel — dovrebbe venire fuori bene. Ci sei?"
+Struttura del messaggio:
+1. Apertura diretta: "Ciao {{playerName}}, [giorno] [fascia] c'è una partita di padel[tipo] alle [ora]"
+   - Se isFriend=true: "un amico ti ha invitato a padel [giorno] [fascia] alle [ora]"
+2. Solo se confirmedCount > 0: aggiungi una frase breve e onesta sui giocatori presenti usando playersInsight. Varia le formulazioni ("ci sono già X persone", "ho già X confermati", "si è già iscritto X"). MAI inventare o esagerare.
+3. Chiudi con una domanda secca: "Ti può interessare?", "Ci sei?", "Sei dei nostri?", "Ti unisci?"
+
+Regole:
+- Max 2-3 frasi totali
+- Tono colloquiale, come un amico che scrive su WhatsApp
+- Max 1 emoji per messaggio, preferibilmente nessuna
+- MAI iniziare con "Ciao {{playerName}}" seguito da punto esclamativo — tono normale, non entusiasta
+- MAI menzionare il nome del campo
+- MAI dire che "sarà una bella partita" o "promette bene" se il gruppo è ancora vuoto (confirmedCount = 0)
+- NON usare asterischi o grassetto
+- Solo il testo del messaggio, niente prefissi

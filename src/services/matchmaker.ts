@@ -250,7 +250,8 @@ async function _processWaveInner(matchId: string, waveNumber: number, urgencyMul
             match.courtId,
             match.club?.id ?? undefined,
             false,
-            socialContext
+            socialContext,
+            { isMixed: (match as any).isMixed ?? false, targetGender: (match as any).targetGender ?? null }
         );
 
         if (i > 0) await sleep(humanSendDelayMs());
