@@ -8,7 +8,7 @@
 import { prisma } from './db';
 import { anthropic } from './ai';
 import { waveQueue, getRedis } from './queue';
-import { simulateTypingAndSend } from './whatsapp';
+import { simulateTypingAndSend, dissolveGroup } from './whatsapp';
 import pino from 'pino';
 
 const logger = pino({ level: 'info' });
@@ -947,7 +947,6 @@ export async function executeAction(
 
                     // Se esiste un gruppo WA: scioglilo (messaggio finale + rimozione partecipanti) e azzera groupId
                     if ((match as any).groupId) {
-                        const { dissolveGroup } = await import('./whatsapp');
                         dissolveGroup(
                             (match as any).groupId,
                             `${leavingName} non può più venire alla partita di ${matchTimeStr}. Sciogliamo il gruppo — appena troviamo un sostituto ve ne creo uno nuovo 🎾`,

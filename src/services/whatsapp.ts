@@ -607,7 +607,6 @@ export async function dissolveGroup(groupJid: string, finalMessage: string, expl
     }
 
     const clubId = explicitClubId || currentClubId();
-    logger.info({ groupJid, clubId, mapSize: clubSockets.size, keys: [...clubSockets.keys()], hasSock: !!clubSockets.get(clubId!)?.sock }, '[dissolveGroup] attempting socket lookup');
     const cs = await waitForSocket(clubId);
     const sock = cs.sock!;
 
