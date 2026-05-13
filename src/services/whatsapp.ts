@@ -596,6 +596,42 @@ export async function createGroupAndAddPlayers(
     }
 }
 
+/**
+ * Invia un messaggio finale nel gruppo, rimuove tutti i partecipanti e fa uscire il bot.
+ * Azzera il gruppo WA dopo che una partita LOCKED si è riaperta per sostituzione.
+ */
+export async function dissolveGroup(groupJid: string, finalMessage: string): Promise<void> {
+    if (process.env.DRY_RUN === 'true') {
+        logger.info(`[DRY RUN] Would dissolve group ${groupJid}`);
+        return;
+    }
+
+    const clubId = currentClubId();
+    const cs = await waitForSocket(clubId);
+    const sock = cs.sock!;
+
+    try {
+        await sock.sendMessage(groupJid, { text: finalMessage });
+        await jitteredSleep(1500, 300);
+
+        const meta = await sock.groupMetadata(groupJid);
+        const botJid = sock.user?.id;
+        const others = meta.participants
+            .map(p => p.id)
+            .filter(id => id !== botJid);
+
+        if (others.length > 0) {
+            await sock.groupParticipantsUpdate(groupJid, others, 'remove');
+            await jitteredSleep(1000, 200);
+        }
+
+        await sock.groupLeave(groupJid);
+        logger.info({ groupJid, clubId }, 'Group dissolved after player cancel');
+    } catch (err) {
+        logger.warn({ err, groupJid, clubId }, 'dissolveGroup failed — group may still exist');
+    }
+}
+
 // ─────────────────────────────────────────────
 // EXPORTED GETTERS
 // ─────────────────────────────────────────────

@@ -930,7 +930,23 @@ export async function executeAction(
                     });
                 } else {
                     // Matchmaking LOCKED: manca 1 giocatore → riapri e rilancia wave con urgenza
-                    await prisma.match.update({ where: { id: mp.matchId }, data: { status: 'OPEN' } });
+                    const matchTimeStr = match.startTime.toLocaleString('it-IT', {
+                        timeZone: 'Europe/Rome', weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit',
+                    });
+                    const leavingName = (player as any).name?.split(' ')[0] || 'Un giocatore';
+                    const matchUpdate: any = { status: 'OPEN' };
+
+                    // Se esiste un gruppo WA: scioglilo (messaggio finale + rimozione partecipanti) e azzera groupId
+                    if ((match as any).groupId) {
+                        const { dissolveGroup } = await import('./whatsapp');
+                        dissolveGroup(
+                            (match as any).groupId,
+                            `${leavingName} non può più venire alla partita di ${matchTimeStr}. Sciogliamo il gruppo — appena troviamo un sostituto ve ne creo uno nuovo 🎾`
+                        ).catch(err => logger.warn({ err, matchId: mp.matchId }, 'dissolveGroup failed'));
+                        matchUpdate.groupId = null;
+                    }
+
+                    await prisma.match.update({ where: { id: mp.matchId }, data: matchUpdate });
                     waveQueue.add('process-wave', {
                         matchId: mp.matchId,
                         waveNumber: 1,
@@ -938,11 +954,7 @@ export async function executeAction(
                         scheduledAt: Date.now(),
                     }, { delay: 0 }).catch(err => logger.warn({ err, matchId: mp.matchId }, 'Wave scheduling failed'));
 
-                    // Notifica gli altri co-giocatori che il gruppo si è riaperto
-                    const matchTimeStr = match.startTime.toLocaleString('it-IT', {
-                        timeZone: 'Europe/Rome', weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit',
-                    });
-                    const leavingName = (player as any).name?.split(' ')[0] || 'Un giocatore';
+                    // Notifica 1-a-1 i co-giocatori rimasti
                     for (const rmp of (match as any).MatchPlayer) {
                         const phone = rmp.player?.phoneNumber;
                         if (phone) {
