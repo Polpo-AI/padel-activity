@@ -124,9 +124,22 @@ async function _processWaveInner(matchId: string, waveNumber: number, urgencyMul
         if (waveNumber === 1 && preferredIds.length > 0) {
             const isMorningForPreferred = isMorningMatchInRome(match.startTime);
             const dailyCapForPreferred = match.club?.maxDailyMessages ?? 2;
+
+            // Escludi preferred che hanno già un'invitation (qualsiasi status) o sono già MatchPlayer
+            // (inclusi quelli con leftAt != null — chi ha lasciato la partita non va reinvitato)
+            const existingInvitationsForPreferred = await prisma.invitation.findMany({
+                where: { matchId, playerId: { in: preferredIds } },
+                select: { playerId: true },
+            });
+            const alreadyHandled = new Set([
+                ...existingInvitationsForPreferred.map(i => i.playerId),
+                ...match.MatchPlayer.map((mp: any) => mp.playerId),
+            ]);
+            const eligiblePreferredIds = preferredIds.filter((id: string) => !alreadyHandled.has(id));
+
             const preferred = await prisma.player.findMany({
                 where: {
-                    id: { in: preferredIds },
+                    id: { in: eligiblePreferredIds },
                     active: true,
                     ...(isMorningForPreferred
                         ? { morningContactsToday: { lt: dailyCapForPreferred }, avoidMorning: false }

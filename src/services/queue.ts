@@ -185,11 +185,26 @@ export async function checkSilentMatches(): Promise<void> {
             [...waitingJobs, ...delayedJobs].map(j => j.data?.matchId).filter(Boolean)
         );
 
+        // Match con invitation PENDING inviate nell'ultima ora → non sono "silenti",
+        // stanno semplicemente aspettando risposta. Evita double-wave.
+        const recentCutoff = new Date(now.getTime() - 60 * 60 * 1000);
+        const recentPendingInvitations = await prisma.invitation.findMany({
+            where: {
+                matchId: { in: openMatches.map(m => m.id) },
+                status: 'PENDING',
+                sentAt: { gte: recentCutoff },
+            },
+            select: { matchId: true },
+            distinct: ['matchId'],
+        });
+        const matchesWithRecentInvitations = new Set(recentPendingInvitations.map(i => i.matchId));
+
         for (const match of openMatches) {
             const confirmed = match.MatchPlayer.filter(mp => !mp.leftAt).length;
             if (confirmed >= match.playersNeeded) continue;
 
             const hasActiveWave = allWaveMatchIds.has(match.id);
+            if (!hasActiveWave && matchesWithRecentInvitations.has(match.id)) continue;
 
             if (!hasActiveWave) {
                 const minutesLeft = (match.startTime.getTime() - now.getTime()) / 60000;
