@@ -631,9 +631,11 @@ export async function confirmRedirectChoice(
         }
 
         const clarifyVariants = [
-            `Non ho capito quale preferisci 😅 Dimmi il numero dell'opzione o l'orario e mi metto subito!`,
+            `Non ho capito quale preferisci, dimmi il numero dell'opzione o l'orario e mi metto subito 😅`,
             `Aiutami: scrivi il numero dell'opzione che vuoi (es. "la prima", "opzione 2") 🎾`,
-            `Non sono sicura di aver capito — ripeti con il numero dell'opzione o l'orario? 😊`,
+            `Non sono sicuro di aver capito, ripeti con il numero dell'opzione o l'orario? 😊`,
+            `Quale prendi? Dimmi solo il numero e prenoto subito!`,
+            `Non ho capito bene, scrivi solo il numero dell'opzione e penso a tutto io 🎾`,
         ];
         await simulateTypingAndSend(jid, clarifyVariants[Math.floor(Math.random() * clarifyVariants.length)]);
         return;
@@ -664,19 +666,27 @@ async function addGroupToMatch(matchId: string, group: RedirectGroup): Promise<v
     });
 
     if (!match || match.status !== 'OPEN') {
-        await simulateTypingAndSend(
-            group.referentJid,
-            "Mi dispiace, quella partita si è nel frattempo chiusa! Vuoi scegliere un'altra opzione?"
-        );
+        const _closedMsgs = [
+            "Mi dispiace, quella partita si è nel frattempo chiusa! Vuoi scegliere un'altra opzione?",
+            "Quella partita si è chiusa appena prima, scegli un'altra opzione 😔",
+            "Ops, quella partita non è più disponibile, quale altra preferisci? 😅",
+            "Quella si è chiusa nel frattempo, quale opzione scegli? 😔",
+            "Arrivato un attimo tardi su quella, hai un'altra preferenza? 😕",
+        ];
+        await simulateTypingAndSend(group.referentJid, _closedMsgs[Math.floor(Math.random() * _closedMsgs.length)]);
         return;
     }
 
     const spotsLeft = match.playersNeeded - match.MatchPlayer.filter((mp: any) => !mp.leftAt).length;
     if (spotsLeft < group.playerCount) {
-        await simulateTypingAndSend(
-            group.referentJid,
-            "Mi dispiace, i posti disponibili sono cambiati! Vuoi scegliere un'altra opzione?"
-        );
+        const _spotsMsgs = [
+            "Mi dispiace, i posti disponibili sono cambiati! Vuoi scegliere un'altra opzione?",
+            "Peccato, i posti sono cambiati nel frattempo, quale altra opzione preferisci? 😔",
+            "Quella si è riempita appena prima di te, scegliene un'altra 😅",
+            "I posti sono finiti su quella, ti va un'altra opzione? 😕",
+            "Qualcuno ha appena preso l'ultimo posto, quale altra opzione ti va? 😔",
+        ];
+        await simulateTypingAndSend(group.referentJid, _spotsMsgs[Math.floor(Math.random() * _spotsMsgs.length)]);
         return;
     }
 
@@ -717,9 +727,11 @@ async function addGroupToMatch(matchId: string, group: RedirectGroup): Promise<v
                 });
                 const newNames = newPlayers.map(p => (p.name || '').split(' ')[0]).filter(Boolean).join(', ') || 'i nuovi arrivati';
                 const welcomeVariants = [
-                    `Siamo al completo! 🎾 Benvenuti ${newNames} — ci vediamo in campo!`,
-                    `Gruppo al completo! Benvenuti ${newNames} 🙌 Preparatevi!`,
-                    `${newNames} sono con noi! 🎾 Squadra al completo, a presto!`,
+                    `Siamo al completo! Benvenuti ${newNames}, ci vediamo in campo! 🎾`,
+                    `Gruppo al completo! Benvenuti ${newNames}, preparatevi! 🙌`,
+                    `${newNames} sono con noi, squadra al completo! A presto! 🎾`,
+                    `Perfetto, ci siamo tutti! Benvenuti ${newNames}, a presto! 🎾`,
+                    `Il gruppo è al completo con ${newNames}! Ci vediamo in campo 🎾`,
                 ];
                 await sendMessage(match.groupId, welcomeVariants[Math.floor(Math.random() * welcomeVariants.length)]);
             }
@@ -870,29 +882,39 @@ function buildOptionDescription(
 function buildRedirectMessage(group: RedirectGroup, options: RedirectOption[]): string {
     const reasonVariants: Record<RedirectGroup['reason'], string[]> = {
         CANCELLED: [
-            'La partita purtroppo è stata cancellata 😔',
+            'La partita è stata cancellata 😔',
             'Mi dispiace, la partita non si è potuta tenere 😔',
-            'Purtroppo la partita è saltata 😕',
+            'La partita è saltata 😕',
+            'La partita è stata annullata, mi dispiace 😔',
+            'La partita non si gioca più 😕',
         ],
         UNFILLED: [
             'Non siamo riusciti a trovare abbastanza giocatori 😔',
-            'Il campo è rimasto vuoto — non abbiamo trovato tutti e 4 😕',
-            'Purtroppo non abbiamo chiuso la squadra in tempo 😔',
+            'Il campo è rimasto vuoto, non abbiamo trovato tutti e 4 😕',
+            'Non abbiamo chiuso la squadra in tempo 😔',
+            'Mancavano giocatori, non siamo riusciti a chiudere 😕',
+            'Non abbiamo trovato abbastanza gente in tempo 😔',
         ],
         SLOT_TAKEN: [
             'Quell\'orario non è disponibile 😕',
-            'Purtroppo quell\'orario è già occupato 😔',
+            'Quell\'orario è già occupato 😔',
             'A quell\'orario non c\'è posto 😕',
+            'Quell\'orario è andato, è stato preso 😔',
+            'Nessuna disponibilità a quell\'orario 😕',
         ],
         POOL_EXHAUSTED: [
-            'Ho esaurito i giocatori disponibili per completare la partita 😔',
+            'Ho esaurito i giocatori nella lista 😔',
             'Non ci sono altri giocatori da chiamare in questo momento 😕',
-            'Il pool di giocatori è esaurito — non riesco a trovare altri 😔',
+            'La lista giocatori è esaurita, non riesco a trovare altri 😔',
+            'Nessun altro giocatore disponibile al momento 😕',
+            'Ho chiamato tutti nella lista, nessun altro disponibile adesso 😔',
         ],
         CANCELLATION: [
             'Un giocatore ha disdetto e non riesco a trovare un sostituto in tempo 😔',
-            'Purtropto qualcuno ha cancellato e non riusciamo a rimpiazzarlo 😕',
+            'Qualcuno ha cancellato e non riusciamo a rimpiazzarlo 😕',
             'Disdetta dell\'ultimo minuto e nessuno disponibile come sostituto 😔',
+            'Un posto si è liberato ma non ho trovato nessuno 😕',
+            'C\'è stata una disdetta e il sostituto non si è trovato 😔',
         ],
     };
 
@@ -903,7 +925,14 @@ function buildRedirectMessage(group: RedirectGroup, options: RedirectOption[]): 
         // Quando originalCourtIsCovered !== null, findRedirectOptionsBookField ha già cercato
         // anche il tipo opposto come fallback → se options è ancora vuoto, entrambi i tipi
         // sono pieni → non suggerire "prova il tipo opposto" (è già stato provato).
-        return `${reason}\n\nNon ho trovato campi liberi nei prossimi giorni. Scrivimi un giorno specifico e vedo subito! 🎾`;
+        const _noOptMsgs = [
+            `${reason}\n\nNon ho trovato campi liberi nei prossimi giorni. Scrivimi un giorno specifico e vedo subito! 🎾`,
+            `${reason}\n\nAl momento non ho altre disponibilità, dimmi un giorno e cerco per te 😔`,
+            `${reason}\n\nNon ho trovato nulla nei prossimi giorni. Scrivimi quando sei libero e riprovo!`,
+            `${reason}\n\nNessuna disponibilità nei prossimi giorni, mandami una data e ci guardo 😕`,
+            `${reason}\n\nNon vedo disponibilità nei prossimi giorni, scrivimi il giorno preferito e cerco subito 😔`,
+        ];
+        return _noOptMsgs[Math.floor(Math.random() * _noOptMsgs.length)];
     }
 
     const effectiveIntent: 'BOOK_FIELD' | 'MATCHMAKING' =
@@ -937,6 +966,8 @@ function buildRedirectMessage(group: RedirectGroup, options: RedirectOption[]): 
         'Dimmi il numero e prenoto subito 🎾',
         'Basta il numero e chiudo io 🎾',
         'Scegli il numero e ci penso io 🙌',
+        'Il numero basta, penso a tutto io!',
+        'Dimmi quale e prenoto in un secondo 🎾',
     ];
     const closing = closingVariants[Math.floor(Math.random() * closingVariants.length)];
 

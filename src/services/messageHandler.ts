@@ -176,10 +176,12 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[], cor
                     await simulateTypingAndSend(
                         jid,
                         [
-                            "Non riesco ad ascoltare il messaggio vocale al momento 😅 Puoi scrivermi?",
-                            "Non riesco ad elaborare l'audio in questo momento 🙉 Prova a scrivere!",
-                            "Ho problemi con l'audio adesso 😅 Scrivimi quello che volevi dire!",
-                        ][Math.floor(Math.random() * 3)],
+                            "Non riesco ad ascoltare il messaggio vocale al momento, puoi scrivermi? 😅",
+                            "Non riesco ad elaborare l'audio adesso, prova a scrivere 🙉",
+                            "Ho problemi con l'audio adesso, scrivimi quello che volevi dire 😅",
+                            "Il vocale non passa, scrivi pure qui!",
+                            "Non riesco a sentire il vocale adesso. Scrivimi e ti rispondo subito!",
+                        ][Math.floor(Math.random() * 5)],
                         undefined
                     );
                     return;
@@ -364,7 +366,14 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[], cor
                     });
                 } catch (err) {
                     logger.error({ err }, 'ONLY_COVERED_AVAILABLE redirectGroup failed');
-                    await simulateTypingAndSend(jid, 'A quell\'orario gli scoperti sono tutti occupati. Dimmi un altro orario e trovo qualcosa! 🎾');
+                    const _msgs = [
+                        "A quell'orario i campi scoperti sono tutti occupati. Dimmi un altro orario e trovo qualcosa!",
+                        "I campi scoperti sono tutti pieni in quella fascia, prova un altro orario 😔",
+                        "A quell'ora non c'è nessun campo scoperto libero. Ti va un campo coperto, o preferisci cambiare orario?",
+                        "Campi scoperti esauriti a quell'orario, vuoi un altro orario o consideri un campo coperto? 😅",
+                        "Nessun campo scoperto disponibile in quella fascia. Hai un altro orario in mente?",
+                    ];
+                    await simulateTypingAndSend(jid, _msgs[Math.floor(Math.random() * _msgs.length)]);
                 }
                 return;
             }
@@ -389,7 +398,14 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[], cor
                     });
                 } catch (err) {
                     logger.error({ err }, 'ONLY_UNCOVERED_AVAILABLE redirectGroup failed');
-                    await simulateTypingAndSend(jid, 'A quell\'orario i coperti sono tutti occupati. Dimmi un altro orario e trovo qualcosa! 🎾');
+                    const _msgs = [
+                        "A quell'orario i campi coperti sono tutti occupati. Dimmi un altro orario e trovo qualcosa!",
+                        "I campi coperti sono tutti pieni in quella fascia, prova un altro orario 😔",
+                        "A quell'ora non c'è nessun campo coperto libero. Ti va un campo scoperto, o preferisci cambiare orario?",
+                        "Campi coperti esauriti a quell'orario, vuoi un altro orario o consideri un campo scoperto? 😅",
+                        "Nessun campo coperto disponibile in quella fascia. Hai un altro orario in mente?",
+                    ];
+                    await simulateTypingAndSend(jid, _msgs[Math.floor(Math.random() * _msgs.length)]);
                 }
                 return;
             }
@@ -398,8 +414,16 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[], cor
                 const redis = getRedis();
                 const nameKey = searchedName.toLowerCase();
                 const alreadyNotified = await redis.get(`invite:admin_notified:${club?.id}:${nameKey}`);
+                const clubName = club?.name || 'circolo';
                 if (alreadyNotified) {
-                    await simulateTypingAndSend(jid, `Ho già contattato il circolo per verificare. Ti rispondo appena ho notizie!`);
+                    const _alreadyMsgs = [
+                        `Ho già contattato il circolo per verificare. Ti rispondo appena ho notizie!`,
+                        `Ho già segnalato al circolo, appena ho una risposta te la giro!`,
+                        `Il circolo è già al corrente, ti aggiorno non appena rispondo!`,
+                        `Ho già mandato il messaggio al circolo. Attendo risposta per te!`,
+                        `Ho già contattato il circolo, ti tengo aggiornato!`,
+                    ];
+                    await simulateTypingAndSend(jid, _alreadyMsgs[Math.floor(Math.random() * _alreadyMsgs.length)]);
                 } else {
                     const alreadyAsked = await redis.get(`invite:not_found:${club?.id}:${nameKey}`);
                     if (alreadyAsked) {
@@ -412,21 +436,54 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[], cor
                             club?.name ?? undefined,
                         ).catch(() => {});
                         await redis.set(`invite:admin_notified:${club?.id}:${nameKey}`, '1', 'EX', 3600);
-                        await simulateTypingAndSend(jid, `Ho contattato il circolo per verificare. Ti rispondo appena ho notizie!`);
+                        const _escalateMsgs = [
+                            `Ho già contattato il circolo per verificare. Ti rispondo appena ho notizie!`,
+                            `Ho già segnalato al circolo, appena ho una risposta te la giro!`,
+                            `Il circolo è già al corrente, ti aggiorno non appena rispondo!`,
+                            `Ho già mandato il messaggio al circolo. Attendo risposta per te!`,
+                            `Ho già contattato il circolo, ti tengo aggiornato!`,
+                        ];
+                        await simulateTypingAndSend(jid, _escalateMsgs[Math.floor(Math.random() * _escalateMsgs.length)]);
                     } else {
                         // Prima volta: informa l'utente e memorizza
                         await redis.set(`invite:not_found:${club?.id}:${nameKey}`, '1', 'EX', 3600);
-                        await simulateTypingAndSend(jid, `Non trovo "${searchedName}" tra i giocatori iscritti al circolo. Se sei sicuro che sia registrato, scrivimi di nuovo e verifico con il campo!`);
+                        const _notFoundMsgs = [
+                            `Non trovo "${searchedName}" iscritto a ${clubName}. Sei sicuro si sia segnato così?`,
+                            `"${searchedName}" non risulta nella lista di ${clubName}. Lo conosci con un altro nome?`,
+                            `Non ho trovato "${searchedName}" tra gli iscritti a ${clubName}. Sei sicuro del nome?`,
+                            `Il nome "${searchedName}" non mi torna tra gli iscritti a ${clubName}. Come l'hai scritto?`,
+                            `Nessun "${searchedName}" nella lista di ${clubName}. Magari è iscritto con un nome diverso?`,
+                        ];
+                        await simulateTypingAndSend(jid, _notFoundMsgs[Math.floor(Math.random() * _notFoundMsgs.length)]);
                     }
                 }
             } else if (result.errorMessage === 'MATCH_CLOSED') {
-                await simulateTypingAndSend(jid, 'Questa partita non è più disponibile — è stata chiusa o completata. Vuoi che cerchi un altro slot? 🎾');
+                const _closedMsgs = [
+                    "Questa partita non è più disponibile (è stata chiusa o completata). Vuoi che cerchi un altro orario?",
+                    "Questa partita è già chiusa, vuoi che cerchi qualcos'altro? 😔",
+                    "La partita non è più disponibile, ti trovo subito un'alternativa? 😕",
+                    "Questa partita si è chiusa, dimmi quando sei libero e cerco 😔",
+                    "La partita è già chiusa. Vuoi un altro orario?",
+                ];
+                await simulateTypingAndSend(jid, _closedMsgs[Math.floor(Math.random() * _closedMsgs.length)]);
             } else if (result.errorMessage === 'MATCH_FULL') {
-                await simulateTypingAndSend(jid, 'Purtroppo questa partita si è appena riempita! Dimmi un altro orario e ti trovo posto 🎾');
-            } else if (result.errorMessage === 'LESSON_NO_CONTACT') {
-                await simulateTypingAndSend(jid, 'Per le lezioni ti chiedo di contattare direttamente la segreteria del circolo — saranno loro a confermarti orario e disponibilità!');
+                const _fullMsgs = [
+                    "Questa partita si è appena riempita! Dimmi un altro orario e ti trovo posto 🎾",
+                    "Il posto è stato preso appena prima di te, vuoi che cerchi un'altra partita? 😔",
+                    "La partita si è riempita proprio adesso, dimmi quando sei libero e trovo qualcosa 😅",
+                    "Arrivato un attimo dopo, i posti sono finiti. Provo un altro orario? 😕",
+                    "Piena! Qualcuno ti ha appena superato, ti cerco subito un'altra partita? 😅",
+                ];
+                await simulateTypingAndSend(jid, _fullMsgs[Math.floor(Math.random() * _fullMsgs.length)]);
             } else if (result.errorMessage === 'SKILL_TEST_REQUIRED') {
-                await simulateTypingAndSend(jid, 'Per cercare avversari hai bisogno di completare prima lo Skill Test. Il circolo ti contatterà per organizzarlo — nel frattempo puoi prenotare il campo per te e i tuoi amici!');
+                const _skillMsgs = [
+                    "Per cercare altri giocatori ti serve prima la valutazione col maestro (il circolo ti contatterà per organizzarla). Nel frattempo puoi prenotare il campo privatamente!",
+                    "Prima di cercare altri giocatori ci vuole la valutazione col maestro, te la organizziamo noi presto. Per ora puoi prenotare il campo con chi vuoi!",
+                    "La valutazione col maestro è il primo passo per giocare con altri iscritti, il circolo ti contatta presto. Nel frattempo il campo è tuo quando vuoi!",
+                    "Non hai ancora fatto la valutazione col maestro, ti contatteranno per fissarla. Puoi già prenotare il campo nel frattempo!",
+                    "La valutazione col maestro è necessaria prima di cercare altri giocatori (il circolo ti raggiungerà presto). Puoi prenotare il campo privatamente da subito!",
+                ];
+                await simulateTypingAndSend(jid, _skillMsgs[Math.floor(Math.random() * _skillMsgs.length)]);
             } else if (result.errorMessage === 'ALL_COURTS_TAKEN') {
                 // Tutti i campi occupati a quell'orario — redirect con intent BOOK_FIELD
                 // (se è arrivato qui, il booking era privato o skill<=0)
@@ -448,7 +505,14 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[], cor
                     });
                 } catch (err) {
                     logger.error({ err }, 'ALL_COURTS_TAKEN redirectGroup failed');
-                    await simulateTypingAndSend(jid, 'Tutti i campi sono occupati a quell\'orario. Dimmi un altro orario e trovo subito qualcosa! 🎾');
+                    const _msgs = [
+                        "Tutti i campi sono occupati a quell'orario, dimmi un altro orario e trovo subito qualcosa 😔",
+                        "A quell'orario non c'è nessun campo libero, prova con un altro orario 😔",
+                        "Tutti i campi sono pieni in quella fascia. Hai un altro orario in testa?",
+                        "A quell'ora sono tutti occupati, dammi un'alternativa e vedo cosa c'è 😕",
+                        "Nessun campo disponibile a quell'orario, dimmi quando sei libero e trovo qualcosa 😔",
+                    ];
+                    await simulateTypingAndSend(jid, _msgs[Math.floor(Math.random() * _msgs.length)]);
                 }
             } else if (result.errorMessage === 'NO_OPEN_MATCH') {
                 // Nessun OPEN match compatibile trovato per il matchmaking — redirect con intent MATCHMAKING
@@ -470,28 +534,49 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[], cor
                     });
                 } catch (err) {
                     logger.error({ err }, 'NO_OPEN_MATCH redirectGroup failed');
-                    await simulateTypingAndSend(jid, 'Non ci sono partite aperte a quell\'orario. Dimmi un altro orario e vedo cosa c\'è disponibile! 🎾');
+                    const _msgs = [
+                        "Non ci sono partite aperte a quell'orario. Dimmi un altro orario e vedo cosa c'è disponibile!",
+                        "A quell'orario non c'è nessuna partita aperta. Vuoi che apra io una per te?",
+                        "Nessuna partita disponibile in quella fascia, prova un altro orario o vuoi prenotare il campo in privato? 😔",
+                        "Non ho trovato partite a quell'orario, dimmi quando sei libero e cerco 😕",
+                        "A quell'ora non ci sono partite disponibili. Hai un'altra fascia che preferisci?",
+                    ];
+                    await simulateTypingAndSend(jid, _msgs[Math.floor(Math.random() * _msgs.length)]);
                 }
             } else if (result.errorMessage === 'NO_PRIVATE_BOOKING_TO_CONVERT') {
                 const _msgs = [
-                    'Non trovo nessuna prenotazione privata da aprire al matchmaking. Hai già una partita prenotata privatamente?',
-                    'Non vedo prenotazioni private attive al momento. Vuoi prenotare un campo e poi aprirlo al matchmaking?',
-                    'Hmm, non ho trovato una prenotazione privata da convertire. Ce l\'hai già una partita fissa o vuoi crearne una?',
-                    'Non risulta nessuna prenotazione privata aperta. Vuoi che prenoti il campo adesso e poi cerchiamo altri giocatori?',
+                    'Non trovo nessuna prenotazione privata da aprire. Hai già una partita prenotata privatamente?',
+                    'Non vedo prenotazioni private attive al momento. Vuoi prenotare un campo e poi cercare altri giocatori?',
+                    'Non ho trovato una prenotazione privata da convertire. Hai già una partita fissa o vuoi crearne una?',
+                    'Non risulta nessuna prenotazione privata aperta. Vuoi che prenoti il campo adesso e poi cerco altri giocatori?',
                     'Non trovo partite private da aprire. Hai già prenotato qualcosa, o vuoi iniziare da zero?',
                 ];
                 await simulateTypingAndSend(jid, _msgs[Math.floor(Math.random() * _msgs.length)]);
             } else if (result.errorMessage === 'GENDER_MISMATCH') {
-                await simulateTypingAndSend(jid, 'Questa partita è riservata a giocatori dello stesso genere — non posso aggiungerti. Vuoi che cerchi un\'altra partita o prenoti un campo libero? 🎾');
+                await simulateTypingAndSend(jid, 'Questa partita è riservata a giocatori dello stesso genere, non posso aggiungerti. Vuoi che cerchi un\'altra partita o prenoti un campo libero? 🎾');
             } else if (result.errorMessage?.includes('già una prenotazione') || result.errorMessage === 'ALREADY_BOOKED') {
-                // Prenotazione duplicata: suggerisci OPEN_TO_MATCHMAKING se è privata
+                // Prenotazione duplicata: suggerisci cercare altri giocatori se è privata
                 const existingPrivate = player ? await prisma.matchPlayer.findFirst({
                     where: { playerId: player.id, leftAt: null, match: { status: 'LOCKED', isPrivateBooking: true } },
                 }) : null;
                 if (existingPrivate) {
-                    await simulateTypingAndSend(jid, 'Hai già una prenotazione in quella fascia oraria. Vuoi che cerchi altri giocatori per completare la partita? 🎾');
+                    const _bookedOpenMsgs = [
+                        "Hai già una prenotazione in quella fascia. Vuoi che cerchi altri giocatori per completare la partita? 🎾",
+                        "Sei già prenotato in quella fascia, vuoi che cerchi altri giocatori per completarla? 🎾",
+                        "Ho già una tua prenotazione lì, vuoi che cerchi altri giocatori per completarla? 😊",
+                        "Quella fascia è già tua! Vuoi che trovi altri giocatori per la partita?",
+                        "Sei già dentro in quella fascia, cerco altri giocatori per completare la squadra? 🎾",
+                    ];
+                    await simulateTypingAndSend(jid, _bookedOpenMsgs[Math.floor(Math.random() * _bookedOpenMsgs.length)]);
                 } else {
-                    await simulateTypingAndSend(jid, 'Hai già una prenotazione in quella fascia oraria. Vuoi spostare o prenotare un orario diverso? 🎾');
+                    const _bookedRescheduleMsgs = [
+                        "Hai già una prenotazione in quella fascia. Vuoi spostare o prenotare un altro orario? 🎾",
+                        "Hai già qualcosa in quella fascia, vuoi spostare o scegliere un altro orario? 😊",
+                        "Quell'orario è già occupato da una tua prenotazione. Cambio orario o sposto quella?",
+                        "Sei già prenotato in quella fascia! Vuoi cambiare orario?",
+                        "Quella fascia è già tua, vuoi spostare la prenotazione o sceglierne un'altra? 🎾",
+                    ];
+                    await simulateTypingAndSend(jid, _bookedRescheduleMsgs[Math.floor(Math.random() * _bookedRescheduleMsgs.length)]);
                 }
             } else {
                 await simulateTypingAndSend(jid, `Ops! ${result.errorMessage} 😕`);
@@ -836,7 +921,14 @@ export async function handleMatchFilled(matchId: string, startTime: Date): Promi
             const timeStr = startTime.toLocaleTimeString('it-IT', { timeZone: 'Europe/Rome', hour: '2-digit', minute: '2-digit' });
             const dateStr = startTime.toLocaleDateString('it-IT', { timeZone: 'Europe/Rome', weekday: 'long', day: 'numeric', month: 'long' });
             const firstNames = confirmed.map(mp => (mp.player.name || 'Giocatore').split(' ')[0]).join(', ');
-            const fallbackMsg = `Partita confermata! Siete in 4: ${firstNames}. Vi aspettiamo ${dateStr} alle ${timeStr} 🎾`;
+            const _fallbackMsgs = [
+                `Partita confermata! Siete in 4: ${firstNames}. Vi aspettiamo ${dateStr} alle ${timeStr} 🎾`,
+                `${dateStr} alle ${timeStr}, siete al completo: ${firstNames}! Vi aspettiamo in campo 🎾`,
+                `Tutto confermato! ${firstNames}, ci vediamo ${dateStr} alle ${timeStr} 🎾`,
+                `Siete al completo: ${firstNames}. Appuntamento ${dateStr} alle ${timeStr}!`,
+                `Partita al completo! ${firstNames}, vi aspettiamo ${dateStr} alle ${timeStr} 🎾`,
+            ];
+            const fallbackMsg = _fallbackMsgs[Math.floor(Math.random() * _fallbackMsgs.length)];
             for (const mp of confirmed) {
                 if (mp.player.phoneNumber && !mp.player.phoneNumber.startsWith('FRIEND_')) {
                     simulateTypingAndSend(`${mp.player.phoneNumber}@s.whatsapp.net`, fallbackMsg).catch(() => {});

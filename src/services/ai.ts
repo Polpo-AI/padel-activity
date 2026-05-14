@@ -444,6 +444,52 @@ Messaggio del giocatore: "${text}"`,
 
     return null;
 }
+// ─────────────────────────────────────────────
+// GENERA RICHIESTA FEEDBACK POST-PARTITA
+// ─────────────────────────────────────────────
+
+export async function generateFeedbackRequest(
+    playerName: string,
+    courtName: string,
+    timeStr: string,
+): Promise<string> {
+    const fallback = `Com'è andata la partita${timeStr ? ` delle ${timeStr}` : ''}? Raccontami! 🎾`;
+
+    return claudeCircuitBreaker.call(
+        async () => {
+            const result = await withRetry(
+                () => anthropic.messages.create({
+                    model: 'claude-haiku-4-5-20251001',
+                    max_tokens: 100,
+                    temperature: 0.9,
+                    system: 'Sei il bot di un circolo padel. Scrivi messaggi brevi e colloquiali in italiano.',
+                    messages: [{
+                        role: 'user',
+                        content: loadPrompt('generate_feedback_request', {
+                            playerName,
+                            courtName,
+                            timeStr,
+                        })
+                    }],
+                }),
+                {
+                    maxAttempts: 2,
+                    baseDelayMs: 1000,
+                    shouldRetry: isTransientNetworkError,
+                    context: 'generateFeedbackRequest',
+                }
+            );
+            const content = result.content[0];
+            if (content.type === 'text') return content.text.trim();
+            return fallback;
+        },
+        () => {
+            logger.warn({ playerName }, 'generateFeedbackRequest: circuit open — fallback text');
+            return fallback;
+        }
+    );
+}
+
 export async function inferGender(name: string): Promise<'MALE' | 'FEMALE' | 'UNKNOWN'> {
     if (!name || name === 'Giocatore') return 'UNKNOWN';
 

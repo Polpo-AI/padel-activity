@@ -104,15 +104,19 @@ export async function handleCancellation(
     if (match.groupId && !match.groupId.startsWith('WHOLE_COURT_')) {
         const urgencyMsg = isLastMinute
             ? [
-                `⚠️ Disdetta dell'ultimo minuto! Stiamo cercando un sostituto in corsa — tenetevi pronti!`,
+                `⚠️ Disdetta dell'ultimo minuto! Stiamo cercando un sostituto in corsa, tenetevi pronti!`,
                 `⚠️ Un giocatore ha appena disdetto. Ci stiamo muovendo subito per trovare qualcuno!`,
                 `⚠️ Disdetta last-minute! Sto cercando un sostituto urgentemente 🔍`,
-              ][Math.floor(Math.random() * 3)]
+                `⚠️ Disdetta all'ultimo! Mi sto muovendo subito per trovare qualcuno 🔍`,
+                `⚠️ Un posto si è liberato all'improvviso, cerco subito un sostituto!`,
+              ][Math.floor(Math.random() * 5)]
             : [
                 `Un giocatore ha disdetto. Sto cercando qualcuno per completare la squadra 🔍`,
-                `Aggiornamento: una disdetta — cerco subito un sostituto 🎾`,
-                `Ci manca un giocatore. Sto già cercando qualcuno — a breve aggiornamenti!`,
-              ][Math.floor(Math.random() * 3)];
+                `Aggiornamento: una disdetta, cerco subito qualcuno per completare la squadra 🎾`,
+                `Ci manca un giocatore. Sto già cercando qualcuno, a breve aggiornamenti!`,
+                `Disdetta nel gruppo, mi metto subito a cercare qualcuno 🔍`,
+                `Un posto si è liberato. Sto cercando qualcuno, vi aggiorno presto!`,
+              ][Math.floor(Math.random() * 5)];
         try {
             const { sendMessage } = await import('./whatsapp');
             await sendMessage(match.groupId, urgencyMsg);
@@ -400,9 +404,11 @@ export async function checkMatchTimeouts(): Promise<void> {
             if (!alreadySent) {
                 const timeStr = match.startTime.toLocaleTimeString('it-IT', { timeZone: 'Europe/Rome', hour: '2-digit', minute: '2-digit' });
                 const ultCallVariants = [
-                    `Ehi! Siamo in ${confirmed} su ${match.playersNeeded} per le ${timeStr} e mancano 30 minuti alla scadenza 😬 Se non troviamo nessuno a breve dovrò liberare il campo 😔`,
-                    `⚠️ Mancano 30 minuti! La partita delle ${timeStr} è ancora in ${confirmed}/${match.playersNeeded} — sto cercando ma se entro poco non trovo nessuno dovrò annullare 😔`,
-                    `Ultima chiamata per le ${timeStr} 🎾 Siamo in ${confirmed} su ${match.playersNeeded} — sto facendo il possibile, ma senza altri giocatori dovrò cancellare 😕`,
+                    `Ehi! Siamo in ${confirmed} su ${match.playersNeeded} per le ${timeStr} e mancano 30 minuti alla scadenza, se non troviamo nessuno a breve dovrò liberare il campo 😔`,
+                    `⚠️ Mancano 30 minuti! La partita delle ${timeStr} è ancora in ${confirmed}/${match.playersNeeded}, sto cercando ma se non trovo nessuno dovrò annullare 😔`,
+                    `Ultima chiamata per le ${timeStr}: siamo in ${confirmed} su ${match.playersNeeded}, sto facendo il possibile ma senza altri giocatori dovrò cancellare 😕`,
+                    `Mancano 30 minuti e siamo ancora in ${confirmed}/${match.playersNeeded} per le ${timeStr}, se non troviamo nessuno presto dovrò cancellare 😬`,
+                    `⏰ Ultima mezz'ora: partita delle ${timeStr} con ${confirmed}/${match.playersNeeded} giocatori. Sto cercando, ti aggiorno presto 😔`,
                 ];
                 const msg = ultCallVariants[Math.floor(Math.random() * ultCallVariants.length)];
                 

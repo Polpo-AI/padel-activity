@@ -97,8 +97,16 @@ export async function processMatchOutcomes(matchId: string): Promise<void> {
                 const player = match.MatchPlayer.find(mp => mp.playerId === inv.playerId)?.player;
                 if (player && player.phoneNumber && !player.phoneNumber.startsWith('FRIEND_')) {
                     const { simulateTypingAndSend } = await import('./whatsapp');
+                    const { generateFeedbackRequest } = await import('./ai');
                     const jid = `${player.phoneNumber}@s.whatsapp.net`;
-                    const message = `Ciao ${player.name || ''}! 👋 Com'è andata la partita di oggi al ${match.court?.name || 'campo'}? 🎾 Raccontami pure qui! 😊`;
+                    const timeStr = match.startTime
+                        ? match.startTime.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Rome' })
+                        : '';
+                    const message = await generateFeedbackRequest(
+                        player.name || '',
+                        match.court?.name || '',
+                        timeStr,
+                    );
 
                     try {
                         await simulateTypingAndSend(jid, message);

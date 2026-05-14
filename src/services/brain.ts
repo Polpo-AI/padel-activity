@@ -504,15 +504,23 @@ Se non sai qualcosa, dì che verifichi col circolo e usa FAQ_REQUEST — mai inv
 NON dire MAI "chiama la segreteria", "contatta la segreteria" o "ti richiameranno": sei TU l'interfaccia del circolo. Il circolo risponderà tramite te. Per qualsiasi domanda senza risposta → FAQ_REQUEST, messaggio onesto tipo "Non ho questa info al momento, la verifico col circolo e ti rispondo presto".
 NON devi mai dire "errore tecnico" o cose simili — se non puoi fare qualcosa, spiegalo in modo umano e naturale.
 
+═══ VOCABOLARIO APPROVATO ═══
+Usa SEMPRE queste parole, mai i termini tecnici corrispondenti:
+- "cercare altri giocatori" o "completare la squadra" (NON "matchmaking")
+- "valutazione col maestro" (NON "Skill Test")
+- "orario" / "posto" / "disponibilità" (NON "slot")
+- "lista giocatori" (NON "pool di giocatori")
+- "campi scoperti" / "campo scoperto" e "campi coperti" / "campo coperto" (NON solo "scoperti" o "coperti")
+
 ═══ COME FUNZIONA IL CIRCOLO ═══
 - Il padel è 2 vs 2 (4 giocatori per campo)
 - Prenotare un campo funziona in due modi:
-  a) Prenotazione privata: il campo è tutto tuo (per te e i tuoi amici, fino a 4 totali). Nessun abbinamento automatico. Funziona sempre, anche prima dello Skill Test.
-  b) Matchmaking: il sistema cerca altri 3 giocatori compatibili per livello e li invita via WhatsApp. Richiede lo Skill Test completato.
-- Lo Skill Test è una valutazione col maestro che assegna il tuo livello di gioco. Il circolo ti contatta per organizzarlo. Prima del test puoi già prenotare il campo privatamente.
-- Quando la partita si riempie (4 confermati nel matchmaking): viene creato un gruppo WhatsApp con tutti i giocatori.
+  a) Prenotazione privata: il campo è tutto tuo (per te e i tuoi amici, fino a 4 totali). Nessun abbinamento automatico. Funziona sempre, anche prima della valutazione col maestro.
+  b) Cercare altri giocatori: il sistema cerca altri 3 giocatori compatibili per livello e li invita via WhatsApp. Richiede la valutazione col maestro completata.
+- La valutazione col maestro assegna il tuo livello di gioco. Il circolo ti contatta per organizzarla. Prima della valutazione puoi già prenotare il campo privatamente.
+- Quando la partita si riempie (4 confermati): viene creato un gruppo WhatsApp con tutti i giocatori.
 - Si può cancellare la propria partecipazione rispondendo al bot — il posto torna disponibile per altri.
-- Per portare un amico specifico nel matchmaking: basta dirlo al bot, che verifica se è iscritto al circolo e lo invita prioritariamente.
+- Per portare un amico specifico: basta dirlo al bot, che verifica se è iscritto al circolo e lo invita prioritariamente.
 
 ${!player ? `═══ UTENTE NON REGISTRATO ═══
 Questa persona non è ancora iscritta al circolo.
@@ -525,12 +533,12 @@ Raccogliere nome e cognome è la tua priorità, ma in modo completamente natural
 - Se hai solo il nome → rispondi e chiedi il cognome con leggerezza
 - MAI usare REGISTER_PLAYER senza avere sia nome che cognome certi` : `═══ STATO GIOCATORE ═══
 Nome: ${player.name || 'non registrato'}
-Genere: ${player.gender === 'MALE' ? 'uomo' : player.gender === 'FEMALE' ? 'donna' : 'SCONOSCIUTO — chiedi prima di fare matchmaking (vedi regola sotto)'}
-Livello: ${player.skillLevel > 0 ? player.skillLevel + ' (scala 1-7, dove 1=principiante, 7=agonista)' : 'da assegnare — Skill Test in attesa'}
-${player.skillLevel <= 0 ? `NOTA SKILL TEST: questo giocatore NON ha ancora completato lo Skill Test.
+Genere: ${player.gender === 'MALE' ? 'uomo' : player.gender === 'FEMALE' ? 'donna' : 'SCONOSCIUTO — chiedi prima di procedere con la ricerca altri giocatori (vedi regola sotto)'}
+Livello: ${player.skillLevel > 0 ? player.skillLevel + ' (scala 1-7, dove 1=principiante, 7=agonista)' : 'da assegnare — valutazione col maestro in attesa'}
+${player.skillLevel <= 0 ? `NOTA VALUTAZIONE: questo giocatore NON ha ancora completato la valutazione col maestro.
 - PUÒ prenotare il campo privatamente (private: true) — per sé e i suoi amici, fino a 4 totali. Funziona SEMPRE.
-- NON può fare matchmaking (private: false) — il sistema non può abbinarlo con sconosciuti senza livello assegnato.
-- Se parla di "giocare con qualcuno" o "trovare avversari": spiegagli che per quello serve lo Skill Test, il circolo organizzerà appena possibile. Poi chiedi se vuole comunque prenotare il campo privatamente.
+- NON può cercare altri giocatori (private: false) — il sistema non può abbinarlo con sconosciuti senza livello assegnato.
+- Se parla di "giocare con qualcuno" o "trovare avversari": spiegagli che per quello serve la valutazione col maestro, il circolo la organizzerà appena possibile. Poi chiedi se vuole comunque prenotare il campo privatamente.
 - Per BOOK_FIELD → usa SEMPRE private: true. NON usare mai private: false per questo giocatore.` : ''}
 ${player.notes ? `Note/preferenze giocatore: ${player.notes}` : ''}
 ${lessonInfo ? `\n═══ LEZIONE INDIVIDUALE ═══\n${lessonInfo}\nIl maestro contatterà il giocatore per l'orario — il sistema invia solo la notifica.` : ''}`}
@@ -787,10 +795,11 @@ PRINCIPIO BASE: se c'è ambiguità, assumi l'interpretazione più favorevole all
 
     // Fallback naturale — mai la stessa frase due volte
     const fallbacks = [
-        'Dammi un secondo, ho avuto un piccolo intoppo 😅 Ripeti?',
+        'Dammi un secondo, ho avuto un piccolo intoppo. Ripeti? 😅',
         'Ops, mi sono perso un attimo! Puoi riscrivere? 🎾',
-        'Scusa, non ho capito bene — ripeti e ci penso io!',
-        'Un momento di confusione da parte mia 😄 Dimmi di nuovo!',
+        'Scusa, non ho capito bene. Ripeti e ci penso io!',
+        'Un momento di confusione da parte mia, dimmi di nuovo 😄',
+        'Ho avuto un attimo di confusione! Riscrivimi e ci penso su 🎾',
     ];
     return { message: fallbacks[Math.floor(Math.random() * fallbacks.length)], action: 'NONE' };
 }
@@ -1054,7 +1063,7 @@ export async function executeAction(
                 simulateTypingAndSend(`${contactPhone}@s.whatsapp.net`, msg).catch(() => {});
             } else {
                 logger.warn({ playerId: player.id, clubId: club?.id }, 'REQUEST_LESSON: nessun contatto configurato per il circolo');
-                return { success: false, errorMessage: 'LESSON_NO_CONTACT' };
+                // Il brain ha già generato un messaggio appropriato — non inviare nulla di hardcodato
             }
             return { success: true };
         }
@@ -1504,7 +1513,14 @@ async function joinExistingMatch(matchId: string, player: any): Promise<{ succes
                         const timeStr = updatedMatch.startTime.toLocaleTimeString('it-IT', { timeZone: 'Europe/Rome', hour: '2-digit', minute: '2-digit' });
                         const dateStr = updatedMatch.startTime.toLocaleDateString('it-IT', { timeZone: 'Europe/Rome', weekday: 'long', day: 'numeric', month: 'long' });
                         const genderLabel = fullGender === 'MALE' ? 'uomini' : 'donne';
-                        const msg = `La partita di ${dateStr} alle ${timeStr} su ${updatedMatch.court?.name || 'campo'} ha raggiunto il massimo di ${genderLabel} — non c'è più posto per te in questa partita.`;
+                        const _genderMsgs = [
+                            `La partita di ${dateStr} alle ${timeStr} ha raggiunto il massimo di ${genderLabel}, non c'è più posto per te.`,
+                            `I posti per ${genderLabel} in questa partita (${dateStr} alle ${timeStr}) sono esauriti 😔`,
+                            `Posti per ${genderLabel} al completo il ${dateStr} alle ${timeStr}, non c'è spazio 😕`,
+                            `Il limite di ${genderLabel} per questa partita è già raggiunto (${dateStr} alle ${timeStr}) 😔`,
+                            `I posti per ${genderLabel} il ${dateStr} alle ${timeStr} sono finiti 😔`,
+                        ];
+                        const msg = _genderMsgs[Math.floor(Math.random() * _genderMsgs.length)];
 
                         for (const inv of toNotify) {
                             await prisma.invitation.update({ where: { id: inv.id }, data: { status: 'IGNORED' } });
@@ -1550,12 +1566,28 @@ async function bookSlotForPlayer(
         const [closeH, closeM] = (club.closeTime || '23:30').split(':').map(Number);
         const openMinutes = openH * 60 + openM;
         const closeMinutes = closeH * 60 + closeM;
+        const openTime = club.openTime || '08:00';
+        const closeTime = club.closeTime || '23:30';
         if (startMinutes < openMinutes) {
-            return { success: false, errorMessage: `Il circolo apre alle ${club.openTime || '08:00'}.` };
+            const _openMsgs = [
+                `Il circolo apre alle ${openTime}.`,
+                `Non posso prenotare prima delle ${openTime}, il circolo non è ancora aperto!`,
+                `Quell'orario è troppo presto: il circolo apre alle ${openTime}.`,
+                `Prima delle ${openTime} il circolo è chiuso 😊`,
+                `L'apertura è alle ${openTime}, non riesco a prenotarti prima!`,
+            ];
+            return { success: false, errorMessage: _openMsgs[Math.floor(Math.random() * _openMsgs.length)] };
         }
         if (startMinutes + 90 > closeMinutes) {
             const lastValid = `${String(Math.floor((closeMinutes - 90) / 60)).padStart(2, '0')}:${String((closeMinutes - 90) % 60).padStart(2, '0')}`;
-            return { success: false, errorMessage: `L'ultimo orario disponibile è alle ${lastValid} (servono 90 minuti prima della chiusura alle ${club.closeTime || '23:30'}).` };
+            const _closeMsgs = [
+                `L'ultima disponibilità è alle ${lastValid} (servono 90 minuti prima della chiusura alle ${closeTime}).`,
+                `Troppo tardi, l'ultima disponibilità è alle ${lastValid} (chiusura alle ${closeTime}).`,
+                `Posso prenotare al massimo alle ${lastValid} per finire prima della chiusura alle ${closeTime}.`,
+                `L'ultimo orario utile è alle ${lastValid}, il circolo chiude alle ${closeTime}.`,
+                `Oltre le ${lastValid} non riesco: il circolo chiude alle ${closeTime} (servono 90 min).`,
+            ];
+            return { success: false, errorMessage: _closeMsgs[Math.floor(Math.random() * _closeMsgs.length)] };
         }
     }
 
