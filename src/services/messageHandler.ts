@@ -805,15 +805,14 @@ export async function handleMatchFilled(matchId: string, startTime: Date): Promi
             include: { player: true },
         });
 
-        const slotTakenMsgs = [
-            `La partita si è appena riempita — sei arrivato un attimo dopo. Ti tengo d'occhio per la prossima!`,
-            `Peccato, l'ultimo posto è stato preso poco fa. Ti avviso appena esce qualcosa di compatibile.`,
-            `La partita è al completo — qualcuno ti ha soffiato il posto all'ultimo. Ti tengo in lista per la prossima!`,
-        ];
-        for (const inv of pendingInvs) {
-            await prisma.invitation.update({ where: { id: inv.id }, data: { status: 'IGNORED' } });
-            const msg = slotTakenMsgs[Math.floor(Math.random() * slotTakenMsgs.length)];
-            simulateTypingAndSend(`${inv.player.phoneNumber}@s.whatsapp.net`, msg).catch(() => {});
+        // PENDING = non hanno ancora risposto → silenzio, solo IGNORED nel DB.
+        // Chi prova attivamente ad accettare e trova il match pieno riceve feedback
+        // direttamente nell'handler ACCEPT_INVITATION di brain.ts.
+        if (pendingInvs.length > 0) {
+            await prisma.invitation.updateMany({
+                where: { id: { in: pendingInvs.map(i => i.id) } },
+                data: { status: 'IGNORED' },
+            });
         }
 
         for (const mp of confirmed) await increaseReliability(mp.player.id);
