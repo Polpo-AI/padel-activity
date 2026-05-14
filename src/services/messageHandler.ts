@@ -805,23 +805,15 @@ export async function handleMatchFilled(matchId: string, startTime: Date): Promi
             include: { player: true },
         });
 
+        const slotTakenMsgs = [
+            `La partita si è appena riempita — sei arrivato un attimo dopo. Ti tengo d'occhio per la prossima!`,
+            `Peccato, l'ultimo posto è stato preso poco fa. Ti avviso appena esce qualcosa di compatibile.`,
+            `La partita è al completo — qualcuno ti ha soffiato il posto all'ultimo. Ti tengo in lista per la prossima!`,
+        ];
         for (const inv of pendingInvs) {
             await prisma.invitation.update({ where: { id: inv.id }, data: { status: 'IGNORED' } });
-
-            // Dirottta invece di dire solo "pieno"
-            const { redirectGroup } = await import('./redirect');
-            await redirectGroup({
-                referentPhone: inv.player.phoneNumber,
-                referentJid: inv.player.phoneNumber,
-                playerPhones: [inv.player.phoneNumber],
-                playerCount: 1,
-                originalMatchId: matchId,
-                originalStartTime: startTime,
-                originalSkillLevel: match?.skillLevel ?? 0,
-                originalCourtIsCovered: match?.court?.isCovered ?? null,
-                reason: 'SLOT_TAKEN',
-                clubId: match?.clubId || '',
-            });
+            const msg = slotTakenMsgs[Math.floor(Math.random() * slotTakenMsgs.length)];
+            simulateTypingAndSend(`${inv.player.phoneNumber}@s.whatsapp.net`, msg).catch(() => {});
         }
 
         for (const mp of confirmed) await increaseReliability(mp.player.id);
