@@ -230,6 +230,10 @@ export async function handleMatchUnfillable(matchId: string, forceCancel: boolea
     });
 
     if (!match) return;
+    if (match.status === 'ARCHIVED') {
+        logger.debug({ matchId }, 'handleMatchUnfillable: match già archiviato — skip');
+        return;
+    }
 
     const now = new Date();
     const minutesUntilMatch = (match.startTime.getTime() - now.getTime()) / 60000;

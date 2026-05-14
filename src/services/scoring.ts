@@ -67,9 +67,13 @@ export async function processMatchOutcomes(matchId: string): Promise<void> {
 
     if (!match) return;
 
-    // Invitations già in stato finale = già processate in un run precedente
+    // Invitations già in stato finale = già processate in un run precedente.
+    // ACCEPTED/REJECTED/IGNORED vanno in FINAL_STATUSES per evitare che updateShowUpRate
+    // venga chiamato più volte (EMA non è idempotente: chiamate ripetute inflazionano il score).
+    // Eccezione: ACCEPTED con giocatore ancora presente (leftAt=null) → va processato per il feedback.
+    const FINAL_STATUSES = new Set(['EXPIRED', 'ACCEPTED', 'REJECTED', 'IGNORED']);
     const unprocessed = match.invitations.filter(
-        inv => inv.status !== 'EXPIRED' || match.MatchPlayer.some(mp => mp.playerId === inv.playerId)
+        inv => !FINAL_STATUSES.has(inv.status) || match.MatchPlayer.some(mp => mp.playerId === inv.playerId && !mp.leftAt)
     );
 
     for (const inv of unprocessed) {
@@ -91,7 +95,12 @@ export async function processMatchOutcomes(matchId: string): Promise<void> {
             const { getRedis } = await import('./queue');
             const redis = getRedis();
             const redisKey = `feedback_requested:${matchId}:${inv.playerId}`;
-            const alreadyAsked = await redis.get(redisKey);
+            let alreadyAsked: string | null = null;
+            try {
+                alreadyAsked = await redis.get(redisKey);
+            } catch {
+                // Redis down: procedi comunque (al massimo un feedback duplicato alla prossima run)
+            }
 
             if (!alreadyAsked) {
                 const player = match.MatchPlayer.find(mp => mp.playerId === inv.playerId)?.player;
@@ -181,8 +190,8 @@ export async function selectPlayersForWave(
     }
 
     const excludedIds = [
-        ...match.invitations.map(i => i.playerId),
-        ...match.MatchPlayer.map(mp => mp.playerId),
+        ...match.invitations.map(i => i.playerId),                          // già invitati (qualsiasi status)
+        ...match.MatchPlayer.filter(mp => !mp.leftAt).map(mp => mp.playerId), // ancora dentro (leftAt=null)
         ...extraExcluded,
     ];
 

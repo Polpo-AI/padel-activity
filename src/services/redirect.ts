@@ -114,6 +114,15 @@ export interface RedirectGroup {
 export async function redirectGroup(group: RedirectGroup): Promise<void> {
     logger.info(`Redirecting ${group.playerCount} players from match ${group.originalMatchId} (intent: ${group.intent || 'auto'})`);
 
+    // Dedup: evita messaggi duplicati se due job recovery girano in parallelo per lo stesso match
+    const redis = getRedis();
+    const lockKey = `redirect:sent:${group.originalMatchId}`;
+    const acquired = await redis.set(lockKey, '1', 'EX', 300, 'NX').catch(() => null);
+    if (!acquired) {
+        logger.warn({ matchId: group.originalMatchId }, 'redirectGroup: già inviato — skip duplicato');
+        return;
+    }
+
     const options = await findRedirectOptions(
         group.playerCount,
         group.originalStartTime,
@@ -868,8 +877,8 @@ function buildOptionDescription(
     startTime: Date,
     spotsLeft: number,
 ): string {
-    const timeStr = startTime.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
-    const dateStr = startTime.toLocaleDateString('it-IT', { weekday: 'long', day: 'numeric', month: 'long' });
+    const timeStr = startTime.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Rome' });
+    const dateStr = startTime.toLocaleDateString('it-IT', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'Europe/Rome' });
     const typeLabel = courtTypeLabel(isCovered);
     const courtPart = typeLabel ? `${court} ${typeLabel}` : court;
 

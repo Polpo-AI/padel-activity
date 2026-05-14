@@ -907,7 +907,8 @@ export async function handleMatchFilled(matchId: string, startTime: Date): Promi
         const reminderTime = new Date(startTime.getTime() - 60 * 60 * 1000);
         const reminderDelay = reminderTime.getTime() - Date.now();
         if (reminderDelay > 10 * 60 * 1000) {
-            await reminderQueue.add('send-reminder', { matchId, groupId, timeStr }, { delay: reminderDelay });
+            reminderQueue.add('send-reminder', { matchId, groupId, timeStr }, { delay: reminderDelay })
+                .catch(err => logger.warn({ err, matchId }, 'Reminder scheduling failed — will be skipped'));
         } else {
             logger.info({ matchId, reminderDelay }, 'Reminder skipped — match too close to schedule a 1h reminder');
         }
