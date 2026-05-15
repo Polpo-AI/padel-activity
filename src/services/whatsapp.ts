@@ -223,12 +223,9 @@ async function _doConnect(key: string, state: ClubSocketState): Promise<void> {
                 isPairingCodeRequested = true;
                 try {
                     const cleanNumber = botPhone.replace(/\D/g, '');
-                    console.log(`[AUTH:${key}] Requesting pairing code for: ${cleanNumber}`);
+                    logger.info({ clubId: key }, `[AUTH] Requesting pairing code for: ${cleanNumber}`);
                     const code = await sock.requestPairingCode(cleanNumber);
-                    console.log(`\n======================================================`);
-                    console.log(`🔢 [${key}] CODICE DI ABBINAMENTO: ${code}`);
-                    console.log(`👉 Apri WA Business > Dispositivi Collegati > Collega con numero`);
-                    console.log(`======================================================\n`);
+                    logger.info({ clubId: key, code }, `🔢 CODICE DI ABBINAMENTO — Apri WA Business > Dispositivi Collegati > Collega con numero`);
                 } catch (err) {
                     logger.error({ err, clubId: key }, 'Errore pairing code');
                 }

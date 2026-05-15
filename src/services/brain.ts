@@ -285,24 +285,6 @@ async function computeFreeScopertoSlots(
     return freeSlots;
 }
 
-/**
- * Exported: finds free scoperto slots near a reference time (±4 days).
- * Used by messageHandler when ONLY_COVERED_AVAILABLE to suggest alternatives.
- */
-export async function findNearbyFreeScopertoSlots(
-    clubId: string,
-    referenceTime: Date,
-    openTime: string,
-    closeTime: string,
-    limit: number = 3,
-): Promise<string[]> {
-    const courts = await prisma.court.findMany({
-        where: { clubId, active: true, isCovered: false },
-        select: { id: true },
-    });
-    return computeFreeScopertoSlots(clubId, courts.map(c => c.id), openTime, closeTime, referenceTime, 4, limit);
-}
-
 // ─────────────────────────────────────────────
 // CALL BRAIN
 // ─────────────────────────────────────────────
