@@ -998,7 +998,15 @@ export async function executeAction(
 
             const { decreaseReliability } = await import('./scoring');
             await decreaseReliability(player.id).catch(() => {});
-            return { success: true };
+            return {
+                success: true,
+                matchId: mp.matchId,
+                cancelledMatchInfo: match ? {
+                    startTime: match.startTime,
+                    courtName: (match as any).court?.name ?? null,
+                    isCovered: (match as any).court?.isCovered ?? null,
+                } : undefined,
+            } as any;
         }
 
         if (action === 'RESCHEDULE_MATCH') {

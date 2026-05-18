@@ -696,6 +696,22 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[], cor
             return;
         }
 
+        // CANCEL_MATCH: invia scheda di conferma cancellazione con giorno/ora/campo
+        if (action === 'CANCEL_MATCH' && result.success && (result as any).cancelledMatchInfo) {
+            try {
+                const info = (result as any).cancelledMatchInfo as { startTime: Date; courtName: string | null; isCovered: boolean | null };
+                const timeStr = info.startTime.toLocaleString('it-IT', {
+                    timeZone: 'Europe/Rome', weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit',
+                });
+                const courtPart = info.courtName
+                    ? ` — ${info.courtName} (${info.isCovered ? '🏟️ coperto' : '☀️ scoperto'})`
+                    : '';
+                await simulateTypingAndSend(jid, `✅ Prenotazione cancellata: ${timeStr}${courtPart}`);
+            } catch (err) {
+                logger.error({ err }, 'CANCEL_MATCH: failed to send cancellation confirmation');
+            }
+        }
+
         // ACCEPT_INVITATION: se il match è diventato LOCKED (4° giocatore) → crea gruppo WA
         if (action === 'ACCEPT_INVITATION' && result.success && result.matchId) {
             try {
