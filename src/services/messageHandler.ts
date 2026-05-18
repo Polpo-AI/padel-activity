@@ -340,6 +340,24 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[], cor
         }
     }
 
+    // Salva bozza prenotazione in Redis quando il brain produce BOOK_FIELD:
+    // permette di ricordare giorno/orario/formato nelle risposte successive senza ri-chiedere all'utente.
+    if (action === 'BOOK_FIELD' && params?.day && params?.time) {
+        try {
+            const { getRedis } = await import('./queue');
+            await getRedis().set(
+                `state:booking_intent:${jid}`,
+                JSON.stringify({
+                    day: params.day,
+                    time: params.time,
+                    preferMixed: params.preferMixed ?? null,
+                    preferCovered: params.preferCovered ?? null,
+                }),
+                'EX', 900, // 15 minuti
+            );
+        } catch { /* fire-and-forget */ }
+    }
+
     if (action !== 'NONE') {
         const result = await executeAction(action, params, player, club, phoneNumber);
         if (!result.success && result.errorMessage) {
@@ -688,6 +706,14 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[], cor
             } catch (err) {
                 logger.error({ err, matchId: result.matchId }, 'handleMatchFilled after ACCEPT_INVITATION failed');
             }
+        }
+
+        // Booking riuscito: cancella la bozza prenotazione in sospeso
+        if ((action === 'BOOK_FIELD' || action === 'RESCHEDULE_MATCH') && result.success) {
+            try {
+                const { getRedis } = await import('./queue');
+                await getRedis().del(`state:booking_intent:${jid}`);
+            } catch { /* fire-and-forget */ }
         }
 
         // BOOK_FIELD / RESCHEDULE_MATCH: se NO wave (match LOCKED = prenotazione privata) → scheda completa subito.

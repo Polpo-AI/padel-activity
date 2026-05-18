@@ -253,15 +253,29 @@ async function _bookFieldSearch(
         include: { MatchPlayer: { where: { leftAt: null } } },
     });
 
-    // Costruisci set di slot bloccati (courtId + timestamp):
-    // LOCKED o OPEN con ≥3 giocatori confermati sono "occupati"
-    const occupiedKeys = new Set<string>();
+    // Costruisci mappa di intervalli occupati per campo (courtId → [{start, end}]).
+    // Usa interval overlap per bloccare slot che si sovrappongono con partite esistenti,
+    // non solo lo slot di inizio esatto — es. una partita alle 10:00 da 90min blocca anche le 9:30 e le 11:00.
+    const DEFAULT_MATCH_DURATION_MS = 90 * 60 * 1000;
+    const occupiedIntervals = new Map<string, { start: number; end: number }[]>();
+
     for (const m of allOccupied as any[]) {
         const confirmedCount = (m.MatchPlayer as any[]).filter((mp: any) => !mp.leftAt).length;
         if (m.status === 'LOCKED' || confirmedCount >= 3) {
-            occupiedKeys.add(`${m.courtId}_${new Date(m.startTime).toISOString()}`);
+            const start = new Date(m.startTime).getTime();
+            const end = m.endTime ? new Date(m.endTime).getTime() : start + DEFAULT_MATCH_DURATION_MS;
+            const cid = m.courtId as string;
+            if (!occupiedIntervals.has(cid)) occupiedIntervals.set(cid, []);
+            occupiedIntervals.get(cid)!.push({ start, end });
         }
     }
+
+    // Un nuovo match che parte a T su campo C è libero se nessun intervallo su C si sovrappone con [T, T+90min]
+    const isSlotFree = (courtId: string, slotStart: Date): boolean => {
+        const t = slotStart.getTime();
+        const t2 = t + DEFAULT_MATCH_DURATION_MS;
+        return !(occupiedIntervals.get(courtId) ?? []).some(i => t < i.end && t2 > i.start);
+    };
 
     const STEP_MS = 30 * 60 * 1000;
 
@@ -272,8 +286,7 @@ async function _bookFieldSearch(
         let t = new Date(referenceTime.getTime() - STEP_MS);
         while (t >= dayStart) {
             for (const c of courts) {
-                const key = `${c.id}_${t.toISOString()}`;
-                if (!occupiedKeys.has(key)) {
+                if (isSlotFree(c.id, t)) {
                     before = { court: c.name, courtId: c.id, isCovered: c.isCovered, startTime: new Date(t) };
                     break;
                 }
@@ -303,8 +316,7 @@ async function _bookFieldSearch(
             let t = new Date(referenceTime.getTime() + STEP_MS);
             while (t <= dayEnd) {
                 for (const c of courts) {
-                    const key = `${c.id}_${t.toISOString()}`;
-                    if (!occupiedKeys.has(key)) {
+                    if (isSlotFree(c.id, t)) {
                         after = { court: c.name, courtId: c.id, isCovered: c.isCovered, startTime: new Date(t) };
                         break;
                     }
@@ -335,8 +347,7 @@ async function _bookFieldSearch(
         const futureSlot = buildRomeTimestamp(futureBase, refH, refM);
 
         for (const c of courts) {
-            const key = `${c.id}_${futureSlot.toISOString()}`;
-            if (!occupiedKeys.has(key)) {
+            if (isSlotFree(c.id, futureSlot)) {
                 options.push({
                     priority: 2,
                     court: c.name,

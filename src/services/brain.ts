@@ -47,6 +47,7 @@ export interface BrainContext {
     courts: any[];
     faqs: any[];
     slotsAvailability: { fullSlots: string[]; onlyCoveredSlots: string[]; freeScopertoSlots: string[] };
+    pendingBookingIntent?: { day: string; time: string; preferMixed?: boolean | null; preferCovered?: boolean | null } | null;
 }
 
 // ─────────────────────────────────────────────
@@ -202,6 +203,14 @@ export async function buildBrainContext(jid: string, phoneNumber: string): Promi
         occupiedScopertoMap,
     );
 
+    // Carica bozza prenotazione in sospeso (salvata da messageHandler quando brain produce BOOK_FIELD)
+    let pendingBookingIntent: BrainContext['pendingBookingIntent'] = null;
+    try {
+        const { getRedis } = await import('./queue');
+        const raw = await getRedis().get(`state:booking_intent:${jid}`);
+        if (raw) pendingBookingIntent = JSON.parse(raw);
+    } catch { /* non bloccare il contesto se Redis non risponde */ }
+
     return {
         club,
         player,
@@ -213,6 +222,7 @@ export async function buildBrainContext(jid: string, phoneNumber: string): Promi
         courts,
         faqs,
         slotsAvailability: { fullSlots, onlyCoveredSlots, freeScopertoSlots },
+        pendingBookingIntent,
     };
 }
 
@@ -301,7 +311,7 @@ export async function callBrain(
     userMessage: string,
     contactCards?: { phone?: string; name?: string }[],
 ): Promise<BrainResponse> {
-    const { club, player, isAdmin, recentMessages, pendingInvitations, confirmedMatches, availableMatches, courts, faqs, slotsAvailability } = context;
+    const { club, player, isAdmin, recentMessages, pendingInvitations, confirmedMatches, availableMatches, courts, faqs, slotsAvailability, pendingBookingIntent } = context;
 
     const now = new Date().toLocaleString('it-IT', {
         timeZone: 'Europe/Rome', weekday: 'long', day: 'numeric',
@@ -568,6 +578,15 @@ ${confirmedStr}
 ⚠️ Queste partite NON includono quelle in cui sei già iscritto (garantito dal sistema). Se per qualsiasi motivo vedi il tuo nome tra i giocatori elencati, usa NONE e non fare BOOK_FIELD.
 ${availableStr}` : ''}
 ${cardsStr ? `\n═══ CONTATTI RICEVUTI ═══\n${cardsStr}` : ''}
+${pendingBookingIntent ? `
+╔══ PRENOTAZIONE IN SOSPESO ══╗
+L'utente ha già fornito queste informazioni in una richiesta recente — NON chiedere di nuovo:
+${pendingBookingIntent.day ? `• Giorno: ${pendingBookingIntent.day}` : ''}
+${pendingBookingIntent.time ? `• Orario: ${pendingBookingIntent.time}` : ''}
+${pendingBookingIntent.preferMixed != null ? `• Formato: ${pendingBookingIntent.preferMixed ? 'misto' : 'non misto (stesso genere)'}` : ''}
+${pendingBookingIntent.preferCovered != null ? `• Campo: ${pendingBookingIntent.preferCovered ? 'coperto' : 'scoperto (se non disponibile usa coperto)'}` : ''}
+Se l'utente sta confermando o chiedendo di procedere, completa la prenotazione usando questi dati senza re-chiederli.
+╚════════════════════════════╝` : ''}
 
 ${!player ? `═══ AZIONI DISPONIBILI ═══
 Rispondi SEMPRE con JSON valido: { "message": "...", "action": "NOME", "params": {...} }
