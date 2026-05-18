@@ -507,6 +507,12 @@ async function findRedirectOptionsMatchmaking(
         }
     }
 
+    // Fallback: se non ci sono match OPEN da joinare, offri slot liberi come BOOK_FIELD
+    // (es. staging con pochi giocatori, o orario strano senza partite aperte)
+    if (options.length === 0) {
+        return findRedirectOptionsBookField(referenceTime, excludeMatchId, clubId, null);
+    }
+
     return options;
 }
 

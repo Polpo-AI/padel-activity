@@ -335,7 +335,7 @@ export async function handleMatchUnfillable(matchId: string, forceCancel: boolea
                     await redirectGroup({
                         clubId: match.club.id,
                         referentPhone: confirmedPlayers[0].player.phoneNumber,
-                        referentJid: confirmedPlayers[0].player.phoneNumber,
+                        referentJid: `${confirmedPlayers[0].player.phoneNumber}@s.whatsapp.net`,
                         playerPhones: confirmedPlayers.map(mp => mp.player.phoneNumber),
                         playerCount: confirmedPlayers.length,
                         originalMatchId: matchId,

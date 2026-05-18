@@ -68,7 +68,7 @@ export async function notifyMatchCancelled(matchId: string, clubId: string): Pro
     await redirectGroup({
         clubId,
         referentPhone: confirmed[0].player.phoneNumber,
-        referentJid: confirmed[0].player.phoneNumber,
+        referentJid: `${confirmed[0].player.phoneNumber}@s.whatsapp.net`,
         playerPhones: confirmed.map(mp => mp.player.phoneNumber),
         playerCount: confirmed.length,
         originalMatchId: matchId,
