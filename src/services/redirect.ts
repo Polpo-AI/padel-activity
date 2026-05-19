@@ -906,41 +906,44 @@ function buildOptionDescription(
 }
 
 function buildRedirectMessage(group: RedirectGroup, options: RedirectOption[]): string {
+    const timeSlot = formatMatchSlot(group.originalStartTime);
+    const slot = group.originalCourtName ? `${group.originalCourtName} — ${timeSlot}` : timeSlot;
+
     const reasonVariants: Record<RedirectGroup['reason'], string[]> = {
         CANCELLED: [
-            'La partita è stata cancellata 😔',
-            'Mi dispiace, la partita non si è potuta tenere 😔',
-            'La partita è saltata 😕',
-            'La partita è stata annullata, mi dispiace 😔',
-            'La partita non si gioca più 😕',
+            `${slot}: è stata cancellata 😔`,
+            `Mi dispiace, la partita di ${timeSlot} non si è potuta tenere 😔`,
+            `${slot}: è saltata 😕`,
+            `La partita di ${timeSlot} è stata annullata, mi dispiace 😔`,
+            `${slot}: non si gioca più 😕`,
         ],
         UNFILLED: [
-            'Non siamo riusciti a trovare abbastanza giocatori 😔',
-            'Il campo è rimasto vuoto, non abbiamo trovato tutti e 4 😕',
-            'Non abbiamo chiuso la squadra in tempo 😔',
-            'Mancavano giocatori, non siamo riusciti a chiudere 😕',
-            'Non abbiamo trovato abbastanza gente in tempo 😔',
+            `${slot}: non siamo riusciti a trovare abbastanza giocatori 😔`,
+            `${slot}: il campo è rimasto vuoto, non abbiamo trovato tutti e 4 😕`,
+            `${slot}: non abbiamo chiuso la squadra in tempo 😔`,
+            `${slot}: mancavano giocatori, non siamo riusciti a chiudere 😕`,
+            `${slot}: non abbiamo trovato abbastanza gente in tempo 😔`,
         ],
         SLOT_TAKEN: [
-            'Quell\'orario non è disponibile 😕',
-            'Quell\'orario è già occupato 😔',
-            'A quell\'orario non c\'è posto 😕',
-            'Quell\'orario è andato, è stato preso 😔',
-            'Nessuna disponibilità a quell\'orario 😕',
+            `${slot}: quell'orario non è disponibile 😕`,
+            `${slot}: è già occupato 😔`,
+            `${slot}: non c'è posto 😕`,
+            `${slot}: è andato, è stato preso 😔`,
+            `${slot}: nessuna disponibilità 😕`,
         ],
         POOL_EXHAUSTED: [
-            'Ho esaurito i giocatori nella lista 😔',
-            'Non ci sono altri giocatori da chiamare in questo momento 😕',
-            'La lista giocatori è esaurita, non riesco a trovare altri 😔',
-            'Nessun altro giocatore disponibile al momento 😕',
-            'Ho chiamato tutti nella lista, nessun altro disponibile adesso 😔',
+            `${slot}: ho esaurito i giocatori nella lista 😔`,
+            `${slot}: non ci sono altri giocatori da chiamare in questo momento 😕`,
+            `${slot}: la lista giocatori è esaurita, non riesco a trovare altri 😔`,
+            `${slot}: nessun altro giocatore disponibile al momento 😕`,
+            `${slot}: ho chiamato tutti nella lista, nessun altro disponibile adesso 😔`,
         ],
         CANCELLATION: [
-            'Un giocatore ha disdetto e non riesco a trovare un sostituto in tempo 😔',
-            'Qualcuno ha cancellato e non riusciamo a rimpiazzarlo 😕',
-            'Disdetta dell\'ultimo minuto e nessuno disponibile come sostituto 😔',
-            'Un posto si è liberato ma non ho trovato nessuno 😕',
-            'C\'è stata una disdetta e il sostituto non si è trovato 😔',
+            `${slot}: un giocatore ha disdetto e non riesco a trovare un sostituto in tempo 😔`,
+            `${slot}: qualcuno ha cancellato e non riusciamo a rimpiazzarlo 😕`,
+            `${slot}: disdetta dell'ultimo minuto e nessuno disponibile come sostituto 😔`,
+            `${slot}: un posto si è liberato ma non ho trovato nessuno 😕`,
+            `${slot}: c'è stata una disdetta e il sostituto non si è trovato 😔`,
         ],
     };
 
