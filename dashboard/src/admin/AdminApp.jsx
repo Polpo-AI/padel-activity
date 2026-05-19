@@ -42,15 +42,15 @@ export default function AdminApp() {
         * { box-sizing: border-box; margin: 0; padding: 0; }
         @keyframes spin { to { transform: rotate(360deg); } }
         @keyframes slideUp { from { transform: translateY(12px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
-        input:focus, select:focus { outline: none; border-color: rgba(34,211,238,0.4) !important; box-shadow: 0 0 0 3px rgba(34,211,238,0.12) !important; }
+        input:focus, select:focus { outline: none; border-color: rgba(6,182,212,0.50) !important; box-shadow: 0 0 0 3px rgba(6,182,212,0.18) !important; }
         button:disabled { opacity: 0.4; cursor: not-allowed; }
         button:not(:disabled):active { transform: scale(0.97); }
         ::-webkit-scrollbar { width: 4px; height: 4px; }
         ::-webkit-scrollbar-track { background: transparent; }
-        ::-webkit-scrollbar-thumb { background: rgba(34,211,238,0.18); border-radius: 4px; }
-        ::-webkit-scrollbar-thumb:hover { background: rgba(34,211,238,0.32); }
+        ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.22); }
         input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(0.4); }
-        ::selection { background: rgba(34,211,238,0.20); color: ${C.text}; }
+        ::selection { background: rgba(6,182,212,0.30); color: ${C.text}; }
       `}</style>
 
       {/* Ambient gradient orbs */}

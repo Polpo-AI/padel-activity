@@ -37,19 +37,19 @@ export default function PadelDashboard() {
         @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
         input:focus, select:focus, textarea:focus {
           outline: none;
-          border-color: rgba(34,211,238,0.4) !important;
-          box-shadow: 0 0 0 3px rgba(34,211,238,0.12) !important;
+          border-color: rgba(6,182,212,0.50) !important;
+          box-shadow: 0 0 0 3px rgba(6,182,212,0.18) !important;
         }
         button:disabled { opacity: 0.35; cursor: not-allowed; }
         button:not(:disabled):active { transform: scale(0.97); }
         ::-webkit-scrollbar { width: 4px; height: 4px; }
         ::-webkit-scrollbar-track { background: transparent; }
-        ::-webkit-scrollbar-thumb { background: rgba(34,211,238,0.18); border-radius: 4px; }
-        ::-webkit-scrollbar-thumb:hover { background: rgba(34,211,238,0.32); }
+        ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.22); }
         input[type="date"]::-webkit-calendar-picker-indicator,
         input[type="time"]::-webkit-calendar-picker-indicator { filter: invert(0.5); }
-        input[type="range"] { accent-color: #22d3ee; }
-        ::selection { background: rgba(34,211,238,0.20); color: ${C.text}; }
+        input[type="range"] { accent-color: #06b6d4; }
+        ::selection { background: rgba(6,182,212,0.30); color: ${C.text}; }
       `}</style>
 
       {/* Ambient gradient orbs */}

@@ -1,37 +1,39 @@
-// ─── Colori ───────────────────────────────────
+// ─── Colori ─────────────────────────────────────────────────────────────────
+// Token esatti da github.com/Polpo-AI/stunning-broccoli (globals.css)
 export const C = {
-  // Sfondi — deep navy (Polpo AI stunning-broccoli)
-  bg:           "#07091a",                      // navy-black main bg
-  surface:      "#0d1428",                      // sidebar + panel
-  surfaceHover: "#131d38",                      // hover
-  card:         "#0f1932",                      // card elevate su surface
+  // Sfondi — --bg-base / --bg-surface / --bg-raised / --bg-elevated
+  bg:           "#0B1228",   // --bg-base
+  surface:      "#0F1730",   // --bg-surface (sidebar + panel)
+  surfaceHover: "#131C3D",   // --bg-raised (hover)
+  card:         "#1A234A",   // --bg-elevated (card elevate)
 
-  // Bordi — cyan sottilissimo
-  border:       "rgba(34,211,238,0.12)",         // bordo standard
-  borderLight:  "rgba(34,211,238,0.28)",         // focus/highlight
+  // Bordi — white-alpha (glass effect corretto del repo)
+  border:       "rgba(255,255,255,0.10)",   // --border-default
+  borderLight:  "rgba(255,255,255,0.16)",   // --border-strong
+  borderAccent: "rgba(6,182,212,0.30)",     // --border-accent (cyan)
 
-  // Accent primario — cyan (Polpo AI primary)
-  accent:       "#22d3ee",
-  accentDim:    "rgba(34,211,238,0.08)",
-  accentSoft:   "rgba(34,211,238,0.16)",
+  // Accent primario — cyan  --cyan-400 / --cyan-500 / --cyan-600
+  accent:       "#22d3ee",                  // --cyan-400
+  accentDim:    "rgba(6,182,212,0.10)",     // cyan dim bg
+  accentSoft:   "rgba(6,182,212,0.20)",     // cyan soft bg
 
-  // Accent secondario — violet
-  indigo:       "#a78bfa",
-  indigoDim:    "rgba(167,139,250,0.08)",
-  indigoSoft:   "rgba(167,139,250,0.18)",
+  // Accent secondario — violet  --agenti-violet / --agenti-violet-2
+  indigo:       "#a78bfa",                  // --agenti-violet-2
+  indigoDim:    "rgba(139,92,246,0.10)",    // --shadow-violet base
+  indigoSoft:   "rgba(139,92,246,0.22)",
 
-  // Testi
-  text:         "#e8f4f8",                      // quasi-bianco con tinta blu
-  muted:        "#6b8ca8",                      // blu-grigio secondario
-  dim:          "#060818",
+  // Testi — --text-primary / --text-muted / --text-faint
+  text:         "#f8fafc",   // --text-primary
+  muted:        "#94a3b8",   // --text-muted (slate-400)
+  dim:          "#0B1228",   // --bg-base (sfondo puro per ombre)
 
   // Status partite
-  open:         "#22d3ee",
-  locked:       "#3b82f6",
-  cancelled:    "#ef4444",
-  unfilled:     "#f97316",
-  warning:      "#f59e0b",
-  unavail:      "#a855f7",
+  open:         "#22d3ee",   // cyan
+  locked:       "#3b82f6",   // blue
+  cancelled:    "#ef4444",   // --danger
+  unfilled:     "#f97316",   // orange
+  warning:      "#f59e0b",   // --warning
+  unavail:      "#a855f7",   // violet
 };
 
 export const STATUS = {
@@ -63,19 +65,20 @@ export const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 // ─── Stili condivisi ──────────────────────────
 export const inputSt = {
-  background: C.card,
-  border: `1px solid ${C.border}`,
-  borderRadius: 10,
+  background: "rgba(15,23,48,0.8)",
+  border: "1px solid rgba(255,255,255,0.10)",
+  borderRadius: 10,                              // --radius-sm
   padding: "10px 14px",
   color: C.text,
   fontSize: 13,
   fontFamily: "inherit",
   width: "100%",
-  transition: "border-color 0.15s, box-shadow 0.15s",
+  transition: "border-color 0.2s, box-shadow 0.2s",
 };
 
+// .btn-primary da globals.css — gradient cyan con shine overlay
 export const btnPrimary = {
-  background: "linear-gradient(135deg, #38bdf8 0%, #06b6d4 60%, #0891b2 100%)",
+  background: "linear-gradient(135deg, #22d3ee 0%, #06b6d4 55%, #0891b2 100%)",
   color: "#030d16",
   border: "none",
   borderRadius: 10,
@@ -86,27 +89,28 @@ export const btnPrimary = {
   fontFamily: "inherit",
   transition: "opacity 0.18s, transform 0.12s, box-shadow 0.18s",
   letterSpacing: "0.01em",
-  boxShadow: "0 4px 20px rgba(34,211,238,0.25)",
+  boxShadow: "0 8px 32px rgba(6,182,212,0.25)",  // --shadow-cyan
 };
 
+// .btn-outline — glass violet, --agenti-violet
 export const btnSecondary = {
-  background: C.indigoDim,
+  background: "rgba(139,92,246,0.08)",
   color: C.indigo,
-  border: `1px solid ${C.indigoSoft}`,
+  border: "1px solid rgba(139,92,246,0.22)",
   borderRadius: 10,
   padding: "9px 18px",
   fontSize: 13,
   fontWeight: 600,
   cursor: "pointer",
   fontFamily: "inherit",
-  transition: "opacity 0.15s",
+  transition: "opacity 0.15s, box-shadow 0.15s",
   backdropFilter: "blur(10px)",
 };
 
 export const btnGhost = {
   background: "transparent",
   color: C.muted,
-  border: `1px solid ${C.border}`,
+  border: "1px solid rgba(255,255,255,0.10)",
   borderRadius: 8,
   padding: "7px 14px",
   fontSize: 12,
@@ -115,13 +119,14 @@ export const btnGhost = {
   transition: "border-color 0.15s, color 0.15s",
 };
 
+// .glass-card da globals.css
 export const cardSt = {
-  background: "rgba(13,20,40,0.7)",
-  backdropFilter: "blur(20px) saturate(1.4)",
-  border: "1px solid rgba(34,211,238,0.12)",
-  borderRadius: 16,
+  background: "rgba(15,23,48,0.65)",
+  backdropFilter: "blur(16px) saturate(1.4)",
+  border: "1px solid rgba(255,255,255,0.10)",    // --border-default
+  borderRadius: 20,                              // --radius-lg
   padding: "20px 22px",
-  boxShadow: "0 4px 24px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.04)",
+  boxShadow: "0 4px 24px rgba(0,0,0,0.30), inset 0 1px 0 rgba(255,255,255,0.05)", // --shadow-card
 };
 
 export const labelSt = {
