@@ -52,9 +52,10 @@ export default function PadelDashboard() {
         ::selection { background: rgba(6,182,212,0.30); color: ${C.text}; }
       `}</style>
 
-      {/* Ambient gradient orbs */}
-      <div style={{ position: "fixed", top: -200, right: -200, width: 700, height: 700, borderRadius: "50%", background: "radial-gradient(circle, rgba(34,211,238,0.09) 0%, transparent 70%)", pointerEvents: "none", zIndex: 0 }} />
-      <div style={{ position: "fixed", bottom: -200, left: -100, width: 600, height: 600, borderRadius: "50%", background: "radial-gradient(circle, rgba(167,139,250,0.07) 0%, transparent 70%)", pointerEvents: "none", zIndex: 0 }} />
+      {/* Ambient gradient orbs — aurora-bg da stunning-broccoli */}
+      <div style={{ position: "fixed", top: -200, right: -150, width: 700, height: 700, borderRadius: "50%", background: "radial-gradient(circle, rgba(34,211,238,0.09) 0%, transparent 70%)", pointerEvents: "none", zIndex: 0 }} />
+      <div style={{ position: "fixed", bottom: -150, left: -100, width: 600, height: 600, borderRadius: "50%", background: "radial-gradient(circle, rgba(139,92,246,0.08) 0%, transparent 70%)", pointerEvents: "none", zIndex: 0 }} />
+      <div style={{ position: "fixed", top: "35%", left: "40%", transform: "translate(-50%,-50%)", width: 800, height: 800, borderRadius: "50%", background: "radial-gradient(circle, rgba(255,61,138,0.06) 0%, transparent 65%)", pointerEvents: "none", zIndex: 0 }} />
 
       {/* Sidebar */}
       <div style={{
