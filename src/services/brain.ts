@@ -1226,8 +1226,7 @@ export async function executeAction(
             const rawQuestion = (params.question || '').trim();
             if (rawQuestion && club?.id) {
                 const redis = getRedis();
-                const { getContextStore } = await import('../utils/request-context');
-                const playerJidFromCtx = getContextStore()?.jid;
+                const playerJidFromCtx = phoneNumber ? `${phoneNumber}@s.whatsapp.net` : (await import('../utils/request-context')).getContextStore()?.jid;
                 const idsKey = `faq:pending_ids:${club.id}`;
                 const askedByLabel = player?.name || player?.phoneNumber;
 
