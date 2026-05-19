@@ -76,9 +76,10 @@ export const inputSt = {
   transition: "border-color 0.2s, box-shadow 0.2s",
 };
 
-// .btn-primary da globals.css — gradient cyan con shine overlay
+// .btn-primary da globals.css — gradient cyan con background-size 200% per animation
 export const btnPrimary = {
-  background: "linear-gradient(135deg, #22d3ee 0%, #06b6d4 55%, #0891b2 100%)",
+  background: "linear-gradient(135deg, #22d3ee 0%, #06b6d4 40%, #0891b2 70%, #22d3ee 100%)",
+  backgroundSize: "200% 200%",
   color: "#030d16",
   border: "none",
   borderRadius: 10,
@@ -87,9 +88,9 @@ export const btnPrimary = {
   fontWeight: 700,
   cursor: "pointer",
   fontFamily: "inherit",
-  transition: "opacity 0.18s, transform 0.12s, box-shadow 0.18s",
+  transition: "transform 0.20s cubic-bezier(0.23,1,0.32,1), box-shadow 0.20s",
   letterSpacing: "0.01em",
-  boxShadow: "0 8px 32px rgba(6,182,212,0.25)",  // --shadow-cyan
+  boxShadow: "0 8px 32px rgba(6,182,212,0.28), inset 0 1px 0 rgba(255,255,255,0.18)",
 };
 
 // .btn-outline — glass violet, --agenti-violet
@@ -119,14 +120,22 @@ export const btnGhost = {
   transition: "border-color 0.15s, color 0.15s",
 };
 
-// .glass-card da globals.css
+// .glass-card da globals.css — con highlight top
 export const cardSt = {
-  background: "rgba(15,23,48,0.65)",
-  backdropFilter: "blur(16px) saturate(1.4)",
-  border: "1px solid rgba(255,255,255,0.10)",    // --border-default
-  borderRadius: 20,                              // --radius-lg
+  background: "rgba(15,23,48,0.60)",
+  backdropFilter: "blur(16px) saturate(1.5)",
+  border: "1px solid rgba(255,255,255,0.10)",
+  borderRadius: 20,
   padding: "20px 22px",
-  boxShadow: "0 4px 24px rgba(0,0,0,0.30), inset 0 1px 0 rgba(255,255,255,0.05)", // --shadow-card
+  boxShadow: "0 4px 24px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.07)",
+};
+
+// Gradient text utility (inline style alternativo alla classe CSS)
+export const gradientText = {
+  background: "linear-gradient(135deg, #22d3ee 0%, #06b6d4 50%, #a78bfa 100%)",
+  WebkitBackgroundClip: "text",
+  WebkitTextFillColor: "transparent",
+  backgroundClip: "text",
 };
 
 export const labelSt = {
