@@ -161,102 +161,84 @@ export async function selectPlayersForWave(
     });
     if (!match) return { players: [], targetCount: 0 };
 
-    // 1. GENDER RESTRICTION
-    // targetGender sul match (esplicito da dashboard o bot): 'MALE', 'FEMALE', 'ANY', null
-    // 'ANY' = misto esplicito → nessun filtro
-    // 'MALE'/'FEMALE' = filtro diretto
-    // null = legacy: inferisci dal genere dei partecipanti già iscritti (se isMixed=false)
-    let targetGender: any = null;
     const explicitTarget = (match as any).targetGender as string | null;
     const participants = match.MatchPlayer.filter(mp => !mp.leftAt).map(mp => mp.player).filter(Boolean);
 
-    if (explicitTarget === 'MALE' || explicitTarget === 'FEMALE') {
-        targetGender = explicitTarget;
-    } else if (match.isMixed) {
-        // Misto: se uno dei due generi ha già raggiunto 2 posti, invitare solo l'altro
-        const maleCount = participants.filter(p => p.gender === 'MALE').length;
-        const femaleCount = participants.filter(p => p.gender === 'FEMALE').length;
-        if (maleCount >= 2) targetGender = 'FEMALE';
-        else if (femaleCount >= 2) targetGender = 'MALE';
-        // altrimenti nessun filtro: entrambi i generi sono ancora disponibili
-    } else if (explicitTarget !== 'ANY') {
-        // Non-misto legacy: inferisci dai partecipanti
-        if (participants.length > 0) {
-            const genders = Array.from(new Set(participants.map(p => p.gender)));
-            if (genders.length === 1 && genders[0] !== 'UNKNOWN') {
-                targetGender = genders[0];
-            }
-        }
-    }
-
     const excludedIds = [
-        ...match.invitations.map(i => i.playerId),                          // già invitati (qualsiasi status)
-        ...match.MatchPlayer.filter(mp => !mp.leftAt).map(mp => mp.playerId), // ancora dentro (leftAt=null)
+        ...match.invitations.map(i => i.playerId),
+        ...match.MatchPlayer.filter(mp => !mp.leftAt).map(mp => mp.playerId),
         ...extraExcluded,
     ];
 
     const skillMin = match.skillLevel - (match.club?.matchLowerRange ?? 1.0);
     const skillMax = match.skillLevel + (match.club?.matchUpperRange ?? 1.0);
-
     const isMorning = isMorningMatchInRome(match.startTime);
     const isWeekday = isWeekdayInRome(match.startTime);
     const dailyCap = match.club?.maxDailyMessages ?? 2;
 
-    const pool = await prisma.player.findMany({
-        where: {
-            clubId: match.clubId,
-            skillLevel: { gt: 0, gte: skillMin, lte: skillMax },
-            gender: targetGender ? targetGender : undefined,
-            active: true,
-            // Time-bucketed cap + avoid flags (solo feriali — nel weekend si gioca anche la mattina)
-            ...(isMorning
-                ? { morningContactsToday: { lt: dailyCap }, ...(isWeekday ? { avoidMorning: false } : {}) }
-                : { afternoonContactsToday: { lt: dailyCap }, ...(isWeekday ? { avoidAfternoon: false } : {}) }),
-            id: { notIn: excludedIds },
-        },
-    });
-
-    if (pool.length === 0) return { players: [], targetCount: 0 };
-
-    const eligible = await filterExcluded(pool);
-    if (eligible.length === 0) return { players: [], targetCount: 0 };
-
-    // 2. LEVEL PRIORITIZATION: Exact Level First
-    const perfectMatches = eligible.filter(p => p.skillLevel === match.skillLevel);
-    const adjacentMatches = eligible.filter(p => p.skillLevel !== match.skillLevel);
-
-    const sortEligible = (a: any, b: any) => {
-        const lastA = a.lastContactedAt?.getTime() || 0;
-        const lastB = b.lastContactedAt?.getTime() || 0;
-        if (lastA !== lastB) return lastA - lastB; // Chi non contattiamo da più tempo va prima
-        return (b.reliabilityScore || PRIOR) - (a.reliabilityScore || PRIOR); // A parità di tempo, chi è più affidabile
+    const baseWhere = {
+        clubId: match.clubId,
+        skillLevel: { gt: 0, gte: skillMin, lte: skillMax },
+        active: true,
+        ...(isMorning
+            ? { morningContactsToday: { lt: dailyCap }, ...(isWeekday ? { avoidMorning: false } : {}) }
+            : { afternoonContactsToday: { lt: dailyCap }, ...(isWeekday ? { avoidAfternoon: false } : {}) }),
+        id: { notIn: excludedIds },
     };
 
-    perfectMatches.sort(sortEligible);
-    adjacentMatches.sort(sortEligible);
+    const sortFn = (a: any, b: any) => {
+        const lastA = a.lastContactedAt?.getTime() || 0;
+        const lastB = b.lastContactedAt?.getTime() || 0;
+        if (lastA !== lastB) return lastA - lastB;
+        return (b.reliabilityScore || PRIOR) - (a.reliabilityScore || PRIOR);
+    };
 
-    const sortedEligible = [...perfectMatches, ...adjacentMatches];
+    // Pool → filterExcluded → sorted → EMA accumulation fino a N posti
+    const selectByEma = async (gender: string | null, slotsNeeded: number): Promise<any[]> => {
+        if (slotsNeeded <= 0) return [];
+        const pool = await prisma.player.findMany({ where: { ...baseWhere, ...(gender ? { gender: gender as any } : {}) } });
+        if (pool.length === 0) return [];
+        const eligible = await filterExcluded(pool);
+        if (eligible.length === 0) return [];
+        const perfect = eligible.filter(p => p.skillLevel === match.skillLevel).sort(sortFn);
+        const adjacent = eligible.filter(p => p.skillLevel !== match.skillLevel).sort(sortFn);
+        const sorted = [...perfect, ...adjacent];
+        let count = 0;
+        let emaSum = 0;
+        for (const p of sorted) {
+            emaSum += p.reliabilityScore || PRIOR;
+            count++;
+            if (emaSum >= slotsNeeded) break;
+        }
+        return sorted.slice(0, count);
+    };
 
-    let targetCount = 0;
-    let currentEmaSum = 0;
+    // MISTO: seleziona M e F separatamente per i posti rimasti per genere (target: 2M+2F)
+    if (match.isMixed && explicitTarget !== 'MALE' && explicitTarget !== 'FEMALE') {
+        const maleCount = participants.filter(p => p.gender === 'MALE').length;
+        const femaleCount = participants.filter(p => p.gender === 'FEMALE').length;
+        const maleNeeded = Math.max(0, 2 - maleCount);
+        const femaleNeeded = Math.max(0, 2 - femaleCount);
+        const males = await selectByEma('MALE', maleNeeded);
+        const females = await selectByEma('FEMALE', femaleNeeded);
+        logger.info(`Wave selection MISTO: ${maleNeeded}M+${femaleNeeded}F needed, selected ${males.length}M+${females.length}F`);
+        return { players: [...males, ...females], targetCount: males.length + females.length };
+    }
 
-    for (let i = 0; i < sortedEligible.length; i++) {
-        const player = sortedEligible[i];
-        const ema = player.reliabilityScore || PRIOR;
-        currentEmaSum += ema;
-        targetCount++;
-        
-        if (currentEmaSum >= spotsNeeded) {
-            break;
+    // NON-MISTO: targetGender singolo
+    let targetGender: string | null = null;
+    if (explicitTarget === 'MALE' || explicitTarget === 'FEMALE') {
+        targetGender = explicitTarget;
+    } else if (explicitTarget !== 'ANY') {
+        if (participants.length > 0) {
+            const genders = Array.from(new Set(participants.map(p => p.gender)));
+            if (genders.length === 1 && genders[0] !== 'UNKNOWN') targetGender = genders[0];
         }
     }
 
-    logger.info(
-        `Wave selection: ${spotsNeeded} spots needed, perfect ${perfectMatches.length}, adjacent ${adjacentMatches.length}, ` +
-        `gender: ${targetGender || 'any'}, sumEMA: ${currentEmaSum.toFixed(2)}, targeting ${targetCount} players`
-    );
-
-    return { players: sortedEligible.slice(0, targetCount), targetCount };
+    const players = await selectByEma(targetGender, spotsNeeded);
+    logger.info(`Wave selection: ${spotsNeeded} spots needed, gender: ${targetGender || 'any'}, selected ${players.length}`);
+    return { players, targetCount: players.length };
 }
 
 // ─────────────────────────────────────────────
@@ -271,25 +253,8 @@ export async function getPlayersForRecovery(matchId: string): Promise<any[]> {
     });
     if (!match) return [];
 
-    let targetGender: any = null;
     const explicitTargetR = (match as any).targetGender as string | null;
     const participantsR = match.MatchPlayer.filter(mp => !mp.leftAt).map(mp => mp.player).filter(Boolean);
-
-    if (explicitTargetR === 'MALE' || explicitTargetR === 'FEMALE') {
-        targetGender = explicitTargetR;
-    } else if (match.isMixed) {
-        const maleCount = participantsR.filter(p => p.gender === 'MALE').length;
-        const femaleCount = participantsR.filter(p => p.gender === 'FEMALE').length;
-        if (maleCount >= 2) targetGender = 'FEMALE';
-        else if (femaleCount >= 2) targetGender = 'MALE';
-    } else if (explicitTargetR !== 'ANY') {
-        if (participantsR.length > 0) {
-            const genders = Array.from(new Set(participantsR.map(p => p.gender)));
-            if (genders.length === 1 && genders[0] !== 'UNKNOWN') {
-                targetGender = genders[0];
-            }
-        }
-    }
 
     const excludedIds = [
         ...match.invitations.map(i => i.playerId),
@@ -298,28 +263,16 @@ export async function getPlayersForRecovery(matchId: string): Promise<any[]> {
 
     const skillMin = match.skillLevel - (match.club?.matchLowerRange ?? 1.0);
     const skillMax = match.skillLevel + (match.club?.matchUpperRange ?? 1.0);
-
     const isMorning = isMorningMatchInRome(match.startTime);
     const isWeekday = isWeekdayInRome(match.startTime);
 
-    const pool = await prisma.player.findMany({
-        where: {
-            clubId: match.clubId,
-            skillLevel: { gt: 0, gte: skillMin, lte: skillMax },
-            gender: targetGender ? targetGender : undefined,
-            active: true,
-            // Recovery ignora il cap ma rispetta avoid flags solo nei feriali
-            ...(isWeekday
-                ? (isMorning ? { avoidMorning: false } : { avoidAfternoon: false })
-                : {}),
-            id: { notIn: excludedIds },
-        },
-    });
-
-    const eligible = await filterExcluded(pool);
-
-    const perfectMatches = eligible.filter(p => p.skillLevel === match.skillLevel);
-    const adjacentMatches = eligible.filter(p => p.skillLevel !== match.skillLevel);
+    const baseWhereR = {
+        clubId: match.clubId,
+        skillLevel: { gt: 0, gte: skillMin, lte: skillMax },
+        active: true,
+        ...(isWeekday ? (isMorning ? { avoidMorning: false } : { avoidAfternoon: false }) : {}),
+        id: { notIn: excludedIds },
+    };
 
     const sortRecovery = (a: any, b: any) => {
         const lastA = a.lastContactedAt?.getTime() || 0;
@@ -328,10 +281,35 @@ export async function getPlayersForRecovery(matchId: string): Promise<any[]> {
         return (b.reliabilityScore || PRIOR) - (a.reliabilityScore || PRIOR);
     };
 
-    perfectMatches.sort(sortRecovery);
-    adjacentMatches.sort(sortRecovery);
+    const fetchAndSort = async (gender: string | null): Promise<any[]> => {
+        const pool = await prisma.player.findMany({ where: { ...baseWhereR, ...(gender ? { gender: gender as any } : {}) } });
+        const eligible = await filterExcluded(pool);
+        const perfect = eligible.filter(p => p.skillLevel === match.skillLevel).sort(sortRecovery);
+        const adjacent = eligible.filter(p => p.skillLevel !== match.skillLevel).sort(sortRecovery);
+        return [...perfect, ...adjacent];
+    };
 
-    return [...perfectMatches, ...adjacentMatches];
+    // MISTO: recupera M e F separatamente per i posti rimasti
+    if (match.isMixed && explicitTargetR !== 'MALE' && explicitTargetR !== 'FEMALE') {
+        const maleCount = participantsR.filter(p => p.gender === 'MALE').length;
+        const femaleCount = participantsR.filter(p => p.gender === 'FEMALE').length;
+        const results: any[] = [];
+        if (maleCount < 2) results.push(...await fetchAndSort('MALE'));
+        if (femaleCount < 2) results.push(...await fetchAndSort('FEMALE'));
+        return results;
+    }
+
+    // NON-MISTO
+    let targetGender: string | null = null;
+    if (explicitTargetR === 'MALE' || explicitTargetR === 'FEMALE') {
+        targetGender = explicitTargetR;
+    } else if (explicitTargetR !== 'ANY') {
+        if (participantsR.length > 0) {
+            const genders = Array.from(new Set(participantsR.map(p => p.gender)));
+            if (genders.length === 1 && genders[0] !== 'UNKNOWN') targetGender = genders[0];
+        }
+    }
+    return fetchAndSort(targetGender);
 }
 
 // ─────────────────────────────────────────────

@@ -867,10 +867,18 @@ export async function executeAction(
                 await tx.$executeRaw`SELECT 1 FROM "Match" WHERE id = ${inv.matchId} FOR UPDATE`;
                 const match = await tx.match.findUnique({
                     where: { id: inv.matchId },
-                    include: { MatchPlayer: { where: { leftAt: null } } },
+                    include: { MatchPlayer: { where: { leftAt: null }, include: { player: { select: { gender: true } } } } },
                 });
                 if (!match || match.status !== 'OPEN') throw new Error('MATCH_CLOSED');
                 if (match.MatchPlayer.length >= match.playersNeeded) throw new Error('MATCH_FULL');
+
+                // Per partite miste: verifica che il posto del genere del giocatore sia ancora disponibile
+                if (match.isMixed) {
+                    const maleCount = match.MatchPlayer.filter((mp: any) => mp.player?.gender === 'MALE').length;
+                    const femaleCount = match.MatchPlayer.filter((mp: any) => mp.player?.gender === 'FEMALE').length;
+                    if ((player as any).gender === 'MALE' && maleCount >= 2) throw new Error('GENDER_SLOT_FULL');
+                    if ((player as any).gender === 'FEMALE' && femaleCount >= 2) throw new Error('GENDER_SLOT_FULL');
+                }
 
                 await tx.matchPlayer.upsert({
                     where: { matchId_playerId: { matchId: match.id, playerId: player.id } },
@@ -879,7 +887,18 @@ export async function executeAction(
                 });
                 await tx.invitation.update({ where: { id: inv.id }, data: { status: 'ACCEPTED', respondedAt: new Date() } });
 
-                if (match.MatchPlayer.length + 1 >= match.playersNeeded) {
+                // Lock gender-aware: misto si chiude solo con 2M+2F
+                let shouldLock = false;
+                if (match.isMixed) {
+                    const maleCount = match.MatchPlayer.filter((mp: any) => mp.player?.gender === 'MALE').length;
+                    const femaleCount = match.MatchPlayer.filter((mp: any) => mp.player?.gender === 'FEMALE').length;
+                    const newMale = maleCount + ((player as any).gender === 'MALE' ? 1 : 0);
+                    const newFemale = femaleCount + ((player as any).gender === 'FEMALE' ? 1 : 0);
+                    shouldLock = newMale >= 2 && newFemale >= 2;
+                } else {
+                    shouldLock = match.MatchPlayer.length + 1 >= match.playersNeeded;
+                }
+                if (shouldLock) {
                     await tx.match.update({ where: { id: match.id }, data: { status: 'LOCKED' } });
                 }
 
@@ -891,6 +910,41 @@ export async function executeAction(
 
             const { increaseReliability } = await import('./scoring');
             await increaseReliability(player.id).catch(() => {});
+
+            // Misto: se il genere del giocatore ha appena raggiunto quota 2, notifica e chiudi i pending dello stesso genere
+            if ((player as any).gender && (player as any).gender !== 'UNKNOWN') {
+                try {
+                    const reloadedMatch = await prisma.match.findUnique({
+                        where: { id: inv.matchId },
+                        include: { MatchPlayer: { where: { leftAt: null }, include: { player: { select: { gender: true } } } } },
+                    });
+                    const isMixedMatch = reloadedMatch?.isMixed ?? false;
+                    const myGenderCount = reloadedMatch?.MatchPlayer.filter((mp: any) => mp.player?.gender === (player as any).gender).length ?? 0;
+                    if (isMixedMatch && myGenderCount >= 2) {
+                        const pendingOfGender = await prisma.invitation.findMany({
+                            where: { matchId: inv.matchId, status: 'PENDING' },
+                            include: { player: { select: { gender: true, phoneNumber: true } } },
+                        });
+                        const toClose = pendingOfGender.filter((i: any) => i.player?.gender === (player as any).gender);
+                        if (toClose.length > 0) {
+                            await prisma.invitation.updateMany({
+                                where: { id: { in: toClose.map((i: any) => i.id) } },
+                                data: { status: 'IGNORED' },
+                            });
+                            const genderMsgs = [
+                                'I posti del tuo genere per questa partita sono esauriti, mi dispiace! Vuoi che ti cerchi un\'altra? 🎾',
+                                'Purtroppo i posti per il tuo genere si sono appena riempiti. Cerco qualcos\'altro per te?',
+                            ];
+                            for (const pending of toClose) {
+                                const pjid = `${(pending as any).player.phoneNumber}@s.whatsapp.net`;
+                                simulateTypingAndSend(pjid, genderMsgs[Math.floor(Math.random() * genderMsgs.length)]).catch(() => {});
+                            }
+                        }
+                    }
+                } catch (notifyErr) {
+                    logger.warn({ notifyErr, matchId: inv.matchId }, 'Gender-slot-full notify failed silently');
+                }
+            }
 
             // Se LOCKED: messageHandler chiamerà handleMatchFilled — restituiamo matchId per segnalarlo
             const updatedMatch = await prisma.match.findUnique({ where: { id: inv.matchId }, select: { status: true } });

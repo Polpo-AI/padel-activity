@@ -92,10 +92,16 @@ async function _processWaveInner(matchId: string, waveNumber: number, urgencyMul
         }
 
         const confirmedCount = match.MatchPlayer.filter(mp => !mp.leftAt).length;
-        // committedPlayers: giocatori fisici già confermati ma non nel sistema (es. "siamo in 3").
-        // Lo slot effettivo ancora libero = playersNeeded - max(committedPlayers, confirmedCount)
         const committedCount = Math.max(confirmedCount, (match as any).committedPlayers ?? 0);
-        const actualSpotsNeeded = match.playersNeeded - committedCount;
+        let actualSpotsNeeded: number;
+        if (match.isMixed) {
+            // Misto: conta i posti rimasti per genere (target 2M+2F), non il totale
+            const maleConf = match.MatchPlayer.filter(mp => !mp.leftAt && (mp.player as any)?.gender === 'MALE').length;
+            const femaleConf = match.MatchPlayer.filter(mp => !mp.leftAt && (mp.player as any)?.gender === 'FEMALE').length;
+            actualSpotsNeeded = Math.max(0, 2 - maleConf) + Math.max(0, 2 - femaleConf);
+        } else {
+            actualSpotsNeeded = match.playersNeeded - committedCount;
+        }
         const spotsNeeded = Math.max(actualSpotsNeeded, Math.round(actualSpotsNeeded * urgencyMultiplier));
 
         if (spotsNeeded <= 0) {

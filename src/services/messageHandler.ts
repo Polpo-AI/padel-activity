@@ -493,6 +493,13 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[], cor
                     "Piena! Qualcuno ti ha appena superato, ti cerco subito un'altra partita? 😅",
                 ];
                 await simulateTypingAndSend(jid, _fullMsgs[Math.floor(Math.random() * _fullMsgs.length)]);
+            } else if (result.errorMessage === 'GENDER_SLOT_FULL') {
+                const _genderMsgs = [
+                    "I posti del tuo genere in questa partita sono esauriti! Provo a cercarti un'altra? 🎾",
+                    "Ops, i posti per il tuo genere sono già tutti occupati. Vuoi che cerchi un altro slot? 😅",
+                    "Appena occupato l'ultimo posto per il tuo genere. Cerco un'altra partita per te? 😕",
+                ];
+                await simulateTypingAndSend(jid, _genderMsgs[Math.floor(Math.random() * _genderMsgs.length)]);
             } else if (result.errorMessage === 'SKILL_TEST_REQUIRED') {
                 const _skillMsgs = [
                     "Per cercare altri giocatori ti serve prima la valutazione col maestro (il circolo ti contatterà per organizzarla). Nel frattempo puoi prenotare il campo privatamente!",
