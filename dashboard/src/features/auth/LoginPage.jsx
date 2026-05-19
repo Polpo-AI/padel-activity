@@ -25,24 +25,30 @@ export default function LoginPage({ onLogin }) {
     <div style={{
       minHeight: "100vh", background: C.bg,
       display: "flex", alignItems: "center", justifyContent: "center",
-      fontFamily: "'DM Mono','Fira Code','Courier New',monospace",
+      fontFamily: "'Inter','Plus Jakarta Sans',-apple-system,BlinkMacSystemFont,sans-serif",
     }}>
-      {/* Subtle radial glow behind card */}
+      {/* Ambient orbs */}
+      <div style={{ position: "fixed", top: -200, right: -200, width: 700, height: 700, borderRadius: "50%", background: "radial-gradient(circle, rgba(34,211,238,0.09) 0%, transparent 70%)", pointerEvents: "none" }} />
+      <div style={{ position: "fixed", bottom: -200, left: -100, width: 600, height: 600, borderRadius: "50%", background: "radial-gradient(circle, rgba(167,139,250,0.07) 0%, transparent 70%)", pointerEvents: "none" }} />
+
+      {/* Radial glow behind card */}
       <div style={{
         position: "fixed", top: "40%", left: "50%", transform: "translate(-50%, -50%)",
-        width: 500, height: 500, borderRadius: "50%",
-        background: `radial-gradient(circle, ${C.accent}08 0%, transparent 70%)`,
+        width: 700, height: 700, borderRadius: "50%",
+        background: "radial-gradient(circle, rgba(34,211,238,0.12) 0%, transparent 65%)",
         pointerEvents: "none",
       }} />
 
       <div style={{
         width: 380, position: "relative",
-        background: C.surface,
-        border: `1px solid ${C.border}`,
+        background: "rgba(13,20,40,0.80)",
+        backdropFilter: "blur(24px) saturate(1.4)",
+        border: "1px solid rgba(34,211,238,0.14)",
+        borderTop: "2px solid rgba(34,211,238,0.45)",
         borderRadius: 18,
         padding: "40px 36px",
         display: "flex", flexDirection: "column", gap: 28,
-        boxShadow: "0 2px 4px rgba(0,0,0,0.5), 0 20px 60px rgba(0,0,0,0.4)",
+        boxShadow: "0 8px 40px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.04)",
       }}>
         <div style={{ textAlign: "center" }}>
           <div style={{

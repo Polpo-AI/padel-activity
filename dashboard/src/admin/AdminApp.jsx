@@ -37,19 +37,28 @@ export default function AdminApp() {
   const current = NAV.find(n => n.id === tab);
 
   return (
-    <div style={{ minHeight: "100vh", background: C.bg, fontFamily: "'DM Mono','Fira Code','Courier New',monospace", color: C.text }}>
+    <div style={{ minHeight: "100vh", background: C.bg, fontFamily: "'Inter','Plus Jakarta Sans',-apple-system,BlinkMacSystemFont,sans-serif", color: C.text }}>
       <style>{`
         * { box-sizing: border-box; margin: 0; padding: 0; }
         @keyframes spin { to { transform: rotate(360deg); } }
         @keyframes slideUp { from { transform: translateY(12px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
-        input:focus, select:focus { outline: none; border-color: ${C.accentSoft} !important; box-shadow: 0 0 0 3px ${C.accentDim}; }
+        input:focus, select:focus { outline: none; border-color: rgba(34,211,238,0.4) !important; box-shadow: 0 0 0 3px rgba(34,211,238,0.12) !important; }
         button:disabled { opacity: 0.4; cursor: not-allowed; }
-        ::-webkit-scrollbar { width: 5px; } ::-webkit-scrollbar-track { background: ${C.bg}; } ::-webkit-scrollbar-thumb { background: ${C.dim}; border-radius: 3px; }
+        button:not(:disabled):active { transform: scale(0.97); }
+        ::-webkit-scrollbar { width: 4px; height: 4px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: rgba(34,211,238,0.18); border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: rgba(34,211,238,0.32); }
         input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(0.4); }
+        ::selection { background: rgba(34,211,238,0.20); color: ${C.text}; }
       `}</style>
 
+      {/* Ambient gradient orbs */}
+      <div style={{ position: "fixed", top: -200, right: -200, width: 700, height: 700, borderRadius: "50%", background: "radial-gradient(circle, rgba(34,211,238,0.09) 0%, transparent 70%)", pointerEvents: "none", zIndex: 0 }} />
+      <div style={{ position: "fixed", bottom: -200, left: -100, width: 600, height: 600, borderRadius: "50%", background: "radial-gradient(circle, rgba(167,139,250,0.07) 0%, transparent 70%)", pointerEvents: "none", zIndex: 0 }} />
+
       {/* Sidebar */}
-      <div style={{ position: "fixed", left: 0, top: 0, bottom: 0, width: 210, background: C.surface, borderRight: `1px solid ${C.border}`, display: "flex", flexDirection: "column", padding: "24px 0" }}>
+      <div style={{ position: "fixed", left: 0, top: 0, bottom: 0, width: 210, background: "rgba(13,20,40,0.85)", backdropFilter: "blur(20px) saturate(1.4)", borderRight: `1px solid ${C.border}`, display: "flex", flexDirection: "column", padding: "24px 0", zIndex: 10 }}>
         <div style={{ padding: "0 20px 24px", borderBottom: `1px solid ${C.border}` }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <div style={{ width: 36, height: 36, borderRadius: 10, background: `#6b3fa022`, border: `1px solid #6b3fa066`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18 }}>🛡️</div>
@@ -82,7 +91,7 @@ export default function AdminApp() {
       </div>
 
       {/* Content */}
-      <div style={{ marginLeft: 210, padding: "32px 36px", maxWidth: 1400 }}>
+      <div style={{ marginLeft: 210, padding: "32px 36px", maxWidth: 1400, position: "relative", zIndex: 1 }}>
         <div style={{ marginBottom: 28 }}>
           <div style={{ fontSize: 22, fontWeight: 700, color: C.text }}>{current?.label}</div>
           <div style={{ fontSize: 12, color: C.muted, marginTop: 4 }}>{current?.desc}</div>

@@ -29,7 +29,7 @@ export default function PadelDashboard() {
   const current = NAV.find(n => n.id === tab);
 
   return (
-    <div style={{ minHeight: "100vh", background: C.bg, fontFamily: "'DM Mono','Fira Code','Courier New',monospace", color: C.text }}>
+    <div style={{ minHeight: "100vh", background: C.bg, fontFamily: "'Inter','Plus Jakarta Sans',-apple-system,BlinkMacSystemFont,sans-serif", color: C.text }}>
       <style>{`
         * { box-sizing: border-box; margin: 0; padding: 0; }
         @keyframes spin { to { transform: rotate(360deg); } }
@@ -37,27 +37,33 @@ export default function PadelDashboard() {
         @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
         input:focus, select:focus, textarea:focus {
           outline: none;
-          border-color: ${C.accent}60 !important;
-          box-shadow: 0 0 0 3px ${C.accentDim} !important;
+          border-color: rgba(34,211,238,0.4) !important;
+          box-shadow: 0 0 0 3px rgba(34,211,238,0.12) !important;
         }
         button:disabled { opacity: 0.35; cursor: not-allowed; }
         button:not(:disabled):active { transform: scale(0.97); }
         ::-webkit-scrollbar { width: 4px; height: 4px; }
         ::-webkit-scrollbar-track { background: transparent; }
-        ::-webkit-scrollbar-thumb { background: ${C.border}; border-radius: 4px; }
-        ::-webkit-scrollbar-thumb:hover { background: ${C.muted}50; }
+        ::-webkit-scrollbar-thumb { background: rgba(34,211,238,0.18); border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: rgba(34,211,238,0.32); }
         input[type="date"]::-webkit-calendar-picker-indicator,
         input[type="time"]::-webkit-calendar-picker-indicator { filter: invert(0.5); }
-        input[type="range"] { accent-color: ${C.accent}; }
-        ::selection { background: ${C.accentSoft}; color: ${C.text}; }
+        input[type="range"] { accent-color: #22d3ee; }
+        ::selection { background: rgba(34,211,238,0.20); color: ${C.text}; }
       `}</style>
+
+      {/* Ambient gradient orbs */}
+      <div style={{ position: "fixed", top: -200, right: -200, width: 700, height: 700, borderRadius: "50%", background: "radial-gradient(circle, rgba(34,211,238,0.09) 0%, transparent 70%)", pointerEvents: "none", zIndex: 0 }} />
+      <div style={{ position: "fixed", bottom: -200, left: -100, width: 600, height: 600, borderRadius: "50%", background: "radial-gradient(circle, rgba(167,139,250,0.07) 0%, transparent 70%)", pointerEvents: "none", zIndex: 0 }} />
 
       {/* Sidebar */}
       <div style={{
         position: "fixed", left: 0, top: 0, bottom: 0, width: 220,
-        background: C.surface,
+        background: "rgba(13,20,40,0.85)",
+        backdropFilter: "blur(20px) saturate(1.4)",
         borderRight: `1px solid ${C.border}`,
         display: "flex", flexDirection: "column",
+        zIndex: 10,
       }}>
         {/* Logo */}
         <div style={{ padding: "22px 20px 20px", borderBottom: `1px solid ${C.border}` }}>
@@ -125,7 +131,7 @@ export default function PadelDashboard() {
       </div>
 
       {/* Main content */}
-      <div style={{ marginLeft: 220, padding: "32px 40px", maxWidth: 1320 }}>
+      <div style={{ marginLeft: 220, padding: "32px 40px", maxWidth: 1320, position: "relative", zIndex: 1 }}>
         {/* Page header */}
         <div style={{ marginBottom: 32 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 6 }}>

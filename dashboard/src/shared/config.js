@@ -1,32 +1,32 @@
 // ─── Colori ───────────────────────────────────
 export const C = {
-  // Sfondi — neutral puri, lifted ~20pt rispetto al nero piatto
-  bg:           "#141414",   // main content background
-  surface:      "#1c1c1c",   // sidebar + panel backgrounds
-  surfaceHover: "#242424",   // hover su voci sidebar/liste
-  card:         "#222222",   // card elevate su surface
+  // Sfondi — deep navy (Polpo AI stunning-broccoli)
+  bg:           "#07091a",                      // navy-black main bg
+  surface:      "#0d1428",                      // sidebar + panel
+  surfaceHover: "#131d38",                      // hover
+  card:         "#0f1932",                      // card elevate su surface
 
-  // Bordi — più visibili per gerarchia chiara
-  border:       "#303030",   // bordo standard
-  borderLight:  "#404040",   // bordo su focus/highlight
+  // Bordi — cyan sottilissimo
+  border:       "rgba(34,211,238,0.12)",         // bordo standard
+  borderLight:  "rgba(34,211,238,0.28)",         // focus/highlight
 
-  // Accent primario — lime elettrico (sportswear energy)
-  accent:       "#c8ff00",
-  accentDim:    "#c8ff0010",
-  accentSoft:   "#c8ff0030",
+  // Accent primario — cyan (Polpo AI primary)
+  accent:       "#22d3ee",
+  accentDim:    "rgba(34,211,238,0.08)",
+  accentSoft:   "rgba(34,211,238,0.16)",
 
   // Accent secondario — violet
   indigo:       "#a78bfa",
-  indigoDim:    "#a78bfa15",
-  indigoSoft:   "#a78bfa35",
+  indigoDim:    "rgba(167,139,250,0.08)",
+  indigoSoft:   "rgba(167,139,250,0.18)",
 
   // Testi
-  text:         "#f0f0f0",
-  muted:        "#909090",   // era #737373 — testi secondari più leggibili
-  dim:          "#2a2a2a",
+  text:         "#e8f4f8",                      // quasi-bianco con tinta blu
+  muted:        "#6b8ca8",                      // blu-grigio secondario
+  dim:          "#060818",
 
   // Status partite
-  open:         "#c8ff00",
+  open:         "#22d3ee",
   locked:       "#3b82f6",
   cancelled:    "#ef4444",
   unfilled:     "#f97316",
@@ -63,36 +63,73 @@ export const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 // ─── Stili condivisi ──────────────────────────
 export const inputSt = {
-  background: C.card, border: `1px solid ${C.border}`, borderRadius: 10,
-  padding: "10px 14px", color: C.text, fontSize: 13, fontFamily: "inherit",
-  width: "100%", transition: "border-color 0.15s, box-shadow 0.15s",
+  background: C.card,
+  border: `1px solid ${C.border}`,
+  borderRadius: 10,
+  padding: "10px 14px",
+  color: C.text,
+  fontSize: 13,
+  fontFamily: "inherit",
+  width: "100%",
+  transition: "border-color 0.15s, box-shadow 0.15s",
 };
 
 export const btnPrimary = {
-  background: C.accent, color: "#050505", border: "none", borderRadius: 10,
-  padding: "10px 20px", fontSize: 13, fontWeight: 700, cursor: "pointer",
-  fontFamily: "inherit", transition: "opacity 0.15s, transform 0.1s",
+  background: "linear-gradient(135deg, #38bdf8 0%, #06b6d4 60%, #0891b2 100%)",
+  color: "#030d16",
+  border: "none",
+  borderRadius: 10,
+  padding: "10px 20px",
+  fontSize: 13,
+  fontWeight: 700,
+  cursor: "pointer",
+  fontFamily: "inherit",
+  transition: "opacity 0.18s, transform 0.12s, box-shadow 0.18s",
   letterSpacing: "0.01em",
+  boxShadow: "0 4px 20px rgba(34,211,238,0.25)",
 };
 
 export const btnSecondary = {
-  background: C.indigoDim, color: C.indigo, border: `1px solid ${C.indigoSoft}`,
-  borderRadius: 10, padding: "9px 18px", fontSize: 13, fontWeight: 600, cursor: "pointer",
-  fontFamily: "inherit", transition: "opacity 0.15s",
+  background: C.indigoDim,
+  color: C.indigo,
+  border: `1px solid ${C.indigoSoft}`,
+  borderRadius: 10,
+  padding: "9px 18px",
+  fontSize: 13,
+  fontWeight: 600,
+  cursor: "pointer",
+  fontFamily: "inherit",
+  transition: "opacity 0.15s",
+  backdropFilter: "blur(10px)",
 };
 
 export const btnGhost = {
-  background: "transparent", color: C.muted, border: `1px solid ${C.border}`,
-  borderRadius: 8, padding: "7px 14px", fontSize: 12, cursor: "pointer",
-  fontFamily: "inherit", transition: "border-color 0.15s, color 0.15s",
+  background: "transparent",
+  color: C.muted,
+  border: `1px solid ${C.border}`,
+  borderRadius: 8,
+  padding: "7px 14px",
+  fontSize: 12,
+  cursor: "pointer",
+  fontFamily: "inherit",
+  transition: "border-color 0.15s, color 0.15s",
 };
 
 export const cardSt = {
-  background: C.surface, border: `1px solid ${C.border}`, borderRadius: 14,
-  padding: "20px 22px", boxShadow: "0 1px 3px rgba(0,0,0,0.4), 0 4px 16px rgba(0,0,0,0.2)",
+  background: "rgba(13,20,40,0.7)",
+  backdropFilter: "blur(20px) saturate(1.4)",
+  border: "1px solid rgba(34,211,238,0.12)",
+  borderRadius: 16,
+  padding: "20px 22px",
+  boxShadow: "0 4px 24px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.04)",
 };
 
 export const labelSt = {
-  display: "block", fontSize: 10, color: C.muted,
-  textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 7, fontWeight: 600,
+  display: "block",
+  fontSize: 10,
+  color: C.muted,
+  textTransform: "uppercase",
+  letterSpacing: "0.1em",
+  marginBottom: 7,
+  fontWeight: 600,
 };
