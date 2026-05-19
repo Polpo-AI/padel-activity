@@ -316,7 +316,7 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[], cor
     const brainContext = await buildBrainContext(jid, phoneNumber);
 
     const mappedContactCards = contactCards.map(c => ({ phone: c.contactPhone ?? undefined, name: c.contactName ?? undefined }));
-    const { message, action, params } = await callBrain(
+    const { message, action, params, secondaryAction, secondaryParams } = await callBrain(
         brainContext,
         combinedText || '(messaggio senza testo)',
         mappedContactCards.length > 0 ? mappedContactCards : undefined,
@@ -864,6 +864,56 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[], cor
                     });
                     break; // una FAQ secondaria per batch è sufficiente
                 }
+            }
+        }
+
+        // ── Secondary action dal brain (multi-intent) ────────────────────────────
+        // Quando il brain rileva DUE intenti separati restituisce secondaryAction/secondaryParams.
+        // Whitelist conservativa — mai azioni distruttive come OPT_OUT o REGISTER_PLAYER.
+        const SECONDARY_ACTION_WHITELIST = ['BOOK_FIELD', 'CANCEL_MATCH', 'RESCHEDULE_MATCH', 'FAQ_REQUEST', 'INVITE_PREFERRED'];
+        if (
+            result.success &&
+            secondaryAction &&
+            SECONDARY_ACTION_WHITELIST.includes(secondaryAction) &&
+            secondaryAction !== action
+        ) {
+            try {
+                logger.info({ primaryAction: action, secondaryAction }, 'Executing secondary action from brain');
+                const secResult = await executeAction(secondaryAction, secondaryParams || {}, player, club, phoneNumber);
+
+                if ((secondaryAction === 'BOOK_FIELD' || secondaryAction === 'RESCHEDULE_MATCH') && secResult.success && secResult.matchId) {
+                    const secMatch = await prisma.match.findUnique({
+                        where: { id: secResult.matchId },
+                        include: { court: true, MatchPlayer: { where: { leftAt: null }, include: { player: { select: { id: true, name: true, skillLevel: true } } } } },
+                    });
+                    if (secMatch?.court) {
+                        const { calculateSlotCost } = await import('./pricing');
+                        const totalCost = await calculateSlotCost(secMatch.court.id, secMatch.startTime);
+                        const pricePerPerson = totalCost > 0 ? (totalCost / 4).toFixed(2) : null;
+                        const timeStr = secMatch.startTime.toLocaleString('it-IT', { timeZone: 'Europe/Rome', weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' });
+                        const courtType = secMatch.court.isCovered ? '🏟️ coperto' : '☀️ all\'aperto';
+                        const lines = secMatch.status === 'OPEN' ? [
+                            `📋 *Sei in lista!*`, `📅 ${timeStr}`, `🎾 ${secMatch.court.name} (${courtType})`,
+                            pricePerPerson ? `💶 ${pricePerPerson}€ a persona` : null, `⏳ Ti avviso quando siamo in 4`,
+                        ] : [
+                            `📋 *Prenotazione confermata*`, `📅 ${timeStr}`, `🎾 ${secMatch.court.name} (${courtType})`,
+                            pricePerPerson ? `💶 ${pricePerPerson}€ a persona` : null,
+                            [club?.address, club?.city].filter(Boolean).join(' — ') || null,
+                        ];
+                        await simulateTypingAndSend(jid, lines.filter(Boolean).join('\n'));
+                    }
+                } else if (!secResult.success && secResult.errorMessage) {
+                    const _secErrMsgs: Record<string, string> = {
+                        ALL_COURTS_TAKEN: 'Per quell\'orario non ho trovato campi disponibili — dimmi un\'altra fascia oraria quando vuoi.',
+                        ONLY_COVERED_AVAILABLE: 'Per quell\'orario ho solo il campo coperto disponibile. Vuoi che prenoti quello?',
+                        SLOT_OVERLAP: 'Hai già una prenotazione in quella fascia oraria.',
+                        GENDER_SLOT_FULL: 'I posti per il tuo genere in quella partita sono esauriti.',
+                    };
+                    const msg = _secErrMsgs[secResult.errorMessage];
+                    if (msg) await simulateTypingAndSend(jid, msg);
+                }
+            } catch (err) {
+                logger.warn({ err, secondaryAction }, 'Secondary action from brain failed — ignored');
             }
         }
     }

@@ -34,6 +34,8 @@ export interface BrainResponse {
     message: string;
     action: BrainAction;
     params?: any;
+    secondaryAction?: BrainAction;
+    secondaryParams?: Record<string, string>;
 }
 
 export interface BrainContext {
@@ -661,6 +663,16 @@ Rispondi SEMPRE con JSON valido: { "message": "...", "action": "NOME", "params":
   ⛔ Se l'utente dice "siamo già in 2/3, cercane altri N" — la risposta corretta è OPEN_TO_MATCHMAKING MA spiegando che il matchmaking cerca tra i soci con Skill Test completato: non si può "contare" un amico non iscritto come già confermato. Il sistema cercherà i giocatori mancanti (playersNeeded - 1, dove 1 è il player registrato).
   Messaggio: usa una frase che chiarisca che si cerca tra i soci del circolo. Es. "Perfetto, apro la partita al matchmaking — cercherò tra i soci con Skill Test completato 🎾".`}
 
+═══ INTENTI MULTIPLI (facoltativo) ═══
+Se il messaggio contiene chiaramente DUE intenti separati e autonomi (es. "accetto E poi prenota venerdì alle 18"), puoi aggiungere al JSON i campi opzionali "secondaryAction" e "secondaryParams".
+Regole:
+- Il campo "message" deve già rispondere a ENTRAMBI gli intenti
+- Usa secondaryAction SOLO per: BOOK_FIELD, CANCEL_MATCH, RESCHEDULE_MATCH, FAQ_REQUEST, INVITE_PREFERRED
+- MAI per: REGISTER_PLAYER, OPT_OUT, OPT_IN, ACCEPT_INVITATION
+- Se non sei sicuro che ci siano davvero 2 intenti distinti → ometti secondaryAction
+- L'azione primaria è sempre quella più urgente (es. ACCEPT_INVITATION > BOOK_FIELD)
+Esempio: { "message": "Perfetto, ti confermo! E per venerdì prenoto subito.", "action": "ACCEPT_INVITATION", "params": {"invitationId":"..."}, "secondaryAction": "BOOK_FIELD", "secondaryParams": {"date":"2026-05-22","time":"18:00","preferMixed":"false"} }
+
 ═══ REGOLA RESCHEDULE vs BOOK_FIELD ═══
 Quando il giocatore ha già partite confermate E chiede un nuovo slot, devi capire dal contesto se sta correggendo/spostando o aggiungendo:
 
@@ -745,11 +757,14 @@ PRINCIPIO BASE: se c'è ambiguità, assumi l'interpretazione più favorevole all
         if (start === -1 || end === -1) return null;
         try {
             const parsed = JSON.parse(text.substring(start, end + 1));
-            return {
+            const result: BrainResponse = {
                 message: String(parsed.message || '...'),
                 action: (parsed.action || 'NONE') as BrainAction,
                 params: parsed.params || {},
             };
+            if (parsed.secondaryAction) result.secondaryAction = parsed.secondaryAction as BrainAction;
+            if (parsed.secondaryParams) result.secondaryParams = parsed.secondaryParams as Record<string, string>;
+            return result;
         } catch { return null; }
     }
 
