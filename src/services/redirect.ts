@@ -626,7 +626,17 @@ export async function confirmRedirectChoice(
     choiceText: string,
     pendingState: { group: RedirectGroup; options: RedirectOption[] }
 ): Promise<void> {
-    const { group, options } = pendingState;
+    // Rehydrate Date fields: JSON/Redis serializza i Date come stringhe ISO
+    const options: RedirectOption[] = (pendingState.options ?? []).map(o => ({
+        ...o,
+        startTime: o.startTime instanceof Date ? o.startTime : new Date(o.startTime as any),
+    }));
+    const group: RedirectGroup = {
+        ...pendingState.group,
+        originalStartTime: pendingState.group.originalStartTime instanceof Date
+            ? pendingState.group.originalStartTime
+            : new Date(pendingState.group.originalStartTime as any),
+    };
 
     // Stato corrotto o salvato senza opzioni: pulisci e lascia gestire al brain
     if (!options || options.length === 0) {
