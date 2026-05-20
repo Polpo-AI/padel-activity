@@ -9,8 +9,8 @@ import Modal from "../../shared/Modal";
 
 const fmtPhone   = (p) => p?.startsWith("39") && p.length > 4 ? p.slice(2) : (p || "");
 const genderIcon  = (g) => g === "MALE" ? "♂" : g === "FEMALE" ? "♀" : "—";
-const genderColor = (g) => g === "MALE" ? "#3b82f6" : g === "FEMALE" ? "#ec4899" : C.dim;
-const rateColor   = (r) => r >= 0.6 ? C.open : r >= 0.3 ? C.warning : C.cancelled;
+const genderColor = (g) => g === "MALE" ? "#3b82f6" : g === "FEMALE" ? "#ec4899" : "#94a3b8";
+const rateColor   = (C, r) => r >= 0.6 ? C.open : r >= 0.3 ? C.warning : C.cancelled;
 
 const fmtDate = (d) => {
   if (!d) return "mai";
@@ -25,6 +25,7 @@ const fmtDate = (d) => {
 // ─── SortArrow — freccia ordinamento ──────────────────────────────────────────
 
 function SortArrow({ field, sortBy, sortDir, onSort }) {
+  const { C } = useTheme();
   const active = sortBy === field;
   return (
     <span
@@ -56,6 +57,7 @@ function Th({ label, sortField, sortBy, sortDir, onSort, filterEl }) {
 // ─── FilterDropdown — contenitore popup ───────────────────────────────────────
 
 function FilterDropdown({ trigger, children, active }) {
+  const { C } = useTheme();
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
 
@@ -285,6 +287,7 @@ function ReliabilityFilterDropdown({ minReliability, onChange, active }) {
 // ─── PlayerProfile ────────────────────────────
 
 function PlayerProfile({ playerId, token, onClose, onUpdated }) {
+  const { C, inputSt, btnPrimary, btnGhost, labelSt } = useTheme();
   const [player, setPlayer]     = useState(null);
   const [loading, setLoading]   = useState(true);
   const [editName, setEditName] = useState("");
@@ -315,7 +318,7 @@ function PlayerProfile({ playerId, token, onClose, onUpdated }) {
   if (!player) return null;
 
   const showRate = player.reliabilityScore || 0.33;
-  const rColor   = rateColor(showRate);
+  const rColor   = rateColor(C, showRate);
 
   return (
     <Modal title="Profilo giocatore" onClose={onClose}>
@@ -780,9 +783,9 @@ export default function PlayersView({ token }) {
                 </span>
                 <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
                   <div style={{ flex: 1, height: 4, background: C.dim, borderRadius: 2, overflow: "hidden", maxWidth: 54 }}>
-                    <div style={{ height: "100%", width: `${rate * 100}%`, background: rateColor(rate), borderRadius: 2 }} />
+                    <div style={{ height: "100%", width: `${rate * 100}%`, background: rateColor(C, rate), borderRadius: 2 }} />
                   </div>
-                  <span style={{ fontSize: 10, color: rateColor(rate), minWidth: 28 }}>{(rate * 100).toFixed(0)}%</span>
+                  <span style={{ fontSize: 10, color: rateColor(C, rate), minWidth: 28 }}>{(rate * 100).toFixed(0)}%</span>
                 </div>
                 <span style={{ fontSize: 11, color: p.lastContactedAt ? C.muted : C.dim }}>{fmtDate(p.lastContactedAt)}</span>
                 <span style={{ fontSize: 10, fontWeight: 600 }}>

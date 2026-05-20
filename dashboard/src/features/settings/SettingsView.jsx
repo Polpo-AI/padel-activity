@@ -17,6 +17,7 @@ const EMPTY = {
 };
 
 function Section({ title, children }) {
+  const { C } = useTheme();
   return (
     <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: 24, display: "flex", flexDirection: "column", gap: 18 }}>
       <div style={{ fontSize: 13, fontWeight: 600, color: C.text }}>{title}</div>
@@ -26,6 +27,7 @@ function Section({ title, children }) {
 }
 
 function F({ label, hint, children }) {
+  const { C, labelSt } = useTheme();
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
       <label style={labelSt}>{label}</label>
@@ -36,6 +38,7 @@ function F({ label, hint, children }) {
 }
 
 function Toggle({ value, onChange, labelOn = "Sì", labelOff = "No" }) {
+  const { C } = useTheme();
   return (
     <div style={{ display: "flex", gap: 8 }}>
       {[true, false].map(v => (

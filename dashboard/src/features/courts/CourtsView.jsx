@@ -34,6 +34,7 @@ function matchDay(isoString) {
 // ─── HoursEditor ─────────────────────────────
 
 function HoursEditor({ token, club, onUpdated }) {
+  const { C, inputSt, btnPrimary, labelSt } = useTheme();
   const [open, setOpen] = useState(club?.openTime || "08:00");
   const [close, setClose] = useState(club?.closeTime || "23:30");
   const [slot, setSlot] = useState(club?.slotDurationMinutes || club?.matchDuration || 90);
@@ -80,6 +81,7 @@ function HoursEditor({ token, club, onUpdated }) {
 // ─── TimePillPicker ────────────────────────────
 
 function TimePillPicker({ label, value, onChange, otherValue, isStart }) {
+  const { C, labelSt } = useTheme();
   const slots = [];
   for (let h = 7; h <= 23; h++) {
     for (let m = 0; m < 60; m += 30) {
@@ -124,6 +126,7 @@ function TimePillPicker({ label, value, onChange, otherValue, isStart }) {
 // ─── UnavailabilityPanel ──────────────────────
 
 function UnavailabilityPanel({ court, token, onClose }) {
+  const { C, inputSt, btnPrimary, btnGhost, labelSt } = useTheme();
   const [list, setList] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -262,6 +265,7 @@ function UnavailabilityPanel({ court, token, onClose }) {
 // ─── CreateMatchModal ─────────────────────────
 
 function CreateMatchModal({ courts, club, token, onClose, onCreated, defaultDate, defaultCourtId }) {
+  const { C, inputSt, btnPrimary, btnGhost, labelSt } = useTheme();
   const [courtId, setCourtId] = useState(defaultCourtId || courts[0]?.id || "");
   const [date, setDate] = useState(defaultDate || today());
   const [title, setTitle] = useState("");
@@ -488,6 +492,7 @@ function CreateMatchModal({ courts, club, token, onClose, onCreated, defaultDate
 // ─── MatchChip (compact for calendar) ─────────
 
 function MatchChip({ match, onCancel, onDeleteUnavailable, onSelect }) {
+  const { C } = useTheme();
   const [confirming, setConfirming] = useState(false);
   const [hovered, setHovered] = useState(false);
   const confirmed = match.MatchPlayer?.filter(mp => !mp.leftAt).length || 0;
@@ -593,6 +598,7 @@ function MatchChip({ match, onCancel, onDeleteUnavailable, onSelect }) {
 // ─── MatchCard (for day detail modal) ─────────
 
 function MatchCard({ match, onCancel }) {
+  const { C, btnGhost } = useTheme();
   const confirmed = match.MatchPlayer?.filter(mp => !mp.leftAt) || [];
   const pending = match.invitations?.length || 0;
   const spotsLeft = match.playersNeeded - confirmed.length;
@@ -655,6 +661,7 @@ function MatchCard({ match, onCancel }) {
 // ─── DayDetailModal ───────────────────────────
 
 function DayDetailModal({ date, courts, onCancel, onClose }) {
+  const { C } = useTheme();
   const dateLabel = new Date(date + "T12:00").toLocaleDateString("it-IT", { weekday: "long", day: "numeric", month: "long" });
   const allMatches = courts.flatMap(c =>
     (c.matches || [])
@@ -683,6 +690,7 @@ function DayDetailModal({ date, courts, onCancel, onClose }) {
 // ─── MatchDetailModal ─────────────────────────
 
 function MatchDetailModal({ matchId, token, onCancel, onClose }) {
+  const { C, btnGhost } = useTheme();
   const [match, setMatch] = useState(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState(null);
@@ -820,6 +828,7 @@ function MatchDetailModal({ matchId, token, onCancel, onClose }) {
 const DAY_NAMES = ["Lun", "Mar", "Mer", "Gio", "Ven", "Sab", "Dom"];
 
 function WeekCalendar({ courtData, weekDays, onCancel, onDeleteUnavailable, todayStr, onDayClick, onCourtManage, onQuickCreate, onSelectMatch }) {
+  const { C, btnGhost } = useTheme();
   const thBase = {
     padding: "10px 8px", textAlign: "center",
     borderBottom: `1px solid ${C.border}`,
