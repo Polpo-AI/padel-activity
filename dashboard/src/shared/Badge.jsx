@@ -1,6 +1,8 @@
-import { C, STATUS } from "./config";
+import { useTheme } from "./ThemeContext";
+import { STATUS } from "./config";
 
 export default function Badge({ status }) {
+  const { C } = useTheme();
   const m = STATUS[status] || { color: C.muted, label: status };
   return (
     <span style={{

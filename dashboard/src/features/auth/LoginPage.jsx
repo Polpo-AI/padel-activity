@@ -1,9 +1,10 @@
 import { useState } from "react";
-import { C, inputSt, btnPrimary } from "../../shared/config";
+import { useTheme } from "../../shared/ThemeContext";
 
 const API = "/api/dashboard";
 
 export default function LoginPage({ onLogin }) {
+  const { C, inputSt, btnPrimary } = useTheme();
   const [u, setU] = useState(""); const [p, setP] = useState("");
   const [loading, setLoading] = useState(false); const [err, setErr] = useState("");
 

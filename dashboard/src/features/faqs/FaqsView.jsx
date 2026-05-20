@@ -1,15 +1,17 @@
 import { useState, useEffect, useCallback } from "react";
-import { C, api, inputSt, btnPrimary, btnGhost, labelSt } from "../../shared/config";
+import { useTheme } from "../../shared/ThemeContext";
+import { api } from "../../shared/config";
 import Spinner from "../../shared/Spinner";
 import Toast from "../../shared/Toast";
 
 // ─── Badge helpers ──────────────────────────
 
 const DECISION_CONFIG = {
-  NEW:       { color: C.open,      bg: `${C.open}15`,      label: "Nuova FAQ" },
-  DUPLICATE: { color: C.warning,   bg: `${C.warning}15`,   label: "Già coperta" },
-  CONFLICT:  { color: C.cancelled, bg: `${C.cancelled}15`, label: "Conflitto" },
-  MERGE:     { color: C.locked,    bg: `${C.locked}15`,    label: "Suggerisci merge" },
+  NEW:       { color: "#22d3ee", bg: "rgba(34,211,238,0.12)",  label: "Nuova" },
+  KEEP:      { color: "#22c55e", bg: "rgba(34,197,94,0.12)",   label: "Tieni" },
+  MERGE:     { color: "#a78bfa", bg: "rgba(167,139,250,0.12)", label: "Unisci" },
+  DISCARD:   { color: "#f97316", bg: "rgba(249,115,22,0.12)",  label: "Scarta" },
+  ANSWERED:  { color: "#94a3b8", bg: "rgba(148,163,184,0.12)", label: "Risposta" },
 };
 
 function DecisionBadge({ decision }) {
@@ -473,6 +475,7 @@ function AddFaqForm({ token, onCreated }) {
 // ─── FaqsView ────────────────────────────────
 
 export default function FaqsView({ token }) {
+  const { C, inputSt, btnPrimary, btnGhost, labelSt } = useTheme();
   const [faqs, setFaqs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState(null);

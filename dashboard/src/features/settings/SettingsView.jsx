@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
-import { C, api, inputSt, btnPrimary, btnGhost, labelSt } from "../../shared/config";
+import { useTheme } from "../../shared/ThemeContext";
+import { api } from "../../shared/config";
 import Toast from "../../shared/Toast";
 
 const EMPTY = {
@@ -55,6 +56,7 @@ function Grid({ children }) {
 }
 
 export default function SettingsView({ token, club, onClubUpdate }) {
+  const { C, inputSt, btnPrimary, btnGhost, labelSt } = useTheme();
   const [form, setForm] = useState(EMPTY);
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState(null);

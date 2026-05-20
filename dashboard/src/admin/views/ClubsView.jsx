@@ -1,12 +1,13 @@
 import { useState, useEffect, useCallback } from "react";
-import { C, inputSt, btnPrimary, btnGhost, labelSt } from "../../shared/config";
+import { useTheme } from "../../shared/ThemeContext";
 import Spinner from "../../shared/Spinner";
 import Modal from "../../shared/Modal";
 
-const WA_COLOR = { open: C.open, connecting: C.warning, closed: C.cancelled, disconnected: C.muted };
+const WA_COLOR = { open: "#22d3ee", connecting: "#f59e0b", closed: "#ef4444", disconnected: "#94a3b8" };
 const WA_LABEL = { open: "Connesso", connecting: "Conn…", closed: "Chiuso", disconnected: "—" };
 
 function EditModal({ club, token, onClose, onSaved }) {
+  const { C, inputSt, btnPrimary, labelSt } = useTheme();
   const [form, setForm] = useState({
     name: club.name || "",
     city: club.city || "",
@@ -66,6 +67,7 @@ function EditModal({ club, token, onClose, onSaved }) {
 }
 
 export default function ClubsView({ token }) {
+  const { C, inputSt, btnPrimary, btnGhost, labelSt } = useTheme();
   const [clubs, setClubs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(null);

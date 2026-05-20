@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
-import { C, api, btnGhost } from "../../shared/config";
+import { useTheme } from "../../shared/ThemeContext";
+import { api } from "../../shared/config";
 import Spinner from "../../shared/Spinner";
 
 function HeroCard({ label, value, sub, color, icon, highlight }) {
@@ -60,6 +61,7 @@ function DonutFill({ rate, color, label, sub }) {
 }
 
 export default function StatsView({ token }) {
+  const { C, btnGhost } = useTheme();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [range, setRange] = useState(30);

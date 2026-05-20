@@ -1,11 +1,12 @@
 import { useState, useEffect, useCallback } from "react";
-import { C, btnGhost, inputSt } from "../../shared/config";
+import { useTheme } from "../../shared/ThemeContext";
 import Spinner from "../../shared/Spinner";
 
-const STATUS_COLOR = { OPEN: C.open, LOCKED: C.locked, CANCELLED: C.cancelled, UNFILLED: C.unfilled };
+const STATUS_COLOR = { OPEN: "#22d3ee", LOCKED: "#3b82f6", CANCELLED: "#ef4444", UNFILLED: "#f97316" };
 const STATUS_LABEL = { OPEN: "Aperta", LOCKED: "Chiusa", CANCELLED: "Cancellata", UNFILLED: "Non riempita" };
 
 export default function MatchesView({ token, clubs }) {
+  const { C, btnGhost, inputSt } = useTheme();
   const [matches, setMatches] = useState([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);

@@ -1,8 +1,10 @@
 import { useState, useEffect } from "react";
-import { C, api, inputSt, btnPrimary, btnGhost, labelSt } from "../../shared/config";
+import { useTheme } from "../../shared/ThemeContext";
+import { api } from "../../shared/config";
 import Toast from "../../shared/Toast";
 
 export default function PricesView({ token }) {
+  const { C, inputSt, btnPrimary, btnGhost, labelSt } = useTheme();
   const [courts, setCourts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);

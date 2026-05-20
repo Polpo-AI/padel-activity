@@ -1,7 +1,8 @@
 import { useState } from "react";
-import { C, inputSt, btnPrimary } from "../shared/config";
+import { useTheme } from "../shared/ThemeContext";
 
 export default function AdminLoginPage({ onLogin }) {
+  const { C, inputSt, btnPrimary } = useTheme();
   const [u, setU] = useState(""); const [p, setP] = useState("");
   const [loading, setLoading] = useState(false); const [err, setErr] = useState("");
 
@@ -22,7 +23,7 @@ export default function AdminLoginPage({ onLogin }) {
   };
 
   return (
-    <div style={{ minHeight: "100vh", background: C.bg, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'DM Mono','Fira Code','Courier New',monospace" }}>
+    <div style={{ minHeight: "100vh", background: C.bg, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Inter','Plus Jakarta Sans',-apple-system,BlinkMacSystemFont,sans-serif" }}>
       <div style={{ width: 360, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 16, padding: 40, display: "flex", flexDirection: "column", gap: 24 }}>
         <div style={{ textAlign: "center" }}>
           <div style={{ fontSize: 36, marginBottom: 12 }}>🛡️</div>

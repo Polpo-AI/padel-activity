@@ -1,6 +1,7 @@
-import { C } from "./config";
+import { useTheme } from "./ThemeContext";
 
 export default function Spinner({ size = 16 }) {
+  const { C } = useTheme();
   return <div style={{
     width: size, height: size, border: `2px solid ${C.border}`,
     borderTopColor: C.accent, borderRadius: "50%",

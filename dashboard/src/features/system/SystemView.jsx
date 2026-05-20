@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
-import { C, api, btnGhost } from "../../shared/config";
+import { useTheme } from "../../shared/ThemeContext";
+import { api } from "../../shared/config";
 import Spinner from "../../shared/Spinner";
 import Toast from "../../shared/Toast";
 
@@ -17,6 +18,7 @@ function HealthDot({ ok, label }) {
 }
 
 export default function SystemView({ token }) {
+  const { C, btnGhost } = useTheme();
   const [health, setHealth] = useState(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);

@@ -1,7 +1,8 @@
 import { useEffect } from "react";
-import { C } from "./config";
+import { useTheme } from "./ThemeContext";
 
 export default function Toast({ msg, type = "ok", onDone }) {
+  const { C } = useTheme();
   useEffect(() => { const t = setTimeout(onDone, 3000); return () => clearTimeout(t); }, []);
   return (
     <div style={{

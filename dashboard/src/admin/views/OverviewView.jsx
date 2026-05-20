@@ -1,11 +1,12 @@
 import { useState, useEffect, useCallback } from "react";
-import { C } from "../../shared/config";
+import { useTheme } from "../../shared/ThemeContext";
 import Spinner from "../../shared/Spinner";
 
-const WA_COLOR = { open: C.open, connecting: C.warning, closed: C.cancelled, disconnected: C.muted };
+const WA_COLOR = { open: "#22d3ee", connecting: "#f59e0b", closed: "#ef4444", disconnected: "#94a3b8" };
 const WA_LABEL = { open: "Connesso", connecting: "Connessione…", closed: "Chiuso", disconnected: "—" };
 
 function StatCard({ label, value, sub, color, icon }) {
+  const { C } = useTheme();
   return (
     <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: "20px 22px" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
@@ -19,6 +20,7 @@ function StatCard({ label, value, sub, color, icon }) {
 }
 
 function FillBar({ value }) {
+  const { C } = useTheme();
   const pct = Math.round((value || 0) * 100);
   const color = pct >= 70 ? C.open : pct >= 40 ? C.warning : C.cancelled;
   return (
@@ -32,6 +34,7 @@ function FillBar({ value }) {
 }
 
 export default function OverviewView({ token }) {
+  const { C } = useTheme();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
 

@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback } from "react";
-import { C, btnGhost, inputSt } from "../../shared/config";
+import { useTheme } from "../../shared/ThemeContext";
 import Spinner from "../../shared/Spinner";
 
 export default function PlayersAdminView({ token, clubs }) {
+  const { C, btnGhost, inputSt } = useTheme();
   const [players, setPlayers] = useState([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);

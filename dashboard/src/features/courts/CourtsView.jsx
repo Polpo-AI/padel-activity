@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
-import { C, api, fmtTime, fmtDate, today, inputSt, btnPrimary, btnGhost, labelSt } from "../../shared/config";
+import { useTheme } from "../../shared/ThemeContext";
+import { api, fmtTime, fmtDate, today } from "../../shared/config";
 import Spinner from "../../shared/Spinner";
 import Badge from "../../shared/Badge";
 import Toast from "../../shared/Toast";
@@ -936,6 +937,7 @@ function WeekCalendar({ courtData, weekDays, onCancel, onDeleteUnavailable, toda
 // ─── CourtsView ───────────────────────────────
 
 export default function CourtsView({ token, onClubUpdate }) {
+  const { C, inputSt, btnPrimary, btnGhost, labelSt } = useTheme();
   const [courtData, setCourtData] = useState([]);
   const [club, setClub] = useState(null);
   const [loading, setLoading] = useState(true);

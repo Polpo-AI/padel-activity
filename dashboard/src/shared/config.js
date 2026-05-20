@@ -1,49 +1,217 @@
-// ─── Colori ─────────────────────────────────────────────────────────────────
-// Token esatti da github.com/Polpo-AI/stunning-broccoli (globals.css)
-export const C = {
-  // Sfondi — --bg-base / --bg-surface / --bg-raised / --bg-elevated
-  bg:           "#0B1228",   // --bg-base
-  surface:      "#0F1730",   // --bg-surface (sidebar + panel)
-  surfaceHover: "#131C3D",   // --bg-raised (hover)
-  card:         "#1A234A",   // --bg-elevated (card elevate)
+// ─── Theme factory ────────────────────────────────────────────────────────────
+// Ritorna { C, inputSt, cardSt, btnPrimary, btnSecondary, btnGhost, labelSt, gradientText }
+// in funzione del mode ('dark' | 'light').
+// Importare direttamente C/stili è deprecato — usare useTheme() da ThemeContext.jsx.
 
-  // Bordi — white-alpha (glass effect corretto del repo)
-  border:       "rgba(255,255,255,0.10)",   // --border-default
-  borderLight:  "rgba(255,255,255,0.16)",   // --border-strong
-  borderAccent: "rgba(6,182,212,0.30)",     // --border-accent (cyan)
+export function makeTheme(mode = 'dark') {
+  const dark = mode === 'dark';
 
-  // Accent primario — cyan  --cyan-400 / --cyan-500 / --cyan-600
-  accent:       "#22d3ee",                  // --cyan-400
-  accentDim:    "rgba(6,182,212,0.10)",     // cyan dim bg
-  accentSoft:   "rgba(6,182,212,0.20)",     // cyan soft bg
+  const C = dark ? {
+    // ── Sfondi ──────────────────────────────────────────
+    bg:           "#0B1228",
+    surface:      "#0F1730",
+    surfaceHover: "#131C3D",
+    card:         "#1A234A",
 
-  // Accent secondario — violet  --agenti-violet / --agenti-violet-2
-  indigo:       "#a78bfa",                  // --agenti-violet-2
-  indigoDim:    "rgba(139,92,246,0.10)",    // --shadow-violet base
-  indigoSoft:   "rgba(139,92,246,0.22)",
+    // ── Bordi — white-alpha ──────────────────────────────
+    border:       "rgba(255,255,255,0.10)",
+    borderLight:  "rgba(255,255,255,0.16)",
+    borderAccent: "rgba(6,182,212,0.30)",
 
-  // Testi — --text-primary / --text-muted / --text-faint
-  text:         "#f8fafc",   // --text-primary
-  muted:        "#94a3b8",   // --text-muted (slate-400)
-  dim:          "#0B1228",   // --bg-base (sfondo puro per ombre)
+    // ── Accent primario — cyan ───────────────────────────
+    accent:       "#22d3ee",
+    accentDim:    "rgba(6,182,212,0.10)",
+    accentSoft:   "rgba(6,182,212,0.20)",
 
-  // Status partite
-  open:         "#22d3ee",   // cyan
-  locked:       "#3b82f6",   // blue
-  cancelled:    "#ef4444",   // --danger
-  unfilled:     "#f97316",   // orange
-  warning:      "#f59e0b",   // --warning
-  unavail:      "#a855f7",   // violet
-};
+    // ── Accent secondario — violet ───────────────────────
+    indigo:       "#a78bfa",
+    indigoDim:    "rgba(139,92,246,0.10)",
+    indigoSoft:   "rgba(139,92,246,0.22)",
 
+    // ── Testi ────────────────────────────────────────────
+    text:         "#f8fafc",
+    muted:        "#94a3b8",
+    dim:          "#0B1228",
+
+    // ── Status ───────────────────────────────────────────
+    open:         "#22d3ee",
+    locked:       "#3b82f6",
+    cancelled:    "#ef4444",
+    unfilled:     "#f97316",
+    warning:      "#f59e0b",
+    unavail:      "#a855f7",
+
+    // ── Extra (tema-specifici) ───────────────────────────
+    titleGradient: "linear-gradient(135deg, #f8fafc 0%, #cbd5e1 60%, #94a3b8 100%)",
+    overlay:       "rgba(0,0,0,0.75)",
+    male:          "#3b82f6",
+    female:        "#ec4899",
+
+    // ── Sidebar ──────────────────────────────────────────
+    sidebarBg:     "rgba(11,18,40,0.90)",
+    sidebarBorder: "rgba(255,255,255,0.08)",
+    sidebarSep:    "rgba(255,255,255,0.07)",
+
+    // ── Orbs opacity (aurora) ────────────────────────────
+    orbCyan:   "rgba(34,211,238,0.18)",
+    orbViolet: "rgba(139,92,246,0.16)",
+    orbPink:   "rgba(255,61,138,0.10)",
+  } : {
+    // ── Sfondi ──────────────────────────────────────────
+    bg:           "#f0f9ff",
+    surface:      "#ffffff",
+    surfaceHover: "#e0f2fe",
+    card:         "#f8fafc",
+
+    // ── Bordi — dark-alpha ───────────────────────────────
+    border:       "rgba(15,23,42,0.08)",
+    borderLight:  "rgba(15,23,42,0.14)",
+    borderAccent: "rgba(8,145,178,0.35)",
+
+    // ── Accent primario — cyan-600 (più leggibile su bianco) ──
+    accent:       "#0891b2",
+    accentDim:    "rgba(8,145,178,0.10)",
+    accentSoft:   "rgba(8,145,178,0.18)",
+
+    // ── Accent secondario — violet-700 ───────────────────
+    indigo:       "#7c3aed",
+    indigoDim:    "rgba(124,58,237,0.08)",
+    indigoSoft:   "rgba(124,58,237,0.18)",
+
+    // ── Testi ────────────────────────────────────────────
+    text:         "#0f172a",
+    muted:        "#64748b",
+    dim:          "#e0f2fe",
+
+    // ── Status ───────────────────────────────────────────
+    open:         "#0891b2",
+    locked:       "#1d4ed8",
+    cancelled:    "#dc2626",
+    unfilled:     "#ea580c",
+    warning:      "#d97706",
+    unavail:      "#7c3aed",
+
+    // ── Extra (tema-specifici) ───────────────────────────
+    titleGradient: "linear-gradient(135deg, #0f172a 0%, #1e293b 60%, #475569 100%)",
+    overlay:       "rgba(15,23,42,0.40)",
+    male:          "#1d4ed8",
+    female:        "#be185d",
+
+    // ── Sidebar ──────────────────────────────────────────
+    sidebarBg:     "rgba(255,255,255,0.92)",
+    sidebarBorder: "rgba(15,23,42,0.08)",
+    sidebarSep:    "rgba(15,23,42,0.06)",
+
+    // ── Orbs opacity (aurora — più tenui su sfondo chiaro) ─
+    orbCyan:   "rgba(34,211,238,0.08)",
+    orbViolet: "rgba(139,92,246,0.07)",
+    orbPink:   "rgba(255,61,138,0.05)",
+  };
+
+  // ── Stili derivati ──────────────────────────────────────────────────────────
+
+  const inputSt = {
+    background:  dark ? "rgba(15,23,48,0.8)" : "#ffffff",
+    border:      `1px solid ${C.border}`,
+    borderRadius: 10,
+    padding:     "10px 14px",
+    color:        C.text,
+    fontSize:     13,
+    fontFamily:  "inherit",
+    width:       "100%",
+    transition:  "border-color 0.2s, box-shadow 0.2s",
+  };
+
+  const btnPrimary = {
+    background:     "linear-gradient(135deg, #22d3ee 0%, #06b6d4 40%, #0891b2 70%, #22d3ee 100%)",
+    backgroundSize: "200% 200%",
+    color:          "#030d16",
+    border:         "none",
+    borderRadius:    10,
+    padding:        "10px 20px",
+    fontSize:        13,
+    fontWeight:      700,
+    cursor:         "pointer",
+    fontFamily:     "inherit",
+    transition:     "transform 0.20s cubic-bezier(0.23,1,0.32,1), box-shadow 0.20s",
+    letterSpacing:  "0.01em",
+    boxShadow:      dark
+      ? "0 8px 32px rgba(6,182,212,0.28), inset 0 1px 0 rgba(255,255,255,0.18)"
+      : "0 4px 20px rgba(8,145,178,0.30), inset 0 1px 0 rgba(255,255,255,0.25)",
+  };
+
+  const btnSecondary = {
+    background:     dark ? "rgba(139,92,246,0.08)" : "rgba(124,58,237,0.07)",
+    color:           C.indigo,
+    border:         `1px solid ${C.indigoSoft}`,
+    borderRadius:    10,
+    padding:        "9px 18px",
+    fontSize:        13,
+    fontWeight:      600,
+    cursor:         "pointer",
+    fontFamily:     "inherit",
+    transition:     "opacity 0.15s, box-shadow 0.15s",
+    backdropFilter: "blur(10px)",
+  };
+
+  const btnGhost = {
+    background:  "transparent",
+    color:        C.muted,
+    border:      `1px solid ${C.border}`,
+    borderRadius: 8,
+    padding:     "7px 14px",
+    fontSize:     12,
+    cursor:      "pointer",
+    fontFamily:  "inherit",
+    transition:  "border-color 0.15s, color 0.15s",
+  };
+
+  const cardSt = dark ? {
+    background:     "rgba(15,23,48,0.60)",
+    backdropFilter: "blur(16px) saturate(1.5)",
+    border:         "1px solid rgba(255,255,255,0.10)",
+    borderRadius:    20,
+    padding:        "20px 22px",
+    boxShadow:      "0 4px 24px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.07)",
+  } : {
+    background:     "rgba(255,255,255,0.85)",
+    backdropFilter: "blur(8px)",
+    border:         `1px solid ${C.border}`,
+    borderRadius:    20,
+    padding:        "20px 22px",
+    boxShadow:      "0 2px 16px rgba(0,0,0,0.08), inset 0 1px 0 rgba(255,255,255,0.90)",
+  };
+
+  const labelSt = {
+    display:       "block",
+    fontSize:       10,
+    color:          C.muted,
+    textTransform: "uppercase",
+    letterSpacing: "0.1em",
+    marginBottom:   7,
+    fontWeight:     600,
+  };
+
+  const gradientText = {
+    background:            "linear-gradient(135deg, #22d3ee 0%, #06b6d4 50%, #a78bfa 100%)",
+    WebkitBackgroundClip: "text",
+    WebkitTextFillColor:  "transparent",
+    backgroundClip:       "text",
+  };
+
+  return { C, inputSt, btnPrimary, btnSecondary, btnGhost, cardSt, labelSt, gradientText };
+}
+
+// ─── STATUS map (invariato, non dipende dal tema) ─────────────────────────────
+// Nota: STATUS usa valori string, non C.* — è safe come costante.
 export const STATUS = {
-  OPEN:      { color: C.open,      label: "Aperta" },
-  LOCKED:    { color: C.locked,    label: "Chiusa" },
-  CANCELLED: { color: C.cancelled, label: "Cancellata" },
-  UNFILLED:  { color: C.unfilled,  label: "Non riempita" },
+  OPEN:      { color: "#22d3ee", label: "Aperta" },
+  LOCKED:    { color: "#3b82f6", label: "Chiusa" },
+  CANCELLED: { color: "#ef4444", label: "Cancellata" },
+  UNFILLED:  { color: "#f97316", label: "Non riempita" },
 };
 
-// ─── API ──────────────────────────────────────
+// ─── API ──────────────────────────────────────────────────────────────────────
 const API = "/api/dashboard";
 
 export const api = async (path, token, opts = {}) => {
@@ -56,94 +224,22 @@ export const api = async (path, token, opts = {}) => {
   return d;
 };
 
-// ─── Utils ────────────────────────────────────
+// ─── Utils ────────────────────────────────────────────────────────────────────
 const fmt = (d, opts) => new Date(d).toLocaleString("it-IT", opts);
 export const fmtTime = d => fmt(d, { hour: "2-digit", minute: "2-digit" });
 export const fmtDate = d => fmt(d, { weekday: "short", day: "numeric", month: "short" });
 export const today = () => new Date().toISOString().split("T")[0];
 export const sleep = ms => new Promise(r => setTimeout(r, ms));
 
-// ─── Stili condivisi ──────────────────────────
-export const inputSt = {
-  background: "rgba(15,23,48,0.8)",
-  border: "1px solid rgba(255,255,255,0.10)",
-  borderRadius: 10,                              // --radius-sm
-  padding: "10px 14px",
-  color: C.text,
-  fontSize: 13,
-  fontFamily: "inherit",
-  width: "100%",
-  transition: "border-color 0.2s, box-shadow 0.2s",
-};
-
-// .btn-primary da globals.css — gradient cyan con background-size 200% per animation
-export const btnPrimary = {
-  background: "linear-gradient(135deg, #22d3ee 0%, #06b6d4 40%, #0891b2 70%, #22d3ee 100%)",
-  backgroundSize: "200% 200%",
-  color: "#030d16",
-  border: "none",
-  borderRadius: 10,
-  padding: "10px 20px",
-  fontSize: 13,
-  fontWeight: 700,
-  cursor: "pointer",
-  fontFamily: "inherit",
-  transition: "transform 0.20s cubic-bezier(0.23,1,0.32,1), box-shadow 0.20s",
-  letterSpacing: "0.01em",
-  boxShadow: "0 8px 32px rgba(6,182,212,0.28), inset 0 1px 0 rgba(255,255,255,0.18)",
-};
-
-// .btn-outline — glass violet, --agenti-violet
-export const btnSecondary = {
-  background: "rgba(139,92,246,0.08)",
-  color: C.indigo,
-  border: "1px solid rgba(139,92,246,0.22)",
-  borderRadius: 10,
-  padding: "9px 18px",
-  fontSize: 13,
-  fontWeight: 600,
-  cursor: "pointer",
-  fontFamily: "inherit",
-  transition: "opacity 0.15s, box-shadow 0.15s",
-  backdropFilter: "blur(10px)",
-};
-
-export const btnGhost = {
-  background: "transparent",
-  color: C.muted,
-  border: "1px solid rgba(255,255,255,0.10)",
-  borderRadius: 8,
-  padding: "7px 14px",
-  fontSize: 12,
-  cursor: "pointer",
-  fontFamily: "inherit",
-  transition: "border-color 0.15s, color 0.15s",
-};
-
-// .glass-card da globals.css — con highlight top
-export const cardSt = {
-  background: "rgba(15,23,48,0.60)",
-  backdropFilter: "blur(16px) saturate(1.5)",
-  border: "1px solid rgba(255,255,255,0.10)",
-  borderRadius: 20,
-  padding: "20px 22px",
-  boxShadow: "0 4px 24px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.07)",
-};
-
-// Gradient text utility (inline style alternativo alla classe CSS)
-export const gradientText = {
-  background: "linear-gradient(135deg, #22d3ee 0%, #06b6d4 50%, #a78bfa 100%)",
-  WebkitBackgroundClip: "text",
-  WebkitTextFillColor: "transparent",
-  backgroundClip: "text",
-};
-
-export const labelSt = {
-  display: "block",
-  fontSize: 10,
-  color: C.muted,
-  textTransform: "uppercase",
-  letterSpacing: "0.1em",
-  marginBottom: 7,
-  fontWeight: 600,
-};
+// ─── Legacy export (compatibilità durante migrazione) ─────────────────────────
+// Componenti non ancora migrati possono ancora importare C dal dark theme.
+// Rimuovere dopo aver migrato tutti i file.
+const _dark = makeTheme('dark');
+export const C         = _dark.C;
+export const inputSt   = _dark.inputSt;
+export const btnPrimary   = _dark.btnPrimary;
+export const btnSecondary = _dark.btnSecondary;
+export const btnGhost     = _dark.btnGhost;
+export const cardSt    = _dark.cardSt;
+export const labelSt   = _dark.labelSt;
+export const gradientText = _dark.gradientText;

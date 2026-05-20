@@ -1,9 +1,10 @@
-import { C, btnGhost } from "./config";
+import { useTheme } from "./ThemeContext";
 
 export default function Modal({ title, onClose, children }) {
+  const { C, btnGhost } = useTheme();
   return (
     <div style={{
-      position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)",
+      position: "fixed", inset: 0, background: C.overlay,
       display: "flex", alignItems: "center", justifyContent: "center", zIndex: 500,
     }} onClick={e => e.target === e.currentTarget && onClose()}>
       <div style={{
