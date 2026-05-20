@@ -874,8 +874,7 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[], cor
         if (
             result.success &&
             secondaryAction &&
-            SECONDARY_ACTION_WHITELIST.includes(secondaryAction) &&
-            secondaryAction !== action
+            SECONDARY_ACTION_WHITELIST.includes(secondaryAction)
         ) {
             try {
                 logger.info({ primaryAction: action, secondaryAction }, 'Executing secondary action from brain');
