@@ -1,15 +1,26 @@
+import { useState, useEffect } from "react";
 import { useTheme } from "./ThemeContext";
 
 export default function ThemeToggle() {
   const { mode, toggle } = useTheme();
   const dark = mode === "dark";
+  const [isMobile, setIsMobile] = useState(() => window.innerWidth < 768);
+
+  useEffect(() => {
+    const check = () => setIsMobile(window.innerWidth < 768);
+    window.addEventListener("resize", check);
+    return () => window.removeEventListener("resize", check);
+  }, []);
 
   return (
     <div
       onClick={toggle}
       title={dark ? "Passa a light mode" : "Passa a dark mode"}
       style={{
-        position: "fixed", top: 20, right: 24, zIndex: 200,
+        position: "fixed",
+        top: isMobile ? 16 : 20,
+        right: isMobile ? 16 : 24,
+        zIndex: 200,
         width: 74, height: 36, borderRadius: 18, cursor: "pointer",
         background: dark ? "rgba(255,255,255,0.07)" : "rgba(8,145,178,0.12)",
         border: `1.5px solid ${dark ? "rgba(255,255,255,0.18)" : "rgba(8,145,178,0.30)"}`,

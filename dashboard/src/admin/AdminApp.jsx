@@ -16,12 +16,26 @@ const NAV = [
   { id: "system",    label: "Sistema",     icon: "⚙️", desc: "Stato WhatsApp per circolo, DB e Redis." },
 ];
 
+const SIDEBAR_W = 214;
+
 export default function AdminApp() {
   const { C, btnGhost, mode } = useTheme();
   const [token, setToken] = useState(() => sessionStorage.getItem("admin_token") || null);
   const [tab, setTab] = useState("overview");
   const [clubs, setClubs] = useState([]);
   const dark = mode === "dark";
+  const [isMobile, setIsMobile] = useState(() => window.innerWidth < 768);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  useEffect(() => {
+    const check = () => {
+      const mobile = window.innerWidth < 768;
+      setIsMobile(mobile);
+      if (!mobile) setSidebarOpen(false);
+    };
+    window.addEventListener("resize", check);
+    return () => window.removeEventListener("resize", check);
+  }, []);
 
   useEffect(() => {
     if (!token) return;
@@ -33,6 +47,7 @@ export default function AdminApp() {
 
   const login = (t) => { sessionStorage.setItem("admin_token", t); setToken(t); };
   const logout = () => { sessionStorage.removeItem("admin_token"); setToken(null); };
+  const navigate = (id) => { setTab(id); if (isMobile) setSidebarOpen(false); };
 
   if (!token) return <AdminLoginPage onLogin={login} />;
 
@@ -50,7 +65,7 @@ export default function AdminApp() {
         button:focus-visible { box-shadow: 0 0 0 3px ${C.accentSoft} !important; outline: none; }
         ::-webkit-scrollbar { width: 4px; height: 4px; }
         ::-webkit-scrollbar-track { background: transparent; }
-        ::-webkit-scrollbar-thumb { background: linear-gradient(to bottom, #22d3ee, #a78bfa); border-radius: 4px; }
+        ::-webkit-scrollbar-thumb { background: ${C.accent}; border-radius: 4px; }
         input[type="date"]::-webkit-calendar-picker-indicator { filter: ${dark ? "invert(0.4)" : "invert(0.3)"}; }
         ::selection { background: rgba(6,182,212,0.30); }
         .nav-btn:hover { background: ${dark ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.04)"} !important; color: ${C.text} !important; }
@@ -59,12 +74,49 @@ export default function AdminApp() {
       {/* Theme toggle pill — top-right fixed */}
       <ThemeToggle />
 
+      {/* Hamburger — solo mobile */}
+      {isMobile && (
+        <button
+          type="button"
+          onClick={() => setSidebarOpen(o => !o)}
+          aria-label={sidebarOpen ? "Chiudi menu" : "Apri menu"}
+          aria-expanded={sidebarOpen}
+          style={{
+            position: "fixed", top: 16, left: 16, zIndex: 30,
+            width: 40, height: 40, borderRadius: 10,
+            background: C.surface, border: `1px solid ${C.border}`,
+            display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+            gap: 5, cursor: "pointer", padding: 0,
+          }}
+        >
+          <span style={{ display: "block", width: 18, height: 2, background: C.text, borderRadius: 2, transition: "transform 0.25s", transform: sidebarOpen ? "rotate(45deg) translate(5px, 5px)" : "none" }} />
+          <span style={{ display: "block", width: 18, height: 2, background: C.text, borderRadius: 2, transition: "opacity 0.25s", opacity: sidebarOpen ? 0 : 1 }} />
+          <span style={{ display: "block", width: 18, height: 2, background: C.text, borderRadius: 2, transition: "transform 0.25s", transform: sidebarOpen ? "rotate(-45deg) translate(5px, -5px)" : "none" }} />
+        </button>
+      )}
+
+      {/* Overlay — solo mobile quando sidebar è aperta */}
+      {isMobile && sidebarOpen && (
+        <div
+          onClick={() => setSidebarOpen(false)}
+          style={{ position: "fixed", inset: 0, background: C.overlay, zIndex: 9 }}
+        />
+      )}
+
       {/* Aurora orbs — solo angoli */}
       <div style={{ position: "fixed", top: -200, right: -150, width: 600, height: 600, borderRadius: "50%", background: `radial-gradient(circle, ${C.orbCyan} 0%, transparent 70%)`, pointerEvents: "none", zIndex: 0, transition: "background 0.5s, opacity 0.5s", willChange: "opacity" }} />
       <div style={{ position: "fixed", bottom: -150, left: -100, width: 500, height: 500, borderRadius: "50%", background: `radial-gradient(circle, ${C.orbViolet} 0%, transparent 70%)`, pointerEvents: "none", zIndex: 0, transition: "background 0.5s, opacity 0.5s", willChange: "opacity" }} />
 
       {/* Sidebar */}
-      <div style={{ position: "fixed", left: 0, top: 0, bottom: 0, width: 214, background: C.sidebarBg, borderRight: `1px solid ${C.sidebarBorder}`, display: "flex", flexDirection: "column", padding: "24px 0", zIndex: 10, transition: "background 0.3s, border-color 0.3s" }}>
+      <div style={{
+        position: "fixed", left: 0, top: 0, bottom: 0, width: SIDEBAR_W,
+        background: C.sidebarBg,
+        borderRight: `1px solid ${C.sidebarBorder}`,
+        display: "flex", flexDirection: "column", padding: "24px 0",
+        zIndex: 10,
+        transition: "background 0.3s, border-color 0.3s, transform 0.3s cubic-bezier(0.23,1,0.32,1)",
+        transform: isMobile && !sidebarOpen ? `translateX(-${SIDEBAR_W}px)` : "translateX(0)",
+      }}>
         <div style={{ padding: "0 20px 24px", borderBottom: `1px solid ${C.sidebarSep}` }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <div style={{ width: 36, height: 36, borderRadius: 12, background: "linear-gradient(135deg, rgba(167,139,250,0.22), rgba(139,92,246,0.12))", border: "1px solid rgba(167,139,250,0.30)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, boxShadow: "0 0 18px rgba(139,92,246,0.20)" }}>🛡️</div>
@@ -79,17 +131,18 @@ export default function AdminApp() {
           {NAV.map(n => {
             const active = tab === n.id;
             return (
-              <button key={n.id} type="button" onClick={() => setTab(n.id)} aria-label={n.label} aria-current={active ? "page" : undefined} className={`nav-btn${active ? " active" : ""}`} style={{
+              <button key={n.id} type="button" onClick={() => navigate(n.id)} aria-label={n.label} aria-current={active ? "page" : undefined} className={`nav-btn${active ? " active" : ""}`} style={{
                 display: "flex", alignItems: "center", gap: 10,
-                padding: "9px 12px 9px 16px", borderRadius: 9, border: "none", cursor: "pointer",
+                padding: "11px 12px 11px 16px", borderRadius: 9, border: "none", cursor: "pointer",
                 background: active ? "rgba(6,182,212,0.10)" : "transparent",
-                fontSize: 12.5, textAlign: "left",
+                fontSize: 13, textAlign: "left",
                 transition: "all 0.15s cubic-bezier(0.23,1,0.32,1)",
                 fontFamily: "inherit", fontWeight: active ? 600 : 400,
                 position: "relative", color: active ? C.accent : C.muted,
+                minHeight: 44,
               }}>
                 {active && <div style={{ position: "absolute", left: 0, top: "18%", bottom: "18%", width: 3, borderRadius: 2, background: C.accent, boxShadow: `0 0 10px ${C.accentSoft}` }} />}
-                <span style={{ fontSize: 14 }}>{n.icon}</span>
+                <span style={{ fontSize: 15 }}>{n.icon}</span>
                 <span>{n.label}</span>
               </button>
             );
@@ -99,19 +152,24 @@ export default function AdminApp() {
         {/* Footer — esci */}
         <div style={{ padding: "14px 10px", borderTop: `1px solid ${C.sidebarSep}` }}>
           <button type="button" onClick={() => { if (confirm("Vuoi uscire dalla console admin?")) logout(); }}
-            style={{ ...btnGhost, width: "100%", fontSize: 11 }}>Esci</button>
+            style={{ ...btnGhost, width: "100%", fontSize: 11, minHeight: 44 }}>Esci</button>
         </div>
       </div>
 
       {/* Content */}
-      <div style={{ marginLeft: 214, padding: "36px 44px", maxWidth: 1400, position: "relative", zIndex: 1 }}>
-        <div style={{ marginBottom: 36 }}>
+      <div style={{
+        marginLeft: isMobile ? 0 : SIDEBAR_W,
+        padding: isMobile ? "72px 16px 32px" : "36px 44px",
+        maxWidth: 1400, position: "relative", zIndex: 1,
+        transition: "margin-left 0.3s cubic-bezier(0.23,1,0.32,1)",
+      }}>
+        <div style={{ marginBottom: isMobile ? 24 : 36 }}>
           <div style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 11, fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", color: C.accent, marginBottom: 10 }}>
             <span style={{ display: "block", width: 24, height: 2, borderRadius: 2, background: C.accent }} />
             {current?.label}
           </div>
-          <div style={{ fontSize: 32, fontWeight: 300, letterSpacing: "-0.02em", lineHeight: 1.05, fontFamily: "'Fraunces', Georgia, serif", color: C.titleColor, marginBottom: 10 }}>{current?.label}</div>
-          <div style={{ fontSize: 13, color: C.muted }}>{current?.desc}</div>
+          <div style={{ fontSize: isMobile ? 24 : 32, fontWeight: 300, letterSpacing: "-0.02em", lineHeight: 1.05, fontFamily: "'Fraunces', Georgia, serif", color: C.titleColor, marginBottom: 10 }}>{current?.label}</div>
+          {!isMobile && <div style={{ fontSize: 13, color: C.muted }}>{current?.desc}</div>}
         </div>
 
         {tab === "overview" && <OverviewView token={token} />}
