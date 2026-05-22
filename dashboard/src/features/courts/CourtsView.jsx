@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { useTheme } from "../../shared/ThemeContext";
+import { useTheme, useMobile } from "../../shared/ThemeContext";
 import { api, fmtTime, fmtDate, today } from "../../shared/config";
 import Spinner from "../../shared/Spinner";
 import Badge from "../../shared/Badge";
@@ -35,6 +35,7 @@ function matchDay(isoString) {
 
 function HoursEditor({ token, club, onUpdated }) {
   const { C, inputSt, btnPrimary, labelSt } = useTheme();
+  const isMobile = useMobile();
   const [open, setOpen] = useState(club?.openTime || "08:00");
   const [close, setClose] = useState(club?.closeTime || "23:30");
   const [slot, setSlot] = useState(club?.slotDurationMinutes || club?.matchDuration || 90);
@@ -54,7 +55,7 @@ function HoursEditor({ token, club, onUpdated }) {
   return (
     <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: 20 }}>
       <div style={{ fontSize: 13, fontWeight: 600, color: C.text, marginBottom: 16 }}>⏰ Orari apertura circolo</div>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr auto", gap: 12, alignItems: "end" }}>
+      <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "1fr 1fr 1fr auto", gap: 12, alignItems: "end" }}>
         <div>
           <label style={labelSt}>Apertura</label>
           <input type="time" value={open} onChange={e => setOpen(e.target.value)} style={inputSt} />
@@ -949,6 +950,7 @@ function WeekCalendar({ courtData, weekDays, onCancel, onDeleteUnavailable, toda
 
 export default function CourtsView({ token, onClubUpdate }) {
   const { C, inputSt, btnPrimary, btnGhost, labelSt } = useTheme();
+  const isMobile = useMobile();
   const [courtData, setCourtData] = useState([]);
   const [club, setClub] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -1048,7 +1050,7 @@ export default function CourtsView({ token, onClubUpdate }) {
       </div>
 
       {/* Weekly stats */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12 }}>
+      <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(3, 1fr)", gap: 12 }}>
         {[
           { l: "Partite aperte (settimana)", v: weekMatches.filter(m => m.status === "OPEN").length, c: C.open },
           { l: "Partite chiuse (settimana)", v: weekMatches.filter(m => m.status === "LOCKED").length, c: C.locked },

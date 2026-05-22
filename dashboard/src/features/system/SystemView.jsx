@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { useTheme } from "../../shared/ThemeContext";
+import { useTheme, useMobile } from "../../shared/ThemeContext";
 import { api } from "../../shared/config";
 import Spinner from "../../shared/Spinner";
 import Toast from "../../shared/Toast";
@@ -20,6 +20,7 @@ function HealthDot({ ok, label }) {
 
 export default function SystemView({ token }) {
   const { C, btnGhost } = useTheme();
+  const isMobile = useMobile();
   const [health, setHealth] = useState(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -86,7 +87,7 @@ export default function SystemView({ token }) {
         </button>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+      <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 16 }}>
         <div style={{ background: C.surface, border: `1px solid ${redis.connected ? C.border : `${C.cancelled}40`}`, borderRadius: 12, padding: 22 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
             <div style={{ fontSize: 13, fontWeight: 600, color: C.text }}>Cache sistema</div>
@@ -154,7 +155,7 @@ export default function SystemView({ token }) {
 
       <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: 22 }}>
         <div style={{ fontSize: 13, fontWeight: 600, color: C.text, marginBottom: 16 }}>🔐 Sicurezza API</div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16 }}>
+        <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(3, 1fr)", gap: 16 }}>
           {[
             { label: "Protezione accessi", ok: sec.rateLimitActive, fix: "Attivare il limite di richieste per proteggere la dashboard" },
             { label: "Sicurezza sessioni", ok: sec.jwtRotationEnabled, fix: "Abilitare la rotazione automatica delle sessioni" },

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
-import { useTheme } from "../../shared/ThemeContext";
+import { useTheme, useMobile } from "../../shared/ThemeContext";
 import { api } from "../../shared/config";
 import Spinner from "../../shared/Spinner";
 import Toast from "../../shared/Toast";
@@ -289,6 +289,7 @@ function ReliabilityFilterDropdown({ minReliability, onChange, active }) {
 
 function PlayerProfile({ playerId, token, onClose, onUpdated }) {
   const { C, inputSt, btnPrimary, btnGhost, labelSt } = useTheme();
+  const isMobile = useMobile();
   const [player, setPlayer]     = useState(null);
   const [loading, setLoading]   = useState(true);
   const [editName, setEditName] = useState("");
@@ -337,7 +338,7 @@ function PlayerProfile({ playerId, token, onClose, onUpdated }) {
         </div>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
+      <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr 1fr", gap: 10 }}>
         {[
           { l: "Inviti",   v: player.stats.totalInvited },
           { l: "Presenti", v: player.stats.totalAccepted },

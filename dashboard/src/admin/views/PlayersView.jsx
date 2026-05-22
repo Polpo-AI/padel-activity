@@ -49,7 +49,7 @@ export default function PlayersAdminView({ token, clubs }) {
           <option value="false">Inattivi</option>
         </select>
         <input placeholder="Cerca nome / telefono…" value={filters.search}
-          onChange={e => setFilter("search", e.target.value)} style={{ ...inputSt, width: 220 }} />
+          onChange={e => setFilter("search", e.target.value)} style={{ ...inputSt, flex: "1 1 220px", maxWidth: 320 }} />
         <button onClick={() => { setFilters({ clubId: "", search: "", active: "" }); setPage(0); }} style={btnGhost}>Reset</button>
         <div style={{ marginLeft: "auto", fontSize: 12, color: C.muted, alignSelf: "center" }}>{total} giocatori</div>
       </div>
