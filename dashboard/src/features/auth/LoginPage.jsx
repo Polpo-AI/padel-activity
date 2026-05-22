@@ -63,12 +63,11 @@ export default function LoginPage({ onLogin }) {
             boxShadow: "0 0 28px rgba(34,211,238,0.22), inset 0 1px 0 rgba(255,255,255,0.10)",
           }}>🎾</div>
 
-          {/* Title — Fraunces gradient */}
+          {/* Title — Fraunces solid */}
           <div style={{
             fontSize: 26, fontWeight: 300, letterSpacing: "-0.01em", lineHeight: 1.1,
             fontFamily: "'Fraunces', Georgia, serif",
-            background: "linear-gradient(135deg, #f8fafc 0%, #cbd5e1 70%)",
-            WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text",
+            color: "#f8fafc",
             marginBottom: 6,
           }}>
             Padel Dashboard
@@ -78,8 +77,7 @@ export default function LoginPage({ onLogin }) {
           <div style={{
             display: "inline-flex", alignItems: "center", gap: 6,
             fontSize: 11, fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase",
-            background: "linear-gradient(135deg, #22d3ee, #a78bfa)",
-            WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text",
+            color: "#22d3ee",
           }}>
             Accesso riservato
           </div>

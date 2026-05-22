@@ -42,13 +42,15 @@ export function makeTheme(mode = 'dark') {
     unavail:      "#a855f7",
 
     // ── Extra (tema-specifici) ───────────────────────────
-    titleGradient: "linear-gradient(135deg, #f8fafc 0%, #cbd5e1 60%, #94a3b8 100%)",
+    titleGradient: "linear-gradient(135deg, #f8fafc 0%, #cbd5e1 60%, #94a3b8 100%)", // legacy
+    titleColor:    "#f8fafc",
     overlay:       "rgba(0,0,0,0.75)",
     male:          "#3b82f6",
     female:        "#ec4899",
+    success:       "#22c55e",
 
     // ── Sidebar ──────────────────────────────────────────
-    sidebarBg:     "rgba(11,18,40,0.90)",
+    sidebarBg:     "#0d1530",
     sidebarBorder: "rgba(255,255,255,0.08)",
     sidebarSep:    "rgba(255,255,255,0.07)",
 
@@ -92,13 +94,15 @@ export function makeTheme(mode = 'dark') {
     unavail:      "#7c3aed",
 
     // ── Extra (tema-specifici) ───────────────────────────
-    titleGradient: "linear-gradient(135deg, #0f172a 0%, #1e293b 60%, #475569 100%)",
+    titleGradient: "linear-gradient(135deg, #0f172a 0%, #1e293b 60%, #475569 100%)", // legacy
+    titleColor:    "#0f172a",
     overlay:       "rgba(15,23,42,0.40)",
     male:          "#1d4ed8",
     female:        "#be185d",
+    success:       "#16a34a",
 
     // ── Sidebar ──────────────────────────────────────────
-    sidebarBg:     "rgba(228,244,255,0.95)",
+    sidebarBg:     "#ddeef8",
     sidebarBorder: "rgba(15,23,42,0.14)",
     sidebarSep:    "rgba(15,23,42,0.10)",
 
@@ -193,10 +197,7 @@ export function makeTheme(mode = 'dark') {
   };
 
   const gradientText = {
-    background:            "linear-gradient(135deg, #22d3ee 0%, #06b6d4 50%, #a78bfa 100%)",
-    WebkitBackgroundClip: "text",
-    WebkitTextFillColor:  "transparent",
-    backgroundClip:       "text",
+    color: C.accent,
   };
 
   return { C, inputSt, btnPrimary, btnSecondary, btnGhost, cardSt, labelSt, gradientText };

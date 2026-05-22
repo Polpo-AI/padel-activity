@@ -9,7 +9,8 @@ import Modal from "../../shared/Modal";
 
 const fmtPhone   = (p) => p?.startsWith("39") && p.length > 4 ? p.slice(2) : (p || "");
 const genderIcon  = (g) => g === "MALE" ? "♂" : g === "FEMALE" ? "♀" : "—";
-const genderColor = (g) => g === "MALE" ? "#3b82f6" : g === "FEMALE" ? "#ec4899" : "#94a3b8";
+const GENDER_COLORS = { MALE: "#3b82f6", FEMALE: "#ec4899", UNKNOWN: "#94a3b8" };
+const genderColor = (g) => GENDER_COLORS[g] || "#94a3b8";
 const rateColor   = (C, r) => r >= 0.6 ? C.open : r >= 0.3 ? C.warning : C.cancelled;
 
 const fmtDate = (d) => {
@@ -372,8 +373,8 @@ function PlayerProfile({ playerId, token, onClose, onUpdated }) {
         <label style={labelSt}>Sesso</label>
         <div style={{ display: "flex", gap: 8 }}>
           {[
-            { v: "MALE",    label: "♂ Uomo",         color: "#3b82f6" },
-            { v: "FEMALE",  label: "♀ Donna",        color: "#ec4899" },
+            { v: "MALE",    label: "♂ Uomo",         color: GENDER_COLORS.MALE },
+            { v: "FEMALE",  label: "♀ Donna",        color: GENDER_COLORS.FEMALE },
             { v: "UNKNOWN", label: "— Non definito",  color: C.muted  },
           ].map(({ v, label, color }) => (
             <button key={v} disabled={saving}
@@ -500,7 +501,7 @@ function AddPlayerModal({ token, onClose, onCreated }) {
         <div>
           <label style={labelSt}>Numero di telefono *</label>
           <input value={phone} onChange={e => setPhone(e.target.value)} placeholder="393471234567" style={inputSt} onKeyDown={e => e.key === "Enter" && submit()} />
-          <div style={{ fontSize: 11, color: "#6b7280", marginTop: 4 }}>Solo cifre, con prefisso (es. 393471234567)</div>
+          <div style={{ fontSize: 11, color: C.muted, marginTop: 4 }}>Solo cifre, con prefisso (es. 393471234567)</div>
         </div>
         <div>
           <label style={labelSt}>Sesso</label>
@@ -526,7 +527,7 @@ function AddPlayerModal({ token, onClose, onCreated }) {
             onChange={e => setSkill(e.target.value)}
             placeholder="es. 3.0 — lascia vuoto se da assegnare" style={inputSt}
             onKeyDown={e => e.key === "Enter" && submit()} />
-          <div style={{ fontSize: 11, color: "#6b7280", marginTop: 4 }}>Se non assegnato, il giocatore potrà prenotare ma non riceverà inviti automatici</div>
+          <div style={{ fontSize: 11, color: C.muted, marginTop: 4 }}>Se non assegnato, il giocatore potrà prenotare ma non riceverà inviti automatici</div>
         </div>
         {err && <div style={{ fontSize: 12, color: "#ef4444", padding: "8px 12px", background: "#fef2f2", borderRadius: 8 }}>⚠ {err}</div>}
         <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>

@@ -45,6 +45,7 @@ export default function PadelDashboard() {
         }
         button:disabled { opacity: 0.35; cursor: not-allowed; }
         button:not(:disabled):active { transform: scale(0.97); }
+        button:focus-visible { box-shadow: 0 0 0 3px ${C.accentSoft} !important; outline: none; }
         ::-webkit-scrollbar { width: 4px; height: 4px; }
         ::-webkit-scrollbar-track { background: transparent; }
         ::-webkit-scrollbar-thumb { background: linear-gradient(to bottom, #22d3ee, #a78bfa); border-radius: 4px; }
@@ -52,19 +53,15 @@ export default function PadelDashboard() {
         input[type="time"]::-webkit-calendar-picker-indicator { filter: ${dark ? "invert(0.5)" : "invert(0.3)"}; }
         input[type="range"] { accent-color: #06b6d4; }
         ::selection { background: rgba(6,182,212,0.30); }
-        .gradient-text {
-          background: linear-gradient(135deg, #22d3ee 0%, #06b6d4 50%, #a78bfa 100%);
-          -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
-        }
+        .gradient-text { color: ${C.accent}; }
         .eyebrow {
           display: inline-flex; align-items: center; gap: 8px;
           font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase;
-          background: linear-gradient(135deg, #22d3ee, #a78bfa);
-          -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+          color: ${C.accent};
         }
         .eyebrow::before {
           content: ''; display: block; width: 24px; height: 2px; border-radius: 2px;
-          background: linear-gradient(90deg, #22d3ee, #a78bfa); flex-shrink: 0;
+          background: ${C.accent}; flex-shrink: 0;
         }
         .nav-btn:hover { background: ${dark ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.04)"} !important; color: ${C.text} !important; }
         .nav-btn.active { background: rgba(6,182,212,0.10) !important; }
@@ -73,16 +70,14 @@ export default function PadelDashboard() {
       {/* Theme toggle pill — top-right fixed */}
       <ThemeToggle />
 
-      {/* Aurora orbs */}
-      <div style={{ position: "fixed", top: -180, right: -120, width: 750, height: 750, borderRadius: "50%", background: `radial-gradient(circle, ${C.orbCyan} 0%, transparent 70%)`, pointerEvents: "none", zIndex: 0, transition: "0.5s" }} />
-      <div style={{ position: "fixed", bottom: -120, left: -80, width: 650, height: 650, borderRadius: "50%", background: `radial-gradient(circle, ${C.orbViolet} 0%, transparent 70%)`, pointerEvents: "none", zIndex: 0, transition: "0.5s" }} />
-      <div style={{ position: "fixed", top: "40%", left: "45%", transform: "translate(-50%,-50%)", width: 900, height: 900, borderRadius: "50%", background: `radial-gradient(circle, ${C.orbPink} 0%, transparent 65%)`, pointerEvents: "none", zIndex: 0, transition: "0.5s" }} />
+      {/* Aurora orbs — solo angoli, nessun orb centrato */}
+      <div style={{ position: "fixed", top: -200, right: -150, width: 600, height: 600, borderRadius: "50%", background: `radial-gradient(circle, ${C.orbCyan} 0%, transparent 70%)`, pointerEvents: "none", zIndex: 0, transition: "background 0.5s, opacity 0.5s", willChange: "opacity" }} />
+      <div style={{ position: "fixed", bottom: -150, left: -100, width: 500, height: 500, borderRadius: "50%", background: `radial-gradient(circle, ${C.orbViolet} 0%, transparent 70%)`, pointerEvents: "none", zIndex: 0, transition: "background 0.5s, opacity 0.5s", willChange: "opacity" }} />
 
       {/* Sidebar */}
       <div style={{
         position: "fixed", left: 0, top: 0, bottom: 0, width: 224,
         background: C.sidebarBg,
-        backdropFilter: "blur(24px) saturate(1.5)",
         borderRight: `1px solid ${C.sidebarBorder}`,
         display: "flex", flexDirection: "column",
         zIndex: 10, transition: "background 0.3s, border-color 0.3s",
@@ -101,8 +96,7 @@ export default function PadelDashboard() {
               <div style={{
                 fontSize: 14, fontWeight: 700, lineHeight: 1.2,
                 fontFamily: "'Fraunces', Georgia, serif",
-                background: C.titleGradient,
-                WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text",
+                color: C.titleColor,
               }}>
                 {club?.name || "Padel"}
               </div>
@@ -118,7 +112,7 @@ export default function PadelDashboard() {
           {NAV.map(n => {
             const active = tab === n.id;
             return (
-              <button key={n.id} onClick={() => setTab(n.id)}
+              <button key={n.id} type="button" onClick={() => setTab(n.id)} aria-label={n.label} aria-current={active ? "page" : undefined}
                 className={`nav-btn${active ? " active" : ""}`}
                 style={{
                   display: "flex", alignItems: "center", gap: 9,
@@ -128,20 +122,20 @@ export default function PadelDashboard() {
                   fontSize: 12.5, textAlign: "left",
                   transition: "all 0.15s cubic-bezier(0.23,1,0.32,1)",
                   fontFamily: "inherit", fontWeight: active ? 600 : 400,
-                  position: "relative", color: active ? "transparent" : C.muted,
+                  position: "relative", color: active ? C.accent : C.muted,
                 }}>
                 {active && (
                   <div style={{
                     position: "absolute", left: 0, top: "18%", bottom: "18%",
                     width: 3, borderRadius: 2,
-                    background: "linear-gradient(to bottom, #22d3ee, #a78bfa)",
-                    boxShadow: "0 0 10px rgba(34,211,238,0.60)",
+                    background: C.accent,
+                    boxShadow: `0 0 10px ${C.accentSoft}`,
                   }} />
                 )}
                 {active ? (
                   <>
-                    <span style={{ fontSize: 14, filter: "drop-shadow(0 0 6px rgba(34,211,238,0.5))" }}>{n.icon}</span>
-                    <span style={{ background: "linear-gradient(135deg, #22d3ee, #a78bfa)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text" }}>{n.label}</span>
+                    <span style={{ fontSize: 14 }}>{n.icon}</span>
+                    <span>{n.label}</span>
                   </>
                 ) : (
                   <>
@@ -157,6 +151,7 @@ export default function PadelDashboard() {
         {/* Footer — esci */}
         <div style={{ padding: "14px 10px", borderTop: `1px solid ${C.sidebarSep}` }}>
           <button
+            type="button"
             onClick={() => { if (confirm("Vuoi uscire dalla dashboard?")) setToken(null); }}
             style={{ ...btnGhost, width: "100%", fontSize: 11, borderRadius: 8 }}
           >
@@ -173,8 +168,7 @@ export default function PadelDashboard() {
           <h1 style={{
             fontSize: 32, fontWeight: 300, letterSpacing: "-0.02em", lineHeight: 1.05,
             fontFamily: "'Fraunces', Georgia, serif",
-            background: C.titleGradient,
-            WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text",
+            color: C.titleColor,
             marginBottom: 10,
           }}>
             {current?.label}
