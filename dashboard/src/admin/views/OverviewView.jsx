@@ -26,7 +26,7 @@ function FillBar({ value }) {
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 8, flex: 1 }}>
       <div style={{ flex: 1, height: 4, background: C.dim, borderRadius: 2, overflow: "hidden" }}>
-        <div style={{ height: "100%", width: `${pct}%`, background: color, borderRadius: 2, transition: "width 0.5s" }} />
+        <div style={{ height: "100%", width: "100%", background: color, borderRadius: 2, transform: `scaleX(${pct / 100})`, transformOrigin: "left", transition: "transform 0.5s" }} />
       </div>
       <span style={{ fontSize: 11, color: C.muted, minWidth: 34, textAlign: "right" }}>{pct}%</span>
     </div>

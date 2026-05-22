@@ -256,8 +256,9 @@ function ReliabilityFilterDropdown({ minReliability, onChange, active }) {
           {/* Barra di anteprima */}
           <div style={{ height: 4, background: C.dim, borderRadius: 2, overflow: "hidden", marginBottom: 8 }}>
             <div style={{
-              height: "100%", width: `${displayPct}%`, background: color,
-              borderRadius: 2, transition: "width 0.05s, background 0.2s",
+              height: "100%", width: "100%", background: color, borderRadius: 2,
+              transform: `scaleX(${displayPct / 100})`, transformOrigin: "left",
+              transition: "transform 0.05s, background 0.2s",
             }} />
           </div>
 
@@ -356,7 +357,7 @@ function PlayerProfile({ playerId, token, onClose, onUpdated }) {
           <span style={{ fontSize: 13, fontWeight: 700, color: rColor }}>{(showRate * 100).toFixed(0)}%</span>
         </div>
         <div style={{ height: 6, background: C.dim, borderRadius: 3, overflow: "hidden" }}>
-          <div style={{ height: "100%", width: `${showRate * 100}%`, background: rColor, borderRadius: 3, transition: "width 0.5s" }} />
+          <div style={{ height: "100%", width: "100%", background: rColor, borderRadius: 3, transform: `scaleX(${showRate})`, transformOrigin: "left", transition: "transform 0.5s" }} />
         </div>
       </div>
 

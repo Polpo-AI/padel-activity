@@ -630,8 +630,9 @@ function MatchCard({ match, onCancel }) {
           </div>
           <div style={{ height: 3, background: C.dim, borderRadius: 2, overflow: "hidden" }}>
             <div style={{
-              height: "100%", borderRadius: 2, transition: "width 0.3s",
-              width: `${(confirmed.length / match.playersNeeded) * 100}%`,
+              height: "100%", width: "100%", borderRadius: 2,
+              transform: `scaleX(${(confirmed.length / match.playersNeeded)})`, transformOrigin: "left",
+              transition: "transform 0.3s",
               background: match.status === "LOCKED" ? C.locked : confirmed.length > 0 ? C.accent : C.muted,
             }} />
           </div>
@@ -754,8 +755,9 @@ function MatchDetailModal({ matchId, token, onCancel, onClose }) {
               </div>
               <div style={{ height: 3, background: C.dim, borderRadius: 2, marginBottom: 10, overflow: "hidden" }}>
                 <div style={{
-                  height: "100%", borderRadius: 2, transition: "width 0.3s",
-                  width: `${(confirmed.length / match.playersNeeded) * 100}%`,
+                  height: "100%", width: "100%", borderRadius: 2,
+                  transform: `scaleX(${(confirmed.length / match.playersNeeded)})`, transformOrigin: "left",
+                  transition: "transform 0.3s",
                   background: match.status === "LOCKED" ? C.locked : confirmed.length > 0 ? C.accent : C.muted,
                 }} />
               </div>

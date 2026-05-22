@@ -161,10 +161,9 @@ export default function AdminApp() {
         marginLeft: isMobile ? 0 : SIDEBAR_W,
         padding: isMobile ? "72px 16px 32px" : "36px 44px",
         maxWidth: 1400, position: "relative", zIndex: 1,
-        transition: "margin-left 0.3s cubic-bezier(0.23,1,0.32,1)",
       }}>
         <div style={{ marginBottom: isMobile ? 24 : 36 }}>
-          <div style={{ fontSize: isMobile ? 22 : 28, fontWeight: 700, letterSpacing: "-0.02em", lineHeight: 1.1, fontFamily: "'Inter',-apple-system,BlinkMacSystemFont,sans-serif", color: C.titleColor, marginBottom: 6 }}>{current?.label}</div>
+          <h1 style={{ fontSize: isMobile ? 22 : 28, fontWeight: 700, letterSpacing: "-0.02em", lineHeight: 1.1, fontFamily: "'Inter',-apple-system,BlinkMacSystemFont,sans-serif", color: C.titleColor, margin: "0 0 6px" }}>{current?.label}</h1>
           {!isMobile && <div style={{ fontSize: 13, color: C.muted }}>{current?.desc}</div>}
         </div>
 

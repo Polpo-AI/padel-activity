@@ -207,7 +207,6 @@ export default function PadelDashboard() {
         marginLeft: isMobile ? 0 : SIDEBAR_W,
         padding: isMobile ? "72px 16px 32px" : "36px 44px",
         maxWidth: 1340, position: "relative", zIndex: 1,
-        transition: "margin-left 0.3s cubic-bezier(0.23,1,0.32,1)",
       }}>
         {/* Page header */}
         <div style={{ marginBottom: isMobile ? 24 : 36 }}>

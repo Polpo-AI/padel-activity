@@ -5,6 +5,7 @@ import Spinner from "../../shared/Spinner";
 import Toast from "../../shared/Toast";
 
 function HealthDot({ ok, label }) {
+  const { C } = useTheme();
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
       <div style={{
@@ -55,11 +56,11 @@ export default function SystemView({ token }) {
   const fmt = (d, opts) => new Date(d).toLocaleString("it-IT", opts);
 
   const criticalIssues = [
-    !redis.connected && "Redis non connesso",
-    !redis.aof && "AOF Redis non attivo — rischio perdita dati",
-    !sec.rateLimitActive && "Rate limiting non attivo — vulnerabilità dashboard",
-    !sec.webhookHmac && "Webhook HMAC non configurato",
-    !sec.jwtRotationEnabled && "JWT statico — rotazione non abilitata",
+    !redis.connected && "Cache sistema non raggiungibile",
+    !redis.aof && "Persistenza dati non attiva — rischio perdita in caso di riavvio",
+    !sec.rateLimitActive && "Protezione accessi non attiva — vulnerabilità dashboard",
+    !sec.webhookHmac && "Firma webhook non configurata",
+    !sec.jwtRotationEnabled && "Sicurezza sessioni — rotazione non abilitata",
   ].filter(Boolean);
 
   return (
@@ -88,16 +89,16 @@ export default function SystemView({ token }) {
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
         <div style={{ background: C.surface, border: `1px solid ${redis.connected ? C.border : `${C.cancelled}40`}`, borderRadius: 12, padding: 22 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-            <div style={{ fontSize: 13, fontWeight: 600, color: C.text }}>Redis</div>
+            <div style={{ fontSize: 13, fontWeight: 600, color: C.text }}>Cache sistema</div>
             <HealthDot ok={redis.connected} label={redis.connected ? "Connesso" : "Non connesso"} />
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, alignItems: "center" }}>
-              <span style={{ color: C.muted }}>AOF Persistence</span>
+              <span style={{ color: C.muted }}>Persistenza dati</span>
               <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 8, background: redis.aof ? `${C.open}18` : `${C.cancelled}18`, color: redis.aof ? C.open : C.cancelled }}>{redis.aof ? "ATTIVO" : "DISATTIVO"}</span>
             </div>
             <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12 }}>
-              <span style={{ color: C.muted }}>Job in coda</span>
+              <span style={{ color: C.muted }}>Messaggi in elaborazione</span>
               <span style={{ color: redis.queueSize > 50 ? C.warning : C.text }}>{redis.queueSize ?? "—"}</span>
             </div>
           </div>
@@ -105,12 +106,12 @@ export default function SystemView({ token }) {
 
         <div style={{ background: C.surface, border: `1px solid ${ws.connected ? C.border : `${C.cancelled}40`}`, borderRadius: 12, padding: 22 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-            <div style={{ fontSize: 13, fontWeight: 600, color: C.text }}>WhatsApp (Baileys)</div>
+            <div style={{ fontSize: 13, fontWeight: 600, color: C.text }}>Bot WhatsApp</div>
             <HealthDot ok={ws.connected} label={ws.connected ? "Connesso" : "Disconnesso"} />
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12 }}>
-              <span style={{ color: C.muted }}>JID sessione</span>
+              <span style={{ color: C.muted }}>ID sessione</span>
               <span style={{ color: C.text, fontFamily: "monospace", fontSize: 11 }}>{ws.jid ? `...${ws.jid.slice(-10)}` : "—"}</span>
             </div>
             <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12 }}>
@@ -122,7 +123,7 @@ export default function SystemView({ token }) {
 
         <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: 22 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-            <div style={{ fontSize: 13, fontWeight: 600, color: C.text }}>Database (Prisma)</div>
+            <div style={{ fontSize: 13, fontWeight: 600, color: C.text }}>Database</div>
             <HealthDot ok={db.connected} label={db.connected ? "Connesso" : "Errore"} />
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
@@ -135,7 +136,7 @@ export default function SystemView({ token }) {
 
         <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: 22 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-            <div style={{ fontSize: 13, fontWeight: 600, color: C.text }}>Worker</div>
+            <div style={{ fontSize: 13, fontWeight: 600, color: C.text }}>Elaborazione code</div>
             <HealthDot ok={worker.running} label={worker.running ? "Attivo" : "Fermo"} />
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
@@ -144,7 +145,7 @@ export default function SystemView({ token }) {
               <span style={{ color: C.text, fontSize: 11 }}>{worker.lastCheck ? fmt(worker.lastCheck, { hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "—"}</span>
             </div>
             <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12 }}>
-              <span style={{ color: C.muted }}>Staleness check</span>
+              <span style={{ color: C.muted }}>Monitoraggio attività</span>
               <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 8, background: `${C.open}18`, color: C.open }}>ATTIVO</span>
             </div>
           </div>
@@ -155,9 +156,9 @@ export default function SystemView({ token }) {
         <div style={{ fontSize: 13, fontWeight: 600, color: C.text, marginBottom: 16 }}>🔐 Sicurezza API</div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16 }}>
           {[
-            { label: "Rate Limiting", ok: sec.rateLimitActive, fix: "Aggiungere express-rate-limit middleware su /api/" },
-            { label: "JWT Rotation", ok: sec.jwtRotationEnabled, fix: "Implementare refresh token e rotazione segreti" },
-            { label: "Webhook HMAC", ok: sec.webhookHmac, fix: "Aggiungere firma HMAC-SHA256 sulla validazione webhook" },
+            { label: "Protezione accessi", ok: sec.rateLimitActive, fix: "Attivare il limite di richieste per proteggere la dashboard" },
+            { label: "Sicurezza sessioni", ok: sec.jwtRotationEnabled, fix: "Abilitare la rotazione automatica delle sessioni" },
+            { label: "Firma webhook", ok: sec.webhookHmac, fix: "Configurare la firma sicura per le chiamate esterne" },
           ].map(item => (
             <div key={item.label} style={{ background: C.bg, border: `1px solid ${item.ok ? `${C.open}30` : `${C.cancelled}30`}`, borderRadius: 10, padding: 16 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>

@@ -62,6 +62,7 @@ export default function SettingsView({ token, club, onClubUpdate }) {
   const { C, inputSt, btnPrimary, btnGhost, labelSt } = useTheme();
   const [form, setForm] = useState(EMPTY);
   const [saving, setSaving] = useState(false);
+  const [dirty, setDirty] = useState(false);
   const [toast, setToast] = useState(null);
   const [clubId, setClubId] = useState(null);
   const [confirmDialog, setConfirmDialog] = useState(null);
@@ -92,7 +93,7 @@ export default function SettingsView({ token, club, onClubUpdate }) {
     }).catch(() => {});
   }, [token]);
 
-  const f = (k, parse) => e => setForm(p => ({ ...p, [k]: parse ? parse(e.target.value) : e.target.value }));
+  const f = (k, parse) => e => { setForm(p => ({ ...p, [k]: parse ? parse(e.target.value) : e.target.value })); setDirty(true); };
 
   const doSave = async (confirm = false) => {
     setSaving(true);
@@ -105,6 +106,7 @@ export default function SettingsView({ token, club, onClubUpdate }) {
         return;
       }
       onClubUpdate?.(d);
+      setDirty(false);
       setToast({ msg: "Impostazioni salvate ✓", type: "ok" });
     } catch (e) {
       setToast({ msg: e.message || "Errore nel salvataggio", type: "err" });
@@ -115,6 +117,25 @@ export default function SettingsView({ token, club, onClubUpdate }) {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 24, maxWidth: 780 }}>
+
+      {/* Banner modifiche non salvate */}
+      {dirty && (
+        <div style={{
+          position: "sticky", top: 0, zIndex: 10,
+          background: C.surface, border: `1px solid ${C.warning}50`,
+          borderRadius: 10, padding: "10px 16px",
+          display: "flex", alignItems: "center", justifyContent: "space-between",
+          boxShadow: `0 2px 12px rgba(0,0,0,0.12)`,
+        }}>
+          <span style={{ fontSize: 12, color: C.warning, display: "flex", alignItems: "center", gap: 6 }}>
+            <span style={{ width: 6, height: 6, borderRadius: "50%", background: C.warning, display: "inline-block" }} />
+            Modifiche non salvate
+          </span>
+          <button onClick={() => doSave(false)} disabled={saving} style={{ ...btnPrimary, fontSize: 11, padding: "6px 16px" }}>
+            {saving ? "Salvataggio..." : "Salva ora"}
+          </button>
+        </div>
+      )}
 
       {clubId && (
         <div style={{ background: `${C.accent}08`, border: `1px solid ${C.accentSoft}`, borderRadius: 10, padding: "12px 16px", display: "flex", alignItems: "center", gap: 12 }}>
@@ -160,7 +181,7 @@ export default function SettingsView({ token, club, onClubUpdate }) {
         <F label="Tono AI">
           <div style={{ display: "flex", gap: 8 }}>
             {[{ id: "formal", label: "🧑‍💼 Formale" }, { id: "friendly", label: "😊 Amichevole" }, { id: "fun", label: "🎉 Divertente" }].map(t => (
-              <button key={t.id} onClick={() => setForm(p => ({ ...p, aiTone: t.id }))} style={{
+              <button key={t.id} onClick={() => { setForm(p => ({ ...p, aiTone: t.id })); setDirty(true); }} style={{
                 flex: 1, padding: "9px 0", borderRadius: 8, cursor: "pointer", fontSize: 12,
                 border: `1px solid ${form.aiTone === t.id ? C.accent : C.border}`,
                 background: form.aiTone === t.id ? C.accentDim : "transparent",
@@ -172,7 +193,7 @@ export default function SettingsView({ token, club, onClubUpdate }) {
         </F>
         <F label={`Max messaggi giornalieri per giocatore (${form.maxDailyMessages})`}>
           <input type="range" min={1} max={5} value={form.maxDailyMessages} onChange={f("maxDailyMessages", parseInt)} style={{ width: "100%" }} />
-          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: C.dim }}>
+          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: C.muted }}>
             {[1,2,3,4,5].map(v => <span key={v}>{v}</span>)}
           </div>
         </F>
@@ -229,7 +250,7 @@ export default function SettingsView({ token, club, onClubUpdate }) {
 
       {/* Dialog conferma cambio orari */}
       {confirmDialog && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }}>
+        <div style={{ position: "fixed", inset: 0, background: C.overlay, display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }}>
           <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 14, padding: 28, maxWidth: 460, width: "90%" }}>
             <div style={{ fontSize: 14, fontWeight: 600, color: C.text, marginBottom: 12 }}>⚠️ Conferma modifica orari</div>
             <div style={{ fontSize: 13, color: C.muted, marginBottom: 20, lineHeight: 1.6 }}>{confirmDialog.message}</div>
