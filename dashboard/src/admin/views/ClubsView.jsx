@@ -3,7 +3,6 @@ import { useTheme } from "../../shared/ThemeContext";
 import Spinner from "../../shared/Spinner";
 import Modal from "../../shared/Modal";
 
-const WA_COLOR = { open: "#22d3ee", connecting: "#f59e0b", closed: "#ef4444", disconnected: "#94a3b8" };
 const WA_LABEL = { open: "Connesso", connecting: "Conn…", closed: "Chiuso", disconnected: "—" };
 
 function EditModal({ club, token, onClose, onSaved }) {
@@ -97,7 +96,7 @@ export default function ClubsView({ token }) {
               <div style={{ flex: 1 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 8 }}>
                   <div style={{ fontSize: 15, fontWeight: 700, color: C.text }}>{c.name}</div>
-                  <span style={{ fontSize: 11, padding: "3px 8px", borderRadius: 4, background: `${WA_COLOR[c.waStatus] || C.muted}22`, color: WA_COLOR[c.waStatus] || C.muted }}>
+                  <span style={{ fontSize: 11, padding: "3px 8px", borderRadius: 4, background: `${{ open: C.open, connecting: C.warning, closed: C.cancelled, disconnected: C.muted }[c.waStatus] || C.muted}22`, color: { open: C.open, connecting: C.warning, closed: C.cancelled, disconnected: C.muted }[c.waStatus] || C.muted }}>
                     WA: {WA_LABEL[c.waStatus] || c.waStatus}
                   </span>
                 </div>

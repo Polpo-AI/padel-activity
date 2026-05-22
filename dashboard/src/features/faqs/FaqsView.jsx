@@ -6,15 +6,15 @@ import Toast from "../../shared/Toast";
 
 // ─── Badge helpers ──────────────────────────
 
-const DECISION_CONFIG = {
-  NEW:       { color: "#22d3ee", bg: "rgba(34,211,238,0.12)",  label: "Nuova" },
-  KEEP:      { color: "#22c55e", bg: "rgba(34,197,94,0.12)",   label: "Tieni" },
-  MERGE:     { color: "#a78bfa", bg: "rgba(167,139,250,0.12)", label: "Unisci" },
-  DISCARD:   { color: "#f97316", bg: "rgba(249,115,22,0.12)",  label: "Scarta" },
-  ANSWERED:  { color: "#94a3b8", bg: "rgba(148,163,184,0.12)", label: "Risposta" },
-};
-
 function DecisionBadge({ decision }) {
+  const { C } = useTheme();
+  const DECISION_CONFIG = {
+    NEW:      { color: C.open,     bg: `${C.open}1E`,      label: "Nuova" },
+    KEEP:     { color: C.success,  bg: `${C.success}1E`,   label: "Tieni" },
+    MERGE:    { color: C.indigo,   bg: `${C.indigo}1E`,    label: "Unisci" },
+    DISCARD:  { color: C.unfilled, bg: `${C.unfilled}1E`,  label: "Scarta" },
+    ANSWERED: { color: C.muted,    bg: `${C.muted}1E`,     label: "Risposta" },
+  };
   const cfg = DECISION_CONFIG[decision] || DECISION_CONFIG.NEW;
   return (
     <span style={{

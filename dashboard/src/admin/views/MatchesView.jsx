@@ -2,7 +2,6 @@ import { useState, useEffect, useCallback } from "react";
 import { useTheme } from "../../shared/ThemeContext";
 import Spinner from "../../shared/Spinner";
 
-const STATUS_COLOR = { OPEN: "#22d3ee", LOCKED: "#3b82f6", CANCELLED: "#ef4444", UNFILLED: "#f97316" };
 const STATUS_LABEL = { OPEN: "Aperta", LOCKED: "Chiusa", CANCELLED: "Cancellata", UNFILLED: "Non riempita" };
 
 export default function MatchesView({ token, clubs }) {
@@ -84,7 +83,7 @@ export default function MatchesView({ token, clubs }) {
                   <td style={{ padding: "11px 16px", color: C.muted }}>{m.court || "—"}</td>
                   <td style={{ padding: "11px 16px", color: C.text, whiteSpace: "nowrap" }}>{fmtDt(m.startTime)}</td>
                   <td style={{ padding: "11px 16px" }}>
-                    <span style={{ fontSize: 11, padding: "3px 8px", borderRadius: 4, background: `${STATUS_COLOR[m.status] || C.muted}22`, color: STATUS_COLOR[m.status] || C.muted }}>
+                    <span style={{ fontSize: 11, padding: "3px 8px", borderRadius: 4, background: `${{ OPEN: C.open, LOCKED: C.locked, CANCELLED: C.cancelled, UNFILLED: C.unfilled }[m.status] || C.muted}22`, color: { OPEN: C.open, LOCKED: C.locked, CANCELLED: C.cancelled, UNFILLED: C.unfilled }[m.status] || C.muted }}>
                       {STATUS_LABEL[m.status] || m.status}
                     </span>
                   </td>

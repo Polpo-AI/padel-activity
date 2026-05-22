@@ -2,11 +2,11 @@ import { useState, useEffect, useCallback } from "react";
 import { useTheme } from "../../shared/ThemeContext";
 import Spinner from "../../shared/Spinner";
 
-const WA_COLOR = { open: "#22d3ee", connecting: "#f59e0b", closed: "#ef4444", disconnected: "#94a3b8" };
 const WA_LABEL = { open: "✅ Connesso", connecting: "⏳ Connessione…", closed: "❌ Chiuso", disconnected: "⚪ Non configurato" };
 
 function StatusDot({ ok }) {
-  return <span style={{ display: "inline-block", width: 8, height: 8, borderRadius: "50%", background: ok ? "#22d3ee" : "#ef4444", marginRight: 8 }} />;
+  const { C } = useTheme();
+  return <span style={{ display: "inline-block", width: 8, height: 8, borderRadius: "50%", background: ok ? C.open : C.cancelled, marginRight: 8 }} />;
 }
 
 export default function SystemView({ token }) {
@@ -68,7 +68,7 @@ export default function SystemView({ token }) {
                   {c.adminPhone ? ` · Admin: +${c.adminPhone}` : ""}
                 </div>
               </div>
-              <div style={{ fontSize: 13, color: WA_COLOR[c.waStatus] || C.muted, fontWeight: 600 }}>
+              <div style={{ fontSize: 13, color: { open: C.open, connecting: C.warning, closed: C.cancelled, disconnected: C.muted }[c.waStatus] || C.muted, fontWeight: 600 }}>
                 {WA_LABEL[c.waStatus] || c.waStatus}
               </div>
             </div>

@@ -9,8 +9,7 @@ import Modal from "../../shared/Modal";
 
 const fmtPhone   = (p) => p?.startsWith("39") && p.length > 4 ? p.slice(2) : (p || "");
 const genderIcon  = (g) => g === "MALE" ? "♂" : g === "FEMALE" ? "♀" : "—";
-const GENDER_COLORS = { MALE: "#3b82f6", FEMALE: "#ec4899", UNKNOWN: "#94a3b8" };
-const genderColor = (g) => GENDER_COLORS[g] || "#94a3b8";
+const genderColor = (g, C) => g === "MALE" ? C.male : g === "FEMALE" ? C.female : C.muted;
 const rateColor   = (C, r) => r >= 0.6 ? C.open : r >= 0.3 ? C.warning : C.cancelled;
 
 const fmtDate = (d) => {
@@ -374,8 +373,8 @@ function PlayerProfile({ playerId, token, onClose, onUpdated }) {
         <label style={labelSt}>Sesso</label>
         <div style={{ display: "flex", gap: 8 }}>
           {[
-            { v: "MALE",    label: "♂ Uomo",         color: GENDER_COLORS.MALE },
-            { v: "FEMALE",  label: "♀ Donna",        color: GENDER_COLORS.FEMALE },
+            { v: "MALE",    label: "♂ Uomo",         color: C.male },
+            { v: "FEMALE",  label: "♀ Donna",        color: C.female },
             { v: "UNKNOWN", label: "— Non definito",  color: C.muted  },
           ].map(({ v, label, color }) => (
             <button type="button" key={v} disabled={saving}
@@ -508,8 +507,8 @@ function AddPlayerModal({ token, onClose, onCreated }) {
           <label style={labelSt}>Sesso</label>
           <div style={{ display: "flex", gap: 8 }}>
             {[
-              { v: "MALE",    label: "♂ Uomo",   color: "#3b82f6" },
-              { v: "FEMALE",  label: "♀ Donna",  color: "#ec4899" },
+              { v: "MALE",    label: "♂ Uomo",   color: C.male },
+              { v: "FEMALE",  label: "♀ Donna",  color: C.female },
               { v: "UNKNOWN", label: "— N/D",     color: C.muted  },
             ].map(({ v, label, color }) => (
               <button key={v} type="button" onClick={() => setGender(v)} style={{
@@ -530,7 +529,7 @@ function AddPlayerModal({ token, onClose, onCreated }) {
             onKeyDown={e => e.key === "Enter" && submit()} />
           <div style={{ fontSize: 11, color: C.muted, marginTop: 4 }}>Se non assegnato, il giocatore potrà prenotare ma non riceverà inviti automatici</div>
         </div>
-        {err && <div style={{ fontSize: 12, color: "#ef4444", padding: "8px 12px", background: "#fef2f2", borderRadius: 8 }}>⚠ {err}</div>}
+        {err && <div style={{ fontSize: 12, color: C.cancelled, padding: "8px 12px", background: `${C.cancelled}18`, borderRadius: 8 }}>⚠ {err}</div>}
         <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
           <button type="button" onClick={onClose} style={btnGhost} disabled={saving}>Annulla</button>
           <button type="button" onClick={submit} style={btnPrimary} disabled={saving}>{saving ? "Creando..." : "Aggiungi giocatore"}</button>
@@ -773,7 +772,7 @@ export default function PlayersView({ token }) {
                   {p.name || <span style={{ color: C.dim }}>—</span>}
                 </span>
                 <span style={{ color: C.muted, fontFamily: "monospace", fontSize: 11 }}>{fmtPhone(p.phoneNumber)}</span>
-                <span style={{ fontSize: 14, fontWeight: 700, color: genderColor(p.gender) }}>{genderIcon(p.gender)}</span>
+                <span style={{ fontSize: 14, fontWeight: 700, color: genderColor(p.gender, C) }}>{genderIcon(p.gender)}</span>
                 <span style={{
                   display: "inline-flex", width: 28, height: 22, alignItems: "center", justifyContent: "center",
                   borderRadius: 6,

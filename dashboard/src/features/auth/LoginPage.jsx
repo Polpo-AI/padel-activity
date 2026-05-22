@@ -67,7 +67,7 @@ export default function LoginPage({ onLogin }) {
           <div style={{
             fontSize: 24, fontWeight: 700, letterSpacing: "-0.02em", lineHeight: 1.1,
             fontFamily: "'Inter',-apple-system,BlinkMacSystemFont,sans-serif",
-            color: "#f8fafc",
+            color: C.titleColor,
             marginBottom: 6,
           }}>
             Padel Dashboard
@@ -77,7 +77,7 @@ export default function LoginPage({ onLogin }) {
           <div style={{
             display: "inline-flex", alignItems: "center", gap: 6,
             fontSize: 11, fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase",
-            color: "#22d3ee",
+            color: C.accent,
           }}>
             Accesso riservato
           </div>
