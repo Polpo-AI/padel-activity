@@ -70,15 +70,23 @@ export async function handleAdminFaqFlow(text: string, club: any, jid: string): 
         const t = text.trim().toLowerCase();
         const choseNew = /\b(nuov[ao]|second[ao]|questa|aggiorn|corrett[ao]|quella nuova)\b/.test(t) || t === '2';
         const choseOld = /\b(vecchi[ao]|prim[ao]|original[e]|quella vecchia|mantieni|tieni)\b/.test(t) || t === '1';
-
+        // Se regex non risolve, usa AI
+        let resolvedNew = choseNew;
+        let resolvedOld = choseOld;
         if (!choseNew && !choseOld) {
+            const conf = await classifyAdminConfirmation(text.trim());
+            if (conf === 'affirm') resolvedNew = true;
+            else if (conf === 'deny') resolvedOld = true;
+        }
+
+        if (!resolvedNew && !resolvedOld) {
             await sendMessage(jid, `Non ho capito. Rispondi:\n1 — tieni la FAQ esistente\n2 — sostituisci con la nuova risposta`);
             return true;
         }
 
         await redis.del(`faq:awaiting_conflict_resolve:${clubId}`);
 
-        if (choseNew) {
+        if (resolvedNew) {
             // Sostituisce la FAQ conflittuale con la nuova
             await prisma.faq.delete({ where: { id: conflictingFaqId } }).catch(() => {});
             await prisma.faq.create({ data: { clubId, question: newQuestion, answer: newAnswer, askedBy: askedBy || null } });
@@ -100,8 +108,12 @@ export async function handleAdminFaqFlow(text: string, club: any, jid: string): 
         const { newQuestion, proposedMergedAnswer, existingFaqId, askedBy, playerJid } = JSON.parse(mergeRaw);
         const affirmative = /^(s[iì]|yes|ok|va bene|certo|giusto|esatto|salvala?|conferm|mergia|unisci)/i.test(text.trim());
         const negative = /^(no|nope|lascia perdere|skip|non merge|non unire)/i.test(text.trim());
+        // Se regex non risolve, chiedi all'AI
+        const mergeConf = (!affirmative && !negative) ? await classifyAdminConfirmation(text.trim()) : null;
+        const isMergeAffirm = affirmative || mergeConf === 'affirm';
+        const isMergeDeny = negative || mergeConf === 'deny';
 
-        if (!affirmative && !negative) {
+        if (!isMergeAffirm && !isMergeDeny) {
             // L'admin sta fornendo una versione custom del merge → usala
             const customMerge = text.trim();
             await redis.del(`faq:awaiting_merge_confirm:${clubId}`);
@@ -114,7 +126,7 @@ export async function handleAdminFaqFlow(text: string, club: any, jid: string): 
 
         await redis.del(`faq:awaiting_merge_confirm:${clubId}`);
 
-        if (affirmative) {
+        if (isMergeAffirm) {
             await prisma.faq.update({ where: { id: existingFaqId }, data: { answer: proposedMergedAnswer } });
             if (playerJid) await simulateTypingAndSend(playerJid, proposedMergedAnswer).catch(() => {});
             await sendMessage(jid, `FAQ aggiornata con la versione unificata ✅ Risposta inoltrata a ${askedBy || 'utente'}.`);
@@ -135,15 +147,18 @@ export async function handleAdminFaqFlow(text: string, club: any, jid: string): 
         const { question, answer, askedBy, playerJid } = JSON.parse(confirmRaw);
         const affirmative = /^(s[iì]|yes|ok|va bene|certo|giusto|esatto|salvala?|conferm)/i.test(text.trim());
         const negative = /^(no|nope|non salvare|non va bene|sbagliato|lascia perdere|skip)/i.test(text.trim());
+        const saveConf = (!affirmative && !negative) ? await classifyAdminConfirmation(text.trim()) : null;
+        const isSaveAffirm = affirmative || saveConf === 'affirm';
+        const isSaveDeny = negative || saveConf === 'deny';
 
-        if (affirmative) {
+        if (isSaveAffirm) {
             await prisma.faq.create({ data: { clubId, question, answer, askedBy: askedBy || null } });
             await redis.del(`faq:awaiting_save_confirm:${clubId}`);
             await sendMessage(jid, `Salvata come FAQ ✅`);
             notifyPendingFaqUsers(clubId, question, answer).catch(() => {});
             return true;
         }
-        if (negative) {
+        if (isSaveDeny) {
             await redis.del(`faq:awaiting_save_confirm:${clubId}`);
             await sendMessage(jid, `Ok, non salvo.`);
             return true;
@@ -163,7 +178,10 @@ export async function handleAdminFaqFlow(text: string, club: any, jid: string): 
 
         const affirmative = /^(s[iì]|yes|ok|va bene|certo|conferm|esatto|giusto|migliora|usa questa|usala)/i.test(text.trim());
         const negative = /^(no|nope|originale|lascia|tieni|va bene cos)/i.test(text.trim());
-        const finalAnswer = affirmative ? improvedAnswer : (negative ? originalAnswer : text.trim());
+        const improveConf = (!affirmative && !negative) ? await classifyAdminConfirmation(text.trim()) : null;
+        const finalAnswer = (affirmative || improveConf === 'affirm') ? improvedAnswer
+            : (negative || improveConf === 'deny') ? originalAnswer
+            : text.trim();
 
         await prisma.faq.create({ data: { clubId, question, answer: finalAnswer, askedBy: askedBy || null } });
         if (playerJid) await simulateTypingAndSend(playerJid, finalAnswer).catch(() => {});
@@ -180,11 +198,17 @@ export async function handleAdminFaqFlow(text: string, club: any, jid: string): 
         const { answerText: savedAnswer, items } = JSON.parse(coversAllRaw);
         const affirmative = /^(s[iì]|yes|ok|va bene|certo|conferm|esatto|giusto)/i.test(text.trim());
         const negative = /^(no|nope|non|lascia perdere|skip|separa)/i.test(text.trim());
+        const coversConf = (!affirmative && !negative) ? await classifyAdminConfirmation(text.trim()) : null;
+        const isCoversAffirm = affirmative || coversConf === 'affirm';
+        const isCoversDeny = negative || coversConf === 'deny';
 
-        if (!affirmative && !negative) return false;
+        if (!isCoversAffirm && !isCoversDeny) {
+            await sendMessage(jid, `Non ho capito — vuoi salvare questa risposta per tutte le domande? Rispondi sì o no.`);
+            return true;
+        }
         await redis.del(`faq:awaiting_covers_all:${clubId}`);
 
-        if (affirmative) {
+        if (isCoversAffirm) {
             for (const item of items) {
                 await prisma.faq.create({ data: { clubId, question: item.question, answer: savedAnswer, askedBy: item.askedBy || null } });
                 if (item.playerJid) await simulateTypingAndSend(item.playerJid, savedAnswer).catch(() => {});
@@ -372,6 +396,35 @@ export async function handleAdminFaqFlow(text: string, club: any, jid: string): 
 // ─────────────────────────────────────────────
 // AI HELPERS — FAQ
 // ─────────────────────────────────────────────
+
+/**
+ * Classifica una risposta admin come affermativa, negativa o non chiara.
+ * Usa Haiku per capire frasi naturali come "copre entrambe", "va bene così",
+ * "tieni quella vecchia", "no meglio separare", ecc. — senza regex rigidi.
+ */
+async function classifyAdminConfirmation(text: string): Promise<'affirm' | 'deny' | 'unclear'> {
+    const prompt = `L'admin di un circolo padel ha risposto a una domanda di conferma sì/no.
+Messaggio: "${text}"
+Rispondi SOLO con uno di questi valori JSON: {"result":"affirm"} oppure {"result":"deny"} oppure {"result":"unclear"}
+- "affirm": l'admin approva/conferma (es. "sì", "ok", "va bene", "certo", "esatto", "confermo", "copre entrambe", "sì per tutte", "esatto tienila", "quella nuova", "aggiorna", ecc.)
+- "deny": l'admin rifiuta/vuole altro (es. "no", "non va bene", "separa", "lascia stare", "tieni quella vecchia", ecc.)
+- "unclear": non è chiaro se sta confermando o rifiutando`;
+    try {
+        const resp = await anthropic.messages.create({
+            model: 'claude-haiku-4-5-20251001', max_tokens: 30, temperature: 0,
+            messages: [{ role: 'user', content: prompt }],
+        });
+        const raw = resp.content[0].type === 'text' ? resp.content[0].text.trim() : '';
+        const s = raw.indexOf('{'); const e = raw.lastIndexOf('}');
+        if (s !== -1 && e !== -1) {
+            const parsed = JSON.parse(raw.substring(s, e + 1));
+            if (parsed.result === 'affirm' || parsed.result === 'deny' || parsed.result === 'unclear') {
+                return parsed.result;
+            }
+        }
+    } catch (err) { logger.warn({ err }, 'classifyAdminConfirmation failed — defaulting to unclear'); }
+    return 'unclear';
+}
 
 async function classifyAdminFaqResponse(
     pendingQuestion: string,
