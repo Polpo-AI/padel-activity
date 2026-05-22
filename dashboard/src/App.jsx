@@ -13,7 +13,7 @@ import FaqsView from "./features/faqs/FaqsView";
 const NAV = [
   { id: "courts",   label: "Campi & Partite", icon: "🏟", desc: "Griglia campi in tempo reale. Gestisci partite, orari e blocchi." },
   { id: "prices",   label: "Tariffe",         icon: "💵", desc: "Gestisci prezzi standard ed eccezioni di calendario." },
-  { id: "players",  label: "Utenti",           icon: "👥", desc: "Anagrafica giocatori. Cerca, modifica livello, attiva/disattiva." },
+  { id: "players",  label: "Giocatori",         icon: "👥", desc: "Anagrafica giocatori. Cerca, modifica livello, attiva/disattiva." },
   { id: "stats",    label: "Statistiche",      icon: "📊", desc: "Performance del circolo. Fill rate, affidabilità, wave lanciate." },
   { id: "faqs",     label: "FAQ",              icon: "💬", desc: "Gestisci le domande frequenti. Analisi AI per deduplicazione e merge automatici." },
   { id: "system",   label: "Sistema",          icon: "⚙️", desc: "Health check infrastruttura. Redis, WhatsApp, sicurezza API." },
@@ -51,7 +51,7 @@ export default function PadelDashboard() {
   const current = NAV.find(n => n.id === tab);
 
   return (
-    <div style={{ minHeight: "100vh", background: C.bg, fontFamily: "'Inter','Plus Jakarta Sans',-apple-system,BlinkMacSystemFont,sans-serif", color: C.text, transition: "background 0.3s, color 0.3s" }}>
+    <div style={{ minHeight: "100vh", background: C.bg, fontFamily: "'Inter',-apple-system,BlinkMacSystemFont,sans-serif", color: C.text, transition: "background 0.3s, color 0.3s" }}>
       <style>{`
         * { box-sizing: border-box; margin: 0; padding: 0; }
         @keyframes spin { to { transform: rotate(360deg); } }
@@ -145,7 +145,7 @@ export default function PadelDashboard() {
             <div>
               <div style={{
                 fontSize: 14, fontWeight: 700, lineHeight: 1.2,
-                fontFamily: "'Fraunces', Georgia, serif",
+                fontFamily: "'Inter',-apple-system,BlinkMacSystemFont,sans-serif",
                 color: C.titleColor,
               }}>
                 {club?.name || "Padel"}
@@ -211,13 +211,12 @@ export default function PadelDashboard() {
       }}>
         {/* Page header */}
         <div style={{ marginBottom: isMobile ? 24 : 36 }}>
-          <div className="eyebrow" style={{ marginBottom: 10 }}>{current?.label}</div>
           <h1 style={{
-            fontSize: isMobile ? 24 : 32,
-            fontWeight: 300, letterSpacing: "-0.02em", lineHeight: 1.05,
-            fontFamily: "'Fraunces', Georgia, serif",
+            fontSize: isMobile ? 22 : 28,
+            fontWeight: 700, letterSpacing: "-0.02em", lineHeight: 1.1,
+            fontFamily: "'Inter',-apple-system,BlinkMacSystemFont,sans-serif",
             color: C.titleColor,
-            marginBottom: 8,
+            marginBottom: 6,
           }}>
             {current?.label}
           </h1>

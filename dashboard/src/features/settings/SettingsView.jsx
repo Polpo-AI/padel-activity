@@ -150,7 +150,7 @@ export default function SettingsView({ token, club, onClubUpdate }) {
       {/* ── 2. Bot ── */}
       <Section title="🤖 Bot">
         <Grid>
-          <F label="Nome bot">
+          <F label="Nome bot" hint="Il bot si presenterà con questo nome nelle chat WhatsApp">
             <input value={form.botName} onChange={f("botName")} style={inputSt} placeholder="Es. Francesca" />
           </F>
           <F label="Prezzo noleggio racchetta (€)" hint="0 = non mostrato in prenotazione">
@@ -187,7 +187,7 @@ export default function SettingsView({ token, club, onClubUpdate }) {
           <F label="Chiusura circolo">
             <input type="time" value={form.closeTime} onChange={f("closeTime")} style={inputSt} />
           </F>
-          <F label="Durata partita (minuti)">
+          <F label="Durata partita (minuti)" hint="Usato per calcolare la fine della partita e bloccare il campo">
             <input type="number" min={30} max={180} step={15} value={form.matchDuration} onChange={f("matchDuration", parseInt)} style={inputSt} />
           </F>
           <F label="Deadline cancellazione (minuti prima)" hint="Dopo questo limite non si può cancellare">
@@ -205,7 +205,7 @@ export default function SettingsView({ token, club, onClubUpdate }) {
           <F label="Range skill superiore (±)" hint="Es. 1.0 = giocatori entro 1 livello sopra">
             <input type="number" min={0} max={3} step={0.5} value={form.matchUpperRange} onChange={f("matchUpperRange", parseFloat)} style={inputSt} />
           </F>
-          <F label="Numero livelli skill (2–7)">
+          <F label="Numero livelli skill (2–7)" hint="Fasce di abilità nel circolo (es. 3 = Principiante · Intermedio · Avanzato)">
             <input type="number" min={2} max={7} value={form.skillLevelCount} onChange={f("skillLevelCount", parseInt)} style={inputSt} />
           </F>
         </Grid>
@@ -214,10 +214,10 @@ export default function SettingsView({ token, club, onClubUpdate }) {
       {/* ── 5. Skill test ── */}
       <Section title="📋 Skill Test">
         <Grid>
-          <F label="Costo skill test (€)">
+          <F label="Costo skill test (€)" hint="0 = skill test gratuito. Mostrato ai giocatori nel messaggio di benvenuto">
             <input type="number" min={0} step={1} value={form.skillTestCost} onChange={f("skillTestCost", parseFloat)} style={inputSt} />
           </F>
-          <F label="Durata skill test (minuti)">
+          <F label="Durata skill test (minuti)" hint="Durata della prova tecnica per assegnare il livello al giocatore">
             <input type="number" min={15} max={120} step={15} value={form.skillTestDuration} onChange={f("skillTestDuration", parseInt)} style={inputSt} />
           </F>
         </Grid>

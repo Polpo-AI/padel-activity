@@ -54,7 +54,7 @@ export default function AdminApp() {
   const current = NAV.find(n => n.id === tab);
 
   return (
-    <div style={{ minHeight: "100vh", background: C.bg, fontFamily: "'Inter','Plus Jakarta Sans',-apple-system,BlinkMacSystemFont,sans-serif", color: C.text, transition: "background 0.3s, color 0.3s" }}>
+    <div style={{ minHeight: "100vh", background: C.bg, fontFamily: "'Inter',-apple-system,BlinkMacSystemFont,sans-serif", color: C.text, transition: "background 0.3s, color 0.3s" }}>
       <style>{`
         * { box-sizing: border-box; margin: 0; padding: 0; }
         @keyframes spin { to { transform: rotate(360deg); } }
@@ -121,7 +121,7 @@ export default function AdminApp() {
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <div style={{ width: 36, height: 36, borderRadius: 12, background: "linear-gradient(135deg, rgba(167,139,250,0.22), rgba(139,92,246,0.12))", border: "1px solid rgba(167,139,250,0.30)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, boxShadow: "0 0 18px rgba(139,92,246,0.20)" }}>🛡️</div>
             <div>
-              <div style={{ fontSize: 14, fontWeight: 700, fontFamily: "'Fraunces', Georgia, serif", color: C.titleColor }}>Polpo AI</div>
+              <div style={{ fontSize: 14, fontWeight: 700, fontFamily: "'Inter',-apple-system,BlinkMacSystemFont,sans-serif", color: C.titleColor }}>Polpo AI</div>
               <div style={{ fontSize: 10, color: C.muted, letterSpacing: "0.06em", textTransform: "uppercase" }}>Super Admin</div>
             </div>
           </div>
@@ -164,11 +164,7 @@ export default function AdminApp() {
         transition: "margin-left 0.3s cubic-bezier(0.23,1,0.32,1)",
       }}>
         <div style={{ marginBottom: isMobile ? 24 : 36 }}>
-          <div style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 11, fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", color: C.accent, marginBottom: 10 }}>
-            <span style={{ display: "block", width: 24, height: 2, borderRadius: 2, background: C.accent }} />
-            {current?.label}
-          </div>
-          <div style={{ fontSize: isMobile ? 24 : 32, fontWeight: 300, letterSpacing: "-0.02em", lineHeight: 1.05, fontFamily: "'Fraunces', Georgia, serif", color: C.titleColor, marginBottom: 10 }}>{current?.label}</div>
+          <div style={{ fontSize: isMobile ? 22 : 28, fontWeight: 700, letterSpacing: "-0.02em", lineHeight: 1.1, fontFamily: "'Inter',-apple-system,BlinkMacSystemFont,sans-serif", color: C.titleColor, marginBottom: 6 }}>{current?.label}</div>
           {!isMobile && <div style={{ fontSize: 13, color: C.muted }}>{current?.desc}</div>}
         </div>
 

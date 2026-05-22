@@ -26,7 +26,7 @@ export default function LoginPage({ onLogin }) {
     <div style={{
       minHeight: "100vh", background: C.bg,
       display: "flex", alignItems: "center", justifyContent: "center",
-      fontFamily: "'Inter','Plus Jakarta Sans',-apple-system,BlinkMacSystemFont,sans-serif",
+      fontFamily: "'Inter',-apple-system,BlinkMacSystemFont,sans-serif",
     }}>
       <style>{`
         * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -63,10 +63,10 @@ export default function LoginPage({ onLogin }) {
             boxShadow: "0 0 28px rgba(34,211,238,0.22), inset 0 1px 0 rgba(255,255,255,0.10)",
           }}>🎾</div>
 
-          {/* Title — Fraunces solid */}
+          {/* Title */}
           <div style={{
-            fontSize: 26, fontWeight: 300, letterSpacing: "-0.01em", lineHeight: 1.1,
-            fontFamily: "'Fraunces', Georgia, serif",
+            fontSize: 24, fontWeight: 700, letterSpacing: "-0.02em", lineHeight: 1.1,
+            fontFamily: "'Inter',-apple-system,BlinkMacSystemFont,sans-serif",
             color: "#f8fafc",
             marginBottom: 6,
           }}>
