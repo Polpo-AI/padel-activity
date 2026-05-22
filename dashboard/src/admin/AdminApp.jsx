@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { useTheme } from "../shared/ThemeContext";
+import ThemeToggle from "../shared/ThemeToggle";
 import AdminLoginPage from "./AdminLoginPage";
 import OverviewView from "./views/OverviewView";
 import ClubsView from "./views/ClubsView";
@@ -16,7 +17,7 @@ const NAV = [
 ];
 
 export default function AdminApp() {
-  const { C, btnGhost, mode, toggle } = useTheme();
+  const { C, btnGhost, mode } = useTheme();
   const [token, setToken] = useState(() => sessionStorage.getItem("admin_token") || null);
   const [tab, setTab] = useState("overview");
   const [clubs, setClubs] = useState([]);
@@ -53,6 +54,9 @@ export default function AdminApp() {
         ::selection { background: rgba(6,182,212,0.30); }
         .nav-btn:hover { background: ${dark ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.04)"} !important; color: ${C.text} !important; }
       `}</style>
+
+      {/* Theme toggle pill — top-right fixed */}
+      <ThemeToggle />
 
       {/* Aurora orbs — opacità da tema */}
       <div style={{ position: "fixed", top: -180, right: -120, width: 750, height: 750, borderRadius: "50%", background: `radial-gradient(circle, ${C.orbCyan} 0%, transparent 70%)`, pointerEvents: "none", zIndex: 0, transition: "0.5s" }} />
@@ -95,14 +99,10 @@ export default function AdminApp() {
           })}
         </nav>
 
-        {/* Footer — toggle + esci */}
-        <div style={{ padding: "14px 10px", borderTop: `1px solid ${C.sidebarSep}`, display: "flex", gap: 6 }}>
-          <button onClick={toggle} title={dark ? "Passa a light mode" : "Passa a dark mode"}
-            style={{ ...btnGhost, padding: "7px 10px", borderRadius: 8, fontSize: 15, lineHeight: 1, flexShrink: 0 }}>
-            {dark ? "☀️" : "🌙"}
-          </button>
+        {/* Footer — esci */}
+        <div style={{ padding: "14px 10px", borderTop: `1px solid ${C.sidebarSep}` }}>
           <button onClick={() => { if (confirm("Vuoi uscire dalla console admin?")) logout(); }}
-            style={{ ...btnGhost, flex: 1, fontSize: 11 }}>Esci</button>
+            style={{ ...btnGhost, width: "100%", fontSize: 11 }}>Esci</button>
         </div>
       </div>
 

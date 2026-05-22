@@ -58,14 +58,14 @@ export function makeTheme(mode = 'dark') {
     orbPink:   "rgba(255,61,138,0.10)",
   } : {
     // ── Sfondi ──────────────────────────────────────────
-    bg:           "#f0f9ff",
-    surface:      "#ffffff",
-    surfaceHover: "#e0f2fe",
-    card:         "#f8fafc",
+    bg:           "#e8f4fd",
+    surface:      "#f4faff",
+    surfaceHover: "#dbeef8",
+    card:         "#edf7ff",
 
     // ── Bordi — dark-alpha ───────────────────────────────
-    border:       "rgba(15,23,42,0.08)",
-    borderLight:  "rgba(15,23,42,0.14)",
+    border:       "rgba(15,23,42,0.14)",
+    borderLight:  "rgba(15,23,42,0.22)",
     borderAccent: "rgba(8,145,178,0.35)",
 
     // ── Accent primario — cyan-600 (più leggibile su bianco) ──
@@ -81,7 +81,7 @@ export function makeTheme(mode = 'dark') {
     // ── Testi ────────────────────────────────────────────
     text:         "#0f172a",
     muted:        "#64748b",
-    dim:          "#e0f2fe",
+    dim:          "#cce7f7",
 
     // ── Status ───────────────────────────────────────────
     open:         "#0891b2",
@@ -98,14 +98,14 @@ export function makeTheme(mode = 'dark') {
     female:        "#be185d",
 
     // ── Sidebar ──────────────────────────────────────────
-    sidebarBg:     "rgba(255,255,255,0.92)",
-    sidebarBorder: "rgba(15,23,42,0.08)",
-    sidebarSep:    "rgba(15,23,42,0.06)",
+    sidebarBg:     "rgba(228,244,255,0.95)",
+    sidebarBorder: "rgba(15,23,42,0.14)",
+    sidebarSep:    "rgba(15,23,42,0.10)",
 
-    // ── Orbs opacity (aurora — più tenui su sfondo chiaro) ─
-    orbCyan:   "rgba(34,211,238,0.08)",
-    orbViolet: "rgba(139,92,246,0.07)",
-    orbPink:   "rgba(255,61,138,0.05)",
+    // ── Orbs opacity (aurora — più vivi in light per dare profondità) ─
+    orbCyan:   "rgba(34,211,238,0.22)",
+    orbViolet: "rgba(139,92,246,0.18)",
+    orbPink:   "rgba(255,61,138,0.12)",
   };
 
   // ── Stili derivati ──────────────────────────────────────────────────────────
@@ -174,12 +174,12 @@ export function makeTheme(mode = 'dark') {
     padding:        "20px 22px",
     boxShadow:      "0 4px 24px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.07)",
   } : {
-    background:     "rgba(255,255,255,0.85)",
-    backdropFilter: "blur(8px)",
+    background:     "rgba(244,250,255,0.90)",
+    backdropFilter: "blur(12px)",
     border:         `1px solid ${C.border}`,
     borderRadius:    20,
     padding:        "20px 22px",
-    boxShadow:      "0 2px 16px rgba(0,0,0,0.08), inset 0 1px 0 rgba(255,255,255,0.90)",
+    boxShadow:      "0 4px 24px rgba(8,145,178,0.12), inset 0 1px 0 rgba(255,255,255,0.90)",
   };
 
   const labelSt = {

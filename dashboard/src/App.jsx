@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useTheme } from "./shared/ThemeContext";
+import ThemeToggle from "./shared/ThemeToggle";
 import LoginPage from "./features/auth/LoginPage";
 import CourtsView from "./features/courts/CourtsView";
 import PricesView from "./features/prices/PricesView";
@@ -20,7 +21,8 @@ const NAV = [
 ];
 
 export default function PadelDashboard() {
-  const { C, btnGhost, mode, toggle } = useTheme();
+  const { C, btnGhost, mode } = useTheme();
+  const dark = mode === "dark";
   const [token, setToken] = useState(null);
   const [club, setClub] = useState(null);
   const [tab, setTab] = useState("courts");
@@ -28,7 +30,6 @@ export default function PadelDashboard() {
   if (!token) return <LoginPage onLogin={(t, c) => { setToken(t); setClub(c); }} />;
 
   const current = NAV.find(n => n.id === tab);
-  const dark = mode === "dark";
 
   return (
     <div style={{ minHeight: "100vh", background: C.bg, fontFamily: "'Inter','Plus Jakarta Sans',-apple-system,BlinkMacSystemFont,sans-serif", color: C.text, transition: "background 0.3s, color 0.3s" }}>
@@ -68,6 +69,9 @@ export default function PadelDashboard() {
         .nav-btn:hover { background: ${dark ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.04)"} !important; color: ${C.text} !important; }
         .nav-btn.active { background: rgba(6,182,212,0.10) !important; }
       `}</style>
+
+      {/* Theme toggle pill — top-right fixed */}
+      <ThemeToggle />
 
       {/* Aurora orbs */}
       <div style={{ position: "fixed", top: -180, right: -120, width: 750, height: 750, borderRadius: "50%", background: `radial-gradient(circle, ${C.orbCyan} 0%, transparent 70%)`, pointerEvents: "none", zIndex: 0, transition: "0.5s" }} />
@@ -150,18 +154,11 @@ export default function PadelDashboard() {
           })}
         </nav>
 
-        {/* Footer — toggle + esci */}
-        <div style={{ padding: "14px 10px", borderTop: `1px solid ${C.sidebarSep}`, display: "flex", gap: 6 }}>
-          <button
-            onClick={toggle}
-            title={dark ? "Passa a light mode" : "Passa a dark mode"}
-            style={{ ...btnGhost, padding: "7px 10px", borderRadius: 8, fontSize: 15, lineHeight: 1, flexShrink: 0 }}
-          >
-            {dark ? "☀️" : "🌙"}
-          </button>
+        {/* Footer — esci */}
+        <div style={{ padding: "14px 10px", borderTop: `1px solid ${C.sidebarSep}` }}>
           <button
             onClick={() => { if (confirm("Vuoi uscire dalla dashboard?")) setToken(null); }}
-            style={{ ...btnGhost, flex: 1, fontSize: 11, borderRadius: 8 }}
+            style={{ ...btnGhost, width: "100%", fontSize: 11, borderRadius: 8 }}
           >
             Esci
           </button>
