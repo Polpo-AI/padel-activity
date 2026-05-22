@@ -62,7 +62,8 @@ export default function AdminApp() {
         input:focus, select:focus { outline: none; border-color: rgba(6,182,212,0.55) !important; box-shadow: 0 0 0 3px rgba(6,182,212,0.18) !important; }
         button:disabled { opacity: 0.4; cursor: not-allowed; }
         button:not(:disabled):active { transform: scale(0.97); }
-        button:focus-visible { box-shadow: 0 0 0 3px ${C.accentSoft} !important; outline: none; }
+        button:focus-visible, [tabindex]:focus-visible { box-shadow: 0 0 0 3px ${C.accentSoft} !important; outline: none; }
+        @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; } }
         ::-webkit-scrollbar { width: 4px; height: 4px; }
         ::-webkit-scrollbar-track { background: transparent; }
         ::-webkit-scrollbar-thumb { background: ${C.accent}; border-radius: 4px; }

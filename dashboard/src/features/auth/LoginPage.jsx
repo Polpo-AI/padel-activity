@@ -101,7 +101,7 @@ export default function LoginPage({ onLogin }) {
             </div>
           )}
           <button
-            onClick={submit} disabled={loading}
+            type="button" onClick={submit} disabled={loading}
             style={{
               ...btnPrimary,
               display: "block", width: "100%", boxSizing: "border-box",

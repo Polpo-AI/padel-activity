@@ -88,10 +88,10 @@ export default function PricesView({ token }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <button onClick={() => setShowExceptionModal(true)} style={{ ...btnPrimary, background: "transparent", border: `1px solid ${C.accent}`, color: C.accent }}>
+        <button type="button" onClick={() => setShowExceptionModal(true)} style={{ ...btnPrimary, background: "transparent", border: `1px solid ${C.accent}`, color: C.accent }}>
           ➕ Aggiungi Eccezione
         </button>
-        <button onClick={saveStandard} disabled={saving} style={btnPrimary}>
+        <button type="button" onClick={saveStandard} disabled={saving} style={btnPrimary}>
           {saving ? "Salvataggio..." : "Salva Tariffe Standard"}
         </button>
       </div>
@@ -122,11 +122,11 @@ export default function PricesView({ token }) {
                         style={{ ...inputSt, padding: "4px 8px 4px 18px", width: "100%", fontSize: 12 }} />
                       <span style={{ position: "absolute", left: 6, top: 7, fontSize: 11, color: C.dim }}>€</span>
                     </div>
-                    <button onClick={() => deletePriceRow(c.id, c.prices.indexOf(p), p.id)}
+                    <button type="button" onClick={() => deletePriceRow(c.id, c.prices.indexOf(p), p.id)}
                       style={{ border: "none", background: "transparent", cursor: "pointer", color: C.cancelled, fontSize: 13 }}>✕</button>
                   </div>
                 ))}
-                <button onClick={() => addStandardSlot(c.id)} style={{
+                <button type="button" onClick={() => addStandardSlot(c.id)} style={{
                   background: "transparent", border: `1px dashed ${C.border}`,
                   padding: 8, borderRadius: 8, cursor: "pointer", color: C.muted, fontSize: 12, textAlign: "center", fontFamily: "inherit",
                 }}>+ Aggiungi fascia</button>
@@ -141,7 +141,7 @@ export default function PricesView({ token }) {
                         <span>📅 {new Date(e.startDate).toLocaleDateString("it-IT", { day: "2-digit", month: "2-digit" })}-{new Date(e.endDate).toLocaleDateString("it-IT", { day: "2-digit", month: "2-digit" })}</span>
                         <span>🕒 {e.startTime}-{e.endTime}</span>
                         <span style={{ fontWeight: 700 }}>€{e.price}</span>
-                        <button onClick={() => deletePriceRow(c.id, c.prices.indexOf(e), e.id)}
+                        <button type="button" onClick={() => deletePriceRow(c.id, c.prices.indexOf(e), e.id)}
                           style={{ border: "none", background: "transparent", color: C.cancelled, fontSize: 10, cursor: "pointer" }}>✕</button>
                       </div>
                     ))}
@@ -188,8 +188,8 @@ export default function PricesView({ token }) {
               <input type="number" step="0.5" value={excForm.price} onChange={e => setExcForm(f => ({ ...f, price: e.target.value }))} style={inputSt} placeholder="Es. 40" />
             </div>
             <div style={{ display: "flex", gap: 10, marginTop: 10 }}>
-              <button onClick={() => setShowExceptionModal(false)} style={{ ...btnGhost, flex: 1 }}>Annulla</button>
-              <button onClick={saveException} disabled={saving} style={{ ...btnPrimary, flex: 1 }}>
+              <button type="button" onClick={() => setShowExceptionModal(false)} style={{ ...btnGhost, flex: 1 }}>Annulla</button>
+              <button type="button" onClick={saveException} disabled={saving} style={{ ...btnPrimary, flex: 1 }}>
                 {saving ? "Salvataggio..." : "Crea Eccezione"}
               </button>
             </div>

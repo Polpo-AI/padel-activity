@@ -20,7 +20,7 @@ function Section({ title, children }) {
   const { C } = useTheme();
   return (
     <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: 24, display: "flex", flexDirection: "column", gap: 18 }}>
-      <div style={{ fontSize: 13, fontWeight: 600, color: C.text }}>{title}</div>
+      <h2 style={{ fontSize: 13, fontWeight: 600, color: C.text, margin: 0 }}>{title}</h2>
       {children}
     </div>
   );
@@ -29,11 +29,11 @@ function Section({ title, children }) {
 function F({ label, hint, children }) {
   const { C, labelSt } = useTheme();
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-      <label style={labelSt}>{label}</label>
+    <label style={{ display: "flex", flexDirection: "column", gap: 6, cursor: "default" }}>
+      <span style={labelSt}>{label}</span>
       {hint && <div style={{ fontSize: 10, color: C.muted, marginTop: -4 }}>{hint}</div>}
       {children}
-    </div>
+    </label>
   );
 }
 
@@ -42,7 +42,7 @@ function Toggle({ value, onChange, labelOn = "Sì", labelOff = "No" }) {
   return (
     <div style={{ display: "flex", gap: 8 }}>
       {[true, false].map(v => (
-        <button key={String(v)} onClick={() => onChange(v)} style={{
+        <button type="button" key={String(v)} onClick={() => onChange(v)} style={{
           flex: 1, padding: "9px 0", borderRadius: 8, cursor: "pointer", fontSize: 12,
           border: `1px solid ${value === v ? C.accent : C.border}`,
           background: value === v ? C.accentDim : "transparent",
@@ -131,7 +131,7 @@ export default function SettingsView({ token, club, onClubUpdate }) {
             <span style={{ width: 6, height: 6, borderRadius: "50%", background: C.warning, display: "inline-block" }} />
             Modifiche non salvate
           </span>
-          <button onClick={() => doSave(false)} disabled={saving} style={{ ...btnPrimary, fontSize: 11, padding: "6px 16px" }}>
+          <button type="button" onClick={() => doSave(false)} disabled={saving} style={{ ...btnPrimary, fontSize: 11, padding: "6px 16px" }}>
             {saving ? "Salvataggio..." : "Salva ora"}
           </button>
         </div>
@@ -181,7 +181,7 @@ export default function SettingsView({ token, club, onClubUpdate }) {
         <F label="Tono AI">
           <div style={{ display: "flex", gap: 8 }}>
             {[{ id: "formal", label: "🧑‍💼 Formale" }, { id: "friendly", label: "😊 Amichevole" }, { id: "fun", label: "🎉 Divertente" }].map(t => (
-              <button key={t.id} onClick={() => { setForm(p => ({ ...p, aiTone: t.id })); setDirty(true); }} style={{
+              <button type="button" key={t.id} onClick={() => { setForm(p => ({ ...p, aiTone: t.id })); setDirty(true); }} style={{
                 flex: 1, padding: "9px 0", borderRadius: 8, cursor: "pointer", fontSize: 12,
                 border: `1px solid ${form.aiTone === t.id ? C.accent : C.border}`,
                 background: form.aiTone === t.id ? C.accentDim : "transparent",
@@ -244,7 +244,7 @@ export default function SettingsView({ token, club, onClubUpdate }) {
         </Grid>
       </Section>
 
-      <button onClick={() => doSave(false)} disabled={saving} style={{ ...btnPrimary, alignSelf: "flex-start", minWidth: 160 }}>
+      <button type="button" onClick={() => doSave(false)} disabled={saving} style={{ ...btnPrimary, alignSelf: "flex-start", minWidth: 160 }}>
         {saving ? "Salvataggio..." : "Salva impostazioni"}
       </button>
 
@@ -255,8 +255,8 @@ export default function SettingsView({ token, club, onClubUpdate }) {
             <div style={{ fontSize: 14, fontWeight: 600, color: C.text, marginBottom: 12 }}>⚠️ Conferma modifica orari</div>
             <div style={{ fontSize: 13, color: C.muted, marginBottom: 20, lineHeight: 1.6 }}>{confirmDialog.message}</div>
             <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
-              <button onClick={() => setConfirmDialog(null)} style={{ ...btnGhost, fontSize: 12 }}>Annulla</button>
-              <button onClick={async () => { setConfirmDialog(null); await doSave(true); }} style={{ ...btnPrimary, fontSize: 12, background: "#e53e3e" }}>
+              <button type="button" onClick={() => setConfirmDialog(null)} style={{ ...btnGhost, fontSize: 12 }}>Annulla</button>
+              <button type="button" onClick={async () => { setConfirmDialog(null); await doSave(true); }} style={{ ...btnPrimary, fontSize: 12, background: C.cancelled }}>
                 Procedi e cancella le partite
               </button>
             </div>

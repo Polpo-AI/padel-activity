@@ -125,7 +125,7 @@ function TextFilterDropdown({ value, onChange, placeholder, active }) {
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 6 }}>
             <span style={{ fontSize: 10, color: C.muted }}>↵ applica &nbsp;•&nbsp; Esc cancella</span>
             {value && (
-              <button onClick={() => { onChange(""); close(); }} style={{ ...btnGhost, fontSize: 11, padding: "3px 10px" }}>
+              <button type="button" onClick={() => { onChange(""); close(); }} style={{ ...btnGhost, fontSize: 11, padding: "3px 10px" }}>
                 ✕ Cancella
               </button>
             )}
@@ -157,7 +157,7 @@ function MultiSelectFilterDropdown({ options, selected, onChange, active }) {
             if (e.key === "Enter") { e.preventDefault(); close(); }
             if (e.key === "Escape") { e.preventDefault(); onChange(new Set()); close(); }
           }}
-          style={{ padding: "4px 0", outline: "none" }}
+          style={{ padding: "4px 0" }}
         >
           {/* Tutti */}
           <div
@@ -213,7 +213,7 @@ function MultiSelectFilterDropdown({ options, selected, onChange, active }) {
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
               <span style={{ fontSize: 10, color: C.muted }}>↵ applica &nbsp;•&nbsp; Esc cancella</span>
             </div>
-            <button onClick={close} style={{ ...btnPrimary, width: "100%", fontSize: 12, padding: "6px 0" }}>
+            <button type="button" onClick={close} style={{ ...btnPrimary, width: "100%", fontSize: 12, padding: "6px 0" }}>
               OK
             </button>
           </div>
@@ -275,7 +275,7 @@ function ReliabilityFilterDropdown({ minReliability, onChange, active }) {
           </div>
 
           {minReliability > 0 && !dragging && (
-            <button onClick={() => { setLocalPct(0); onChange(0); }}
+            <button type="button" onClick={() => { setLocalPct(0); onChange(0); }}
               style={{ ...btnGhost, fontSize: 11, padding: "4px 10px", marginTop: 8, width: "100%" }}>
               ✕ Rimuovi filtro
             </button>
@@ -378,7 +378,7 @@ function PlayerProfile({ playerId, token, onClose, onUpdated }) {
             { v: "FEMALE",  label: "♀ Donna",        color: GENDER_COLORS.FEMALE },
             { v: "UNKNOWN", label: "— Non definito",  color: C.muted  },
           ].map(({ v, label, color }) => (
-            <button key={v} disabled={saving}
+            <button type="button" key={v} disabled={saving}
               onClick={() => { setEditGender(v); patch({ gender: v }); }}
               style={{
                 ...btnGhost, flex: 1,
@@ -402,7 +402,7 @@ function PlayerProfile({ playerId, token, onClose, onUpdated }) {
             {player.active ? "Riceve inviti alle partite" : "Non riceve inviti alle partite"}
           </div>
         </div>
-        <button disabled={saving} onClick={() => patch({ active: !player.active })} style={{
+        <button type="button" disabled={saving} onClick={() => patch({ active: !player.active })} style={{
           ...btnGhost,
           color: player.active ? C.cancelled : C.accent,
           borderColor: player.active ? `${C.cancelled}40` : `${C.accent}40`,
@@ -422,7 +422,7 @@ function PlayerProfile({ playerId, token, onClose, onUpdated }) {
               <div style={{ fontSize: 13, fontWeight: 600, color: C.text }}>{icon} {label}</div>
               <div style={{ fontSize: 11, color: C.muted, marginTop: 1 }}>{sub}</div>
             </div>
-            <button disabled={saving} onClick={() => patch({ [key]: !player[key] })} style={{
+            <button type="button" disabled={saving} onClick={() => patch({ [key]: !player[key] })} style={{
               ...btnGhost,
               color: player[key] ? C.warning : C.muted,
               borderColor: player[key] ? `${C.warning}50` : C.border,
@@ -532,8 +532,8 @@ function AddPlayerModal({ token, onClose, onCreated }) {
         </div>
         {err && <div style={{ fontSize: 12, color: "#ef4444", padding: "8px 12px", background: "#fef2f2", borderRadius: 8 }}>⚠ {err}</div>}
         <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
-          <button onClick={onClose} style={btnGhost} disabled={saving}>Annulla</button>
-          <button onClick={submit} style={btnPrimary} disabled={saving}>{saving ? "Creando..." : "Aggiungi giocatore"}</button>
+          <button type="button" onClick={onClose} style={btnGhost} disabled={saving}>Annulla</button>
+          <button type="button" onClick={submit} style={btnPrimary} disabled={saving}>{saving ? "Creando..." : "Aggiungi giocatore"}</button>
         </div>
       </div>
     </Modal>
@@ -691,7 +691,7 @@ export default function PlayersView({ token }) {
           <input value={togglePhone} onChange={e => setTogglePhone(e.target.value)}
             placeholder="+393471234567" style={{ ...inputSt, flex: 1 }}
             onKeyDown={e => e.key === "Enter" && handleToggle()} />
-          <button onClick={handleToggle} disabled={toggleLoading || !togglePhone.trim()} style={btnPrimary}>
+          <button type="button" onClick={handleToggle} disabled={toggleLoading || !togglePhone.trim()} style={btnPrimary}>
             {toggleLoading ? "..." : "Toggle"}
           </button>
         </div>
@@ -713,12 +713,12 @@ export default function PlayersView({ token }) {
         </span>
         <div style={{ flex: 1 }} />
         {hasAnyFilter && (
-          <button onClick={clearAll} style={{ ...btnGhost, fontSize: 11, padding: "4px 12px", color: C.cancelled, borderColor: `${C.cancelled}40` }}>
+          <button type="button" onClick={clearAll} style={{ ...btnGhost, fontSize: 11, padding: "4px 12px", color: C.cancelled, borderColor: `${C.cancelled}40` }}>
             ✕ Rimuovi filtri
           </button>
         )}
-        <button onClick={() => setShowAddPlayer(true)} style={{ ...btnPrimary, whiteSpace: "nowrap" }}>+ Aggiungi</button>
-        <button onClick={exportCsv} style={{ ...btnGhost, fontSize: 11, whiteSpace: "nowrap" }}>↓ CSV</button>
+        <button type="button" onClick={() => setShowAddPlayer(true)} style={{ ...btnPrimary, whiteSpace: "nowrap" }}>+ Aggiungi</button>
+        <button type="button" onClick={exportCsv} style={{ ...btnGhost, fontSize: 11, whiteSpace: "nowrap" }}>↓ CSV</button>
       </div>
 
       {/* ── Tabella ── */}

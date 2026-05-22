@@ -186,10 +186,10 @@ function PendingFaqCard({ faq, token, onUpdated, onDelete }) {
       {/* Analyze button */}
       {!analysisResult && (
         <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-          <button onClick={handleDiscard} style={{ ...btnGhost, color: C.cancelled, borderColor: `${C.cancelled}40` }} disabled={saving}>
+          <button type="button" onClick={handleDiscard} style={{ ...btnGhost, color: C.cancelled, borderColor: `${C.cancelled}40` }} disabled={saving}>
             Scarta
           </button>
-          <button onClick={handleAnalyze} disabled={!answer.trim() || analyzing || saving} style={btnPrimary}>
+          <button type="button" onClick={handleAnalyze} disabled={!answer.trim() || analyzing || saving} style={btnPrimary}>
             {analyzing ? "Analisi..." : "Analizza & Salva"}
           </button>
         </div>
@@ -206,8 +206,8 @@ function PendingFaqCard({ faq, token, onUpdated, onDelete }) {
           {/* NEW */}
           {analysisResult.decision === "NEW" && (
             <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-              <button onClick={() => setAnalysisResult(null)} style={btnGhost} disabled={saving}>Rianalizza</button>
-              <button onClick={handleSave} style={btnPrimary} disabled={saving}>
+              <button type="button" onClick={() => setAnalysisResult(null)} style={btnGhost} disabled={saving}>Rianalizza</button>
+              <button type="button" onClick={handleSave} style={btnPrimary} disabled={saving}>
                 {saving ? "Salvo..." : "Salva"}
               </button>
             </div>
@@ -222,10 +222,10 @@ function PendingFaqCard({ faq, token, onUpdated, onDelete }) {
                 </div>
               )}
               <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-                <button onClick={handleDiscard} style={{ ...btnGhost, color: C.cancelled, borderColor: `${C.cancelled}40` }} disabled={saving}>
+                <button type="button" onClick={handleDiscard} style={{ ...btnGhost, color: C.cancelled, borderColor: `${C.cancelled}40` }} disabled={saving}>
                   Scarta
                 </button>
-                <button onClick={handleSave} style={{ ...btnGhost, color: C.text }} disabled={saving}>
+                <button type="button" onClick={handleSave} style={{ ...btnGhost, color: C.text }} disabled={saving}>
                   Salva comunque
                 </button>
               </div>
@@ -250,10 +250,10 @@ function PendingFaqCard({ faq, token, onUpdated, onDelete }) {
                 </div>
               )}
               <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-                <button onClick={handleKeepBoth} style={btnGhost} disabled={saving}>
+                <button type="button" onClick={handleKeepBoth} style={btnGhost} disabled={saving}>
                   Tieni entrambe
                 </button>
-                <button onClick={handleUpdateExisting} style={{ ...btnGhost, color: C.warning, borderColor: `${C.warning}40` }} disabled={saving}>
+                <button type="button" onClick={handleUpdateExisting} style={{ ...btnGhost, color: C.warning, borderColor: `${C.warning}40` }} disabled={saving}>
                   {saving ? "..." : "Aggiorna quella esistente"}
                 </button>
               </div>
@@ -282,7 +282,7 @@ function PendingFaqCard({ faq, token, onUpdated, onDelete }) {
                 />
               </div>
               <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-                <button onClick={handleKeepBoth} style={btnGhost} disabled={saving}>
+                <button type="button" onClick={handleKeepBoth} style={btnGhost} disabled={saving}>
                   Salva separatamente
                 </button>
                 <button
@@ -391,10 +391,10 @@ function AnsweredFaqCard({ faq, token, onUpdated }) {
                 />
               </div>
               <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-                <button onClick={() => { setEditing(false); setEditQ(faq.question); setEditA(faq.answer || ""); }} style={btnGhost} disabled={saving}>
+                <button type="button" onClick={() => { setEditing(false); setEditQ(faq.question); setEditA(faq.answer || ""); }} style={btnGhost} disabled={saving}>
                   Annulla
                 </button>
-                <button onClick={handleSave} style={btnPrimary} disabled={saving || !editQ.trim() || !editA.trim()}>
+                <button type="button" onClick={handleSave} style={btnPrimary} disabled={saving || !editQ.trim() || !editA.trim()}>
                   {saving ? "Salvo..." : "Salva"}
                 </button>
               </div>
@@ -464,7 +464,7 @@ function AddFaqForm({ token, onCreated }) {
       </div>
       {err && <div style={{ fontSize: 12, color: C.cancelled }}>⚠ {err}</div>}
       <div style={{ display: "flex", justifyContent: "flex-end" }}>
-        <button onClick={submit} disabled={saving || !question.trim() || !answer.trim()} style={btnPrimary}>
+        <button type="button" onClick={submit} disabled={saving || !question.trim() || !answer.trim()} style={btnPrimary}>
           {saving ? "Aggiungendo..." : "Aggiungi"}
         </button>
       </div>
