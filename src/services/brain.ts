@@ -13,6 +13,17 @@ import pino from 'pino';
 
 const logger = pino({ level: 'info' });
 
+const SPECIAL_PLAYER_OVERRIDES: Record<string, string> = {
+    '393498562866': `
+═══ MODALITÀ SPECIALE — GIOCATRICE VIP ═══
+Questa persona si chiama Monica ed è speciale per il gestore del circolo. Trattala sempre con affetto, dolcezza e un pizzico di malizia.
+- Chiamala con soprannomi affettuosi variandoli naturalmente: "amore", "zucchina", "bebe", "bebecita"
+- Sii flirtante e piccante — puoi essere un po' audace, mai volgare
+- Chiudi SEMPRE ogni messaggio con una nota d'amore o un pensiero carino (es. "Ti voglio bene 💕", "Sei la più bella del circolo 😘", "Aspetto il tuo prossimo messaggio con ansia, bebecita ✨")
+- Mantieni comunque la tua funzione di assistente padel, ma con un tocco romantico e personale
+════════════════════════════════════════`,
+};
+
 export type BrainAction =
     | 'NONE'
     | 'ACCEPT_INVITATION'
@@ -42,6 +53,7 @@ export interface BrainContext {
     club: any;
     player: any | null;
     isAdmin: boolean;
+    phoneNumber?: string;
     recentMessages: { role: string; content: string }[];
     pendingInvitations: any[];
     confirmedMatches: any[];
@@ -217,6 +229,7 @@ export async function buildBrainContext(jid: string, phoneNumber: string): Promi
         club,
         player,
         isAdmin,
+        phoneNumber,
         recentMessages: recentMessages.slice().reverse().map(m => ({ role: m.role as string, content: m.content })),
         pendingInvitations,
         confirmedMatches,
@@ -476,6 +489,8 @@ export async function callBrain(
         return d.toLocaleDateString('it-IT', { timeZone: 'Europe/Rome', weekday: 'short', day: 'numeric', month: 'numeric' });
     }).join(', ');
 
+    const specialOverride = SPECIAL_PLAYER_OVERRIDES[context.phoneNumber?.replace(/\D/g, '') ?? ''] ?? '';
+
     const systemPrompt = `Ti chiami ${botName} e sei l'assistente virtuale del circolo padel "${club?.name || 'Padel Club'}".
 Tono: ${toneDescription}
 Presentati come ${botName} SOLO se qualcuno ti chiede esplicitamente chi sei. MAI presentarti spontaneamente con un giocatore già registrato — sa già chi sei. La presentazione spontanea è riservata esclusivamente ai nuovi contatti non ancora registrati (gestita nella sezione UTENTE NON REGISTRATO). Sei trasparente sul fatto di essere un assistente virtuale — se te lo chiedono esplicitamente, confermalo senza esitazione.
@@ -542,7 +557,8 @@ ${player.skillLevel <= 0 ? `NOTA VALUTAZIONE: questo giocatore NON ha ancora com
 - Se parla di "giocare con qualcuno" o "trovare avversari": spiegagli che per quello serve la valutazione col maestro, il circolo la organizzerà appena possibile. Poi chiedi se vuole comunque prenotare il campo privatamente.
 - Per BOOK_FIELD → usa SEMPRE private: true. NON usare mai private: false per questo giocatore.` : ''}
 ${player.notes ? `Note/preferenze giocatore: ${player.notes}` : ''}
-${lessonInfo ? `\n═══ LEZIONE INDIVIDUALE ═══\n${lessonInfo}\nIl maestro contatterà il giocatore per l'orario — il sistema invia solo la notifica.` : ''}`}
+${lessonInfo ? `\n═══ LEZIONE INDIVIDUALE ═══\n${lessonInfo}\nIl maestro contatterà il giocatore per l'orario — il sistema invia solo la notifica.` : ''}
+${specialOverride}`}
 
 ═══ CAMPI DEL CIRCOLO ═══
 ${courtsStr}
