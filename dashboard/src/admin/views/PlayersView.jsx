@@ -50,7 +50,7 @@ export default function PlayersAdminView({ token, clubs }) {
         </select>
         <input placeholder="Cerca nome / telefono…" value={filters.search}
           onChange={e => setFilter("search", e.target.value)} style={{ ...inputSt, flex: "1 1 220px", maxWidth: 320 }} />
-        <button onClick={() => { setFilters({ clubId: "", search: "", active: "" }); setPage(0); }} style={btnGhost}>Reset</button>
+        <button type="button" onClick={() => { setFilters({ clubId: "", search: "", active: "" }); setPage(0); }} style={btnGhost}>Reset</button>
         <div style={{ marginLeft: "auto", fontSize: 12, color: C.muted, alignSelf: "center" }}>{total} giocatori</div>
       </div>
 
@@ -59,7 +59,8 @@ export default function PlayersAdminView({ token, clubs }) {
         {loading ? (
           <div style={{ display: "flex", gap: 10, alignItems: "center", padding: 32, justifyContent: "center" }}><Spinner /><span style={{ color: C.muted, fontSize: 13 }}>Caricamento...</span></div>
         ) : (
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+          <div style={{ overflowX: "auto" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, minWidth: 700 }}>
             <thead>
               <tr style={{ borderBottom: `1px solid ${C.border}` }}>
                 {["Nome", "Telefono", "Circolo", "Livello", "Affidabilità", "Partite", "Stato", "Ultimo contatto"].map(h => (
@@ -100,6 +101,7 @@ export default function PlayersAdminView({ token, clubs }) {
               ))}
             </tbody>
           </table>
+          </div>
         )}
         {!loading && !players.length && (
           <div style={{ padding: 40, textAlign: "center", color: C.muted, fontSize: 13 }}>Nessun giocatore trovato</div>
@@ -109,9 +111,9 @@ export default function PlayersAdminView({ token, clubs }) {
       {/* Pagination */}
       {total > PAGE && (
         <div style={{ display: "flex", gap: 10, alignItems: "center", justifyContent: "center" }}>
-          <button onClick={() => setPage(p => Math.max(0, p - 1))} disabled={page === 0} style={btnGhost}>← Prec</button>
+          <button type="button" onClick={() => setPage(p => Math.max(0, p - 1))} disabled={page === 0} style={btnGhost}>← Prec</button>
           <span style={{ fontSize: 12, color: C.muted }}>Pagina {page + 1} / {Math.ceil(total / PAGE)}</span>
-          <button onClick={() => setPage(p => p + 1)} disabled={(page + 1) * PAGE >= total} style={btnGhost}>Succ →</button>
+          <button type="button" onClick={() => setPage(p => p + 1)} disabled={(page + 1) * PAGE >= total} style={btnGhost}>Succ →</button>
         </div>
       )}
     </div>

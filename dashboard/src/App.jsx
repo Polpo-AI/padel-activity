@@ -163,7 +163,7 @@ export default function PadelDashboard() {
           {NAV.map(n => {
             const active = tab === n.id;
             return (
-              <button key={n.id} type="button" onClick={() => navigate(n.id)} aria-label={n.label} aria-current={active ? "page" : undefined}
+              <button type="button" key={n.id} type="button" onClick={() => navigate(n.id)} aria-label={n.label} aria-current={active ? "page" : undefined}
                 className={`nav-btn${active ? " active" : ""}`}
                 style={{
                   display: "flex", alignItems: "center", gap: 9,

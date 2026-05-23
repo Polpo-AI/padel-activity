@@ -57,8 +57,8 @@ function EditModal({ club, token, onClose, onSaved }) {
         </div>
         {err && <div style={{ fontSize: 12, color: C.cancelled }}>{err}</div>}
         <div style={{ display: "flex", gap: 10 }}>
-          <button onClick={save} disabled={saving} style={{ ...btnPrimary, flex: 1 }}>{saving ? "…" : "Salva"}</button>
-          <button onClick={onClose} style={btnGhost}>Annulla</button>
+          <button type="button" onClick={save} disabled={saving} style={{ ...btnPrimary, flex: 1 }}>{saving ? "…" : "Salva"}</button>
+          <button type="button" onClick={onClose} style={btnGhost}>Annulla</button>
         </div>
       </div>
     </Modal>
@@ -124,7 +124,7 @@ export default function ClubsView({ token }) {
                   </div>
                 )}
               </div>
-              <button onClick={() => setEditing(c)} style={{ ...btnGhost, whiteSpace: "nowrap" }}>Modifica</button>
+              <button type="button" onClick={() => setEditing(c)} style={{ ...btnGhost, whiteSpace: "nowrap" }}>Modifica</button>
             </div>
           </div>
         ))}

@@ -70,7 +70,7 @@ function HoursEditor({ token, club, onUpdated }) {
             {[60, 75, 90, 105, 120].map(v => <option key={v} value={v}>{v} min</option>)}
           </select>
         </div>
-        <button onClick={save} disabled={saving} style={{ ...btnPrimary, whiteSpace: "nowrap" }}>
+        <button type="button" onClick={save} disabled={saving} style={{ ...btnPrimary, whiteSpace: "nowrap" }}>
           {saving ? "..." : "Salva"}
         </button>
       </div>
@@ -105,7 +105,7 @@ function TimePillPicker({ label, value, onChange, otherValue, isStart }) {
             ? (otherValue !== "" && t >= otherValue)
             : (otherValue !== "" && t <= otherValue);
           return (
-            <button
+            <button type="button"
               key={t}
               onClick={() => !disabled && onChange(t)}
               style={{
@@ -180,14 +180,14 @@ function UnavailabilityPanel({ court, token, onClose }) {
   return (
     <Modal title={`📅 Eventi — ${court.name}`} onClose={onClose}>
       {!showForm ? (
-        <button onClick={() => setShowForm(true)} style={{ ...btnPrimary, marginBottom: 16 }}>
+        <button type="button" onClick={() => setShowForm(true)} style={{ ...btnPrimary, marginBottom: 16 }}>
           + Nuovo evento
         </button>
       ) : (
         <div style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 12, padding: 16, marginBottom: 16, display: "flex", flexDirection: "column", gap: 14 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <span style={{ fontSize: 13, fontWeight: 600, color: C.text }}>Nuovo evento</span>
-            <button onClick={() => setShowForm(false)} style={{ ...btnGhost, fontSize: 11, padding: "2px 8px" }}>Annulla</button>
+            <button type="button" onClick={() => setShowForm(false)} style={{ ...btnGhost, fontSize: 11, padding: "2px 8px" }}>Annulla</button>
           </div>
 
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
@@ -227,7 +227,7 @@ function UnavailabilityPanel({ court, token, onClose }) {
             Ripeti ogni settimana (stesso giorno + orario)
           </label>
 
-          <button onClick={create} disabled={saving} style={btnPrimary}>
+          <button type="button" onClick={create} disabled={saving} style={btnPrimary}>
             {saving ? "..." : "Salva evento"}
           </button>
         </div>
@@ -252,7 +252,7 @@ function UnavailabilityPanel({ court, token, onClose }) {
                 </div>
                 {u.reason && <div style={{ fontSize: 11, color: C.muted, marginTop: 3 }}>{u.reason}</div>}
               </div>
-              <button onClick={() => remove(u.id)} style={{ ...btnGhost, color: C.cancelled, borderColor: `${C.cancelled}30`, fontSize: 11 }}>Elimina</button>
+              <button type="button" onClick={() => remove(u.id)} style={{ ...btnGhost, color: C.cancelled, borderColor: `${C.cancelled}30`, fontSize: 11 }}>Elimina</button>
             </div>
           ))}
         </div>
@@ -332,7 +332,7 @@ function CreateMatchModal({ courts, club, token, onClose, onCreated, defaultDate
             { id: "LESSON", label: "👨‍🏫 Lezione" },
             { id: "UNAVAILABLE", label: "⛔ Occupato" }
           ].map(t => (
-            <button key={t.id} onClick={() => { setMatchType(t.id); setErr(""); }} style={{
+            <button type="button" key={t.id} onClick={() => { setMatchType(t.id); setErr(""); }} style={{
               flex: 1, padding: "8px 0", borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: "pointer",
               background: matchType === t.id ? C.surface : "transparent",
               color: matchType === t.id ? C.text : C.muted,
@@ -369,7 +369,7 @@ function CreateMatchModal({ courts, club, token, onClose, onCreated, defaultDate
                   onChange={e => { setSkillLevel(parseFloat(e.target.value) || 1); setSuggestions(null); }}
                   style={{ ...inputSt, width: "100%" }} />
               </div>
-              <button
+              <button type="button"
                 disabled={loadingSuggest || !date}
                 onClick={async () => {
                   setLoadingSuggest(true); setSuggestions(null);
@@ -392,7 +392,7 @@ function CreateMatchModal({ courts, club, token, onClose, onCreated, defaultDate
             {suggestions && suggestions.length > 0 && (
               <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                 {suggestions.slice(0, 3).map((s, i) => (
-                  <button key={s.level} onClick={() => setSkillLevel(s.level)} style={{
+                  <button type="button" key={s.level} onClick={() => setSkillLevel(s.level)} style={{
                     display: "flex", alignItems: "center", justifyContent: "space-between",
                     padding: "6px 10px", borderRadius: 8, fontSize: 11, cursor: "pointer", textAlign: "left",
                     background: s.level === skillLevel ? C.accentDim : C.bg,
@@ -425,7 +425,7 @@ function CreateMatchModal({ courts, club, token, onClose, onCreated, defaultDate
                 { id: "MALE", label: "👨 Solo uomini" },
                 { id: "FEMALE", label: "👩 Solo donne" },
               ].map(opt => (
-                <button key={opt.id} onClick={() => setTargetGender(opt.id)} style={{
+                <button type="button" key={opt.id} onClick={() => setTargetGender(opt.id)} style={{
                   flex: 1, padding: "7px 4px", borderRadius: 8, fontSize: 11, fontWeight: 600, cursor: "pointer",
                   background: targetGender === opt.id ? C.accentDim : C.bg,
                   color: targetGender === opt.id ? C.accent : C.muted,
@@ -462,7 +462,7 @@ function CreateMatchModal({ courts, club, token, onClose, onCreated, defaultDate
                   const t = fmtTime(s.startTime);
                   const sel = selectedSlot === s.startTime;
                   return (
-                    <button key={s.startTime} disabled={!s.available} onClick={() => setSelectedSlot(s.startTime)}
+                    <button type="button" key={s.startTime} disabled={!s.available} onClick={() => setSelectedSlot(s.startTime)}
                       title={!s.available ? s.reason : ""}
                       style={{
                         padding: "6px 12px", borderRadius: 8, fontSize: 12, fontWeight: sel ? 700 : 400,
@@ -481,8 +481,8 @@ function CreateMatchModal({ courts, club, token, onClose, onCreated, defaultDate
       </div>
       {err && <div style={{ fontSize: 12, color: C.cancelled, marginTop: 8 }}>{err}</div>}
       <div style={{ display: "flex", gap: 10, marginTop: 4 }}>
-        <button onClick={onClose} style={{ ...btnGhost, flex: 1, padding: "10px 0" }}>Annulla</button>
-        <button onClick={create} disabled={saving || !canSubmit} style={{ ...btnPrimary, flex: 2, opacity: canSubmit ? 1 : 0.4 }}>
+        <button type="button" onClick={onClose} style={{ ...btnGhost, flex: 1, padding: "10px 0" }}>Annulla</button>
+        <button type="button" onClick={create} disabled={saving || !canSubmit} style={{ ...btnPrimary, flex: 2, opacity: canSubmit ? 1 : 0.4 }}>
           {saving ? "Creazione..." : matchType === "MATCH" ? "Crea e lancia wave →" : matchType === "LESSON" ? "Crea lezione →" : "Crea evento →"}
         </button>
       </div>
@@ -563,7 +563,7 @@ function MatchChip({ match, onCancel, onDeleteUnavailable, onSelect }) {
         </div>
       )}
       {canDelete && !confirming && (
-        <button
+        <button type="button"
           onClick={(e) => { e.stopPropagation(); setConfirming(true); }}
           style={{
             marginTop: 4, width: "100%", fontSize: 9, padding: "2px 0",
@@ -574,7 +574,7 @@ function MatchChip({ match, onCancel, onDeleteUnavailable, onSelect }) {
       )}
       {canDelete && confirming && (
         <div style={{ marginTop: 4, display: "flex", gap: 3 }}>
-          <button
+          <button type="button"
             onClick={(e) => { e.stopPropagation(); handleDelete(); }}
             style={{
               flex: 1, fontSize: 9, padding: "2px 0",
@@ -582,7 +582,7 @@ function MatchChip({ match, onCancel, onDeleteUnavailable, onSelect }) {
               borderRadius: 4, color: "#fff", cursor: "pointer", fontWeight: 700,
             }}
           >Sì</button>
-          <button
+          <button type="button"
             onClick={(e) => { e.stopPropagation(); setConfirming(false); }}
             style={{
               flex: 1, fontSize: 9, padding: "2px 0",
@@ -652,7 +652,7 @@ function MatchCard({ match, onCancel }) {
       </div>
 
       {(match.status === "OPEN" || match.status === "LOCKED") && (
-        <button onClick={() => onCancel(match.id)} style={{ ...btnGhost, fontSize: 11, color: C.cancelled, borderColor: `${C.cancelled}30` }}>
+        <button type="button" onClick={() => onCancel(match.id)} style={{ ...btnGhost, fontSize: 11, color: C.cancelled, borderColor: `${C.cancelled}30` }}>
           Cancella
         </button>
       )}
@@ -813,7 +813,7 @@ function MatchDetailModal({ matchId, token, onCancel, onClose }) {
 
           {/* Cancel button */}
           {(match.status === "OPEN" || match.status === "LOCKED") && (
-            <button
+            <button type="button"
               onClick={() => { onCancel(match.id); onClose(); }}
               style={{ ...btnGhost, fontSize: 12, color: C.cancelled, borderColor: `${C.cancelled}30` }}
             >
@@ -900,7 +900,7 @@ function WeekCalendar({ courtData, weekDays, onCancel, onDeleteUnavailable, toda
               }}>
                 <div style={{ fontSize: 12, fontWeight: 700, color: C.accent }}>{court.name}</div>
                 <div style={{ fontSize: 10, color: C.muted, marginTop: 2 }}>{court.isCovered ? "🏠 Coperto" : "☀️ Scoperto"}</div>
-                <button
+                <button type="button"
                   onClick={() => onCourtManage(court)}
                   style={{ ...btnGhost, fontSize: 9, color: C.unavail, borderColor: `${C.unavail}30`, marginTop: 6, padding: "2px 6px" }}>
                   Eventi
@@ -923,7 +923,7 @@ function WeekCalendar({ courtData, weekDays, onCancel, onDeleteUnavailable, toda
                           {dayMatches.map(m => <MatchChip key={m.id} match={m} onCancel={onCancel} onDeleteUnavailable={onDeleteUnavailable} onSelect={onSelectMatch} />)}
                         </div>
                       )}
-                      <button
+                      <button type="button"
                         onClick={() => onQuickCreate?.(d, court.id)}
                         style={{
                           display: "block", width: "100%", padding: dayMatches.length === 0 ? "10px 0" : "3px 0",
@@ -1029,23 +1029,23 @@ export default function CourtsView({ token, onClubUpdate }) {
       {/* Week navigation + controls */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <button onClick={prevWeek} style={{ ...btnGhost, padding: "7px 14px", fontSize: 16 }}>‹</button>
+          <button type="button" onClick={prevWeek} style={{ ...btnGhost, padding: "7px 14px", fontSize: 16 }}>‹</button>
           <div style={{
             minWidth: 260, textAlign: "center", fontSize: 14, fontWeight: 600, color: C.text,
             background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: "7px 16px",
           }}>
             {weekLabel()}
           </div>
-          <button onClick={nextWeek} style={{ ...btnGhost, padding: "7px 14px", fontSize: 16 }}>›</button>
+          <button type="button" onClick={nextWeek} style={{ ...btnGhost, padding: "7px 14px", fontSize: 16 }}>›</button>
           {weekStart !== getMonday(todayStr) && (
-            <button onClick={goToday} style={{ ...btnGhost, color: C.accent, borderColor: `${C.accent}40`, fontSize: 12 }}>
+            <button type="button" onClick={goToday} style={{ ...btnGhost, color: C.accent, borderColor: `${C.accent}40`, fontSize: 12 }}>
               Oggi
             </button>
           )}
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <span style={{ fontSize: 11, color: C.muted }}>● auto-refresh 30s</span>
-          <button onClick={() => { setCreateDate(todayStr); setShowCreate(true); }} style={btnPrimary}>+ Nuova partita</button>
+          <button type="button" onClick={() => { setCreateDate(todayStr); setShowCreate(true); }} style={btnPrimary}>+ Nuova partita</button>
         </div>
       </div>
 

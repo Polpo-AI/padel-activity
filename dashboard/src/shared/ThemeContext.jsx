@@ -3,6 +3,33 @@ import { makeTheme } from "./config";
 
 const ThemeContext = createContext(null);
 
+// ─── useMobile singleton ─────────────────────────────────────────────────────
+// One module-level listener shared across all consumers — no N-listener problem.
+const BREAKPOINT = 640;
+let _mobile = window.innerWidth < BREAKPOINT;
+const _listeners = new Set();
+
+if (typeof window !== "undefined") {
+  window.addEventListener("resize", () => {
+    const next = window.innerWidth < BREAKPOINT;
+    if (next !== _mobile) {
+      _mobile = next;
+      _listeners.forEach(fn => fn(next));
+    }
+  }, { passive: true });
+}
+
+export function useMobile() {
+  const [mobile, setMobile] = useState(() => _mobile);
+  useEffect(() => {
+    _listeners.add(setMobile);
+    return () => _listeners.delete(setMobile);
+  }, []);
+  return mobile;
+}
+
+// ─── Theme context ────────────────────────────────────────────────────────────
+
 export function ThemeProvider({ children }) {
   const [mode, setMode] = useState(
     () => localStorage.getItem("pd-theme") || "dark"
@@ -19,13 +46,3 @@ export function ThemeProvider({ children }) {
 }
 
 export const useTheme = () => useContext(ThemeContext);
-
-export function useMobile(breakpoint = 640) {
-  const [mobile, setMobile] = useState(() => window.innerWidth < breakpoint);
-  useEffect(() => {
-    const fn = () => setMobile(window.innerWidth < breakpoint);
-    window.addEventListener("resize", fn, { passive: true });
-    return () => window.removeEventListener("resize", fn);
-  }, [breakpoint]);
-  return mobile;
-}

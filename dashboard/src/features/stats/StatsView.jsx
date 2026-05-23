@@ -102,7 +102,7 @@ export default function StatsView({ token }) {
       {/* Range selector */}
       <div style={{ display: "flex", gap: 8 }}>
         {[7, 30, 90].map(d => (
-          <button key={d} onClick={() => setRange(d)} style={{
+          <button type="button" key={d} onClick={() => setRange(d)} style={{
             ...btnGhost, fontSize: 12,
             background: range === d ? C.accentDim : "transparent",
             color: range === d ? C.accent : C.muted,

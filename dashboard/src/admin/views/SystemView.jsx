@@ -79,7 +79,7 @@ export default function SystemView({ token }) {
         </div>
       </div>
 
-      <button onClick={load} style={{ ...btnGhost, alignSelf: "flex-start" }}>↺ Aggiorna</button>
+      <button type="button" onClick={load} style={{ ...btnGhost, alignSelf: "flex-start" }}>↺ Aggiorna</button>
     </div>
   );
 }

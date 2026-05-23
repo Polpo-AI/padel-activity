@@ -75,7 +75,8 @@ export default function OverviewView({ token }) {
       <div>
         <div style={{ fontSize: 13, fontWeight: 600, color: C.text, marginBottom: 14 }}>Stato circoli</div>
         <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, overflow: "hidden" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+          <div style={{ overflowX: "auto" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, minWidth: 560 }}>
             <thead>
               <tr style={{ borderBottom: `1px solid ${C.border}` }}>
                 {["Circolo", "Città", "Giocatori", "Partite (30gg)", "Fill rate", "WhatsApp"].map(h => (
@@ -102,6 +103,7 @@ export default function OverviewView({ token }) {
               ))}
             </tbody>
           </table>
+          </div>
           {!clubs?.length && <div style={{ padding: 24, textAlign: "center", color: C.muted, fontSize: 13 }}>Nessun circolo</div>}
         </div>
       </div>

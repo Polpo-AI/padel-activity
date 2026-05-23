@@ -285,7 +285,7 @@ function PendingFaqCard({ faq, token, onUpdated, onDelete }) {
                 <button type="button" onClick={handleKeepBoth} style={btnGhost} disabled={saving}>
                   Salva separatamente
                 </button>
-                <button
+                <button type="button"
                   onClick={() => handleMerge(analysisResult.relatedFaqId, faq.id)}
                   style={btnPrimary}
                   disabled={saving || !mergedQ.trim() || !mergedA.trim()}
@@ -358,14 +358,14 @@ function AnsweredFaqCard({ faq, token, onUpdated }) {
         </span>
         {!editing && (
           <>
-            <button
+            <button type="button"
               onClick={e => { e.stopPropagation(); setEditing(true); setExpanded(true); }}
               style={{ ...btnGhost, padding: "4px 8px", fontSize: 11, color: C.muted }}
               title="Modifica"
             >
               ✏
             </button>
-            <button
+            <button type="button"
               onClick={e => { e.stopPropagation(); handleDelete(); }}
               style={{ ...btnGhost, padding: "4px 8px", fontSize: 11, color: C.cancelled, borderColor: `${C.cancelled}30` }}
               title="Elimina"

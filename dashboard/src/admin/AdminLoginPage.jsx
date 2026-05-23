@@ -36,7 +36,7 @@ export default function AdminLoginPage({ onLogin }) {
           <input type="password" value={p} onChange={e => setP(e.target.value)} placeholder="Password" style={inputSt}
             onKeyDown={e => e.key === "Enter" && submit()} />
           {err && <div style={{ fontSize: 12, color: C.cancelled, textAlign: "center" }}>{err}</div>}
-          <button onClick={submit} disabled={loading} style={btnPrimary}>{loading ? "..." : "Accedi →"}</button>
+          <button type="button" onClick={submit} disabled={loading} style={btnPrimary}>{loading ? "..." : "Accedi →"}</button>
         </div>
       </div>
     </div>

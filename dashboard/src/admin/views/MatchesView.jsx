@@ -57,7 +57,7 @@ export default function MatchesView({ token, clubs }) {
           <input type="date" value={filters.date} onChange={e => setFilter("date", e.target.value)}
             style={{ ...inputSt, width: "auto" }} />
         </div>
-        <button onClick={() => { setFilters({ clubId: "", status: "", date: "" }); setPage(0); }} style={btnGhost}>Reset</button>
+        <button type="button" onClick={() => { setFilters({ clubId: "", status: "", date: "" }); setPage(0); }} style={btnGhost}>Reset</button>
         <div style={{ marginLeft: "auto", fontSize: 12, color: C.muted, alignSelf: "center" }}>{total} partite</div>
       </div>
 
@@ -66,7 +66,8 @@ export default function MatchesView({ token, clubs }) {
         {loading ? (
           <div style={{ display: "flex", gap: 10, alignItems: "center", padding: 32, justifyContent: "center" }}><Spinner /><span style={{ color: C.muted, fontSize: 13 }}>Caricamento...</span></div>
         ) : (
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+          <div style={{ overflowX: "auto" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, minWidth: 640 }}>
             <thead>
               <tr style={{ borderBottom: `1px solid ${C.border}` }}>
                 {["Circolo", "Campo", "Data/ora", "Stato", "Livello", "Giocatori", "Squadra"].map(h => (
@@ -98,6 +99,7 @@ export default function MatchesView({ token, clubs }) {
               ))}
             </tbody>
           </table>
+          </div>
         )}
         {!loading && !matches.length && (
           <div style={{ padding: 40, textAlign: "center", color: C.muted, fontSize: 13 }}>Nessuna partita trovata</div>
@@ -107,9 +109,9 @@ export default function MatchesView({ token, clubs }) {
       {/* Pagination */}
       {total > PAGE && (
         <div style={{ display: "flex", gap: 10, alignItems: "center", justifyContent: "center" }}>
-          <button onClick={() => setPage(p => Math.max(0, p - 1))} disabled={page === 0} style={btnGhost}>← Prec</button>
+          <button type="button" onClick={() => setPage(p => Math.max(0, p - 1))} disabled={page === 0} style={btnGhost}>← Prec</button>
           <span style={{ fontSize: 12, color: C.muted }}>Pagina {page + 1} / {Math.ceil(total / PAGE)}</span>
-          <button onClick={() => setPage(p => p + 1)} disabled={(page + 1) * PAGE >= total} style={btnGhost}>Succ →</button>
+          <button type="button" onClick={() => setPage(p => p + 1)} disabled={(page + 1) * PAGE >= total} style={btnGhost}>Succ →</button>
         </div>
       )}
     </div>

@@ -154,7 +154,7 @@ export default function PricesView({ token }) {
       </div>
 
       {showExceptionModal && (
-        <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.4)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 999 }}>
+        <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: C.overlay, display: "flex", alignItems: "center", justifyContent: "center", zIndex: 999 }}>
           <div style={{ background: C.surface, borderRadius: 12, padding: 24, width: 420, display: "flex", flexDirection: "column", gap: 14, border: `1px solid ${C.border}` }}>
             <div style={{ fontSize: 15, fontWeight: 700, color: C.text }}>📅 Nuova Eccezione Calendario</div>
             <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>

@@ -78,9 +78,9 @@ function FilterDropdown({ trigger, children, active }) {
         onClick={(e) => { e.stopPropagation(); setOpen(v => !v); }}
         style={{
           cursor: "pointer", fontSize: 16, padding: "1px 5px", borderRadius: 5, lineHeight: 1,
-          background: active ? C.accentDim : "rgba(255,255,255,0.85)",
-          color: active ? C.accent : "#888",
-          border: `1px solid ${active ? `${C.accent}50` : "rgba(0,0,0,0.12)"}`,
+          background: active ? C.accentDim : C.surface,
+          color: active ? C.accent : C.muted,
+          border: `1px solid ${active ? `${C.accent}50` : C.border}`,
           userSelect: "none", display: "inline-block",
         }}
         title="Filtra"
