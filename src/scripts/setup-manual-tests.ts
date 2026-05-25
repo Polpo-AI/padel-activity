@@ -128,7 +128,6 @@ async function main() {
     await prisma.matchFeedback.deleteMany({ where: { playerId: { in: fakeIds } } });
     await prisma.invitation.deleteMany({ where: { playerId: { in: fakeIds } } });
     await prisma.matchPlayer.deleteMany({ where: { playerId: { in: fakeIds } } });
-    await prisma.conversationState.deleteMany({ where: { playerId: { in: fakeIds } } });
     await prisma.player.deleteMany({ where: { id: { in: fakeIds } } });
 
     // Match orfani (nessun giocatore rimasto → eliminali)
@@ -157,7 +156,6 @@ async function main() {
       await prisma.matchFeedback.deleteMany({ where: { playerId: { in: pIds } } });
       await prisma.invitation.deleteMany({ where: { playerId: { in: pIds } } });
       await prisma.matchPlayer.deleteMany({ where: { playerId: { in: pIds } } });
-      await prisma.conversationState.deleteMany({ where: { playerId: { in: pIds } } });
       await prisma.player.deleteMany({ where: { clubId: fc.id } });
     }
     await prisma.match.deleteMany({ where: { clubId: fc.id } });
