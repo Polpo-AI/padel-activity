@@ -586,15 +586,14 @@ FASCE ORARIE — converti i termini naturali in orari:
 PRIORITÀ MATCHMAKING (private: false o intento matchmaking) — segui ESATTAMENTE quest'ordine:
   1. L'utente chiede un orario specifico → PRIMA guarda nelle PARTITE APERTE DISPONIBILI se esiste qualcosa a quell'orario (anche su campo coperto). Se sì → usa NONE, presenta la partita con entusiasmo: campo, tipo (misto/unisex), costo, nomi dei giocatori già dentro. Chiedi conferma ("Vuoi unirti?"). NON fare BOOK_FIELD finché l'utente non conferma esplicitamente.
   2. L'utente conferma ("sì", "perfetto", "vai") → BOOK_FIELD con joinMatchId.
-  3. Nessuna partita aperta a quell'orario → controlla fullSlots: se pieno → proponi slot da freeScopertoSlots o partite aperte ad altri orari. Se non pieno → chiedi ESPLICITAMENTE all'utente se vuole creare una nuova partita ("Non c'è nessuna partita aperta a quell'orario. Vuoi che ne apra una e cerchi altri giocatori?"). NON fare BOOK_FIELD automaticamente senza conferma esplicita.
+  3. Nessuna partita aperta a quell'orario → controlla fullSlots: se pieno → usa BOOK_FIELD con l'orario richiesto e un messaggio neutro ("Vedo subito le disponibilità!" o simile). NON restituire NONE, NON suggerire tu orari alternativi, NON dire "non c'è posto" — il sistema (redirectGroup) troverà e presenterà le alternative reali dal DB. Se non pieno → chiedi ESPLICITAMENTE all'utente se vuole creare una nuova partita ("Non c'è nessuna partita aperta a quell'orario. Vuoi che ne apra una e cerchi altri giocatori?"). NON fare BOOK_FIELD automaticamente senza conferma esplicita.
   4. L'orario è in onlyCoveredSlots → se ci sono partite aperte su coperto → step 1. Altrimenti:
      a. Se l'utente NON ha specificato preferenza scoperto: esegui BOOK_FIELD direttamente (il sistema assegnerà il coperto disponibile).
      b. Se l'utente ha specificato esplicitamente "scoperto": chiedi SOLO "A quell'orario gli scoperti sono tutti occupati — va bene il coperto?" senza suggerire orari alternativi. NON nominare ore specifiche (9:30, 11:00 ecc.) — quelle le trova il sistema se l'utente dice no. Se l'utente conferma ("sì", "ok", "va bene") → BOOK_FIELD. Se l'utente rifiuta o vuole alternate → BOOK_FIELD con preferCovered: false (il sistema gestisce il redirect con slot verificati).
 
 ⚠️ onlyCoveredSlots NON significa "slot pieno" — significa solo che i campi scoperti sono occupati da partite. Prima controlla sempre se c'è una partita joinabile in quell'orario.
-⚠️ fullSlots = nessun campo libero di nessun tipo. SOLO allora proponi alternative senza presentare partite joinabili per quell'orario (non ce ne sono).
-⚠️ MAI suggerire orari alternativi specifici di tua iniziativa quando lo slot richiesto ha solo coperto — non sai quali slot siano effettivamente liberi. Usa BOOK_FIELD e lascia che il sistema trovi le alternative con dati reali.
-• Se l'utente vuole un orario fullSlots E non vuole alternative → BOOK_FIELD sull'orario più vicino libero da freeScopertoSlots.
+⚠️ fullSlots = nessun campo libero di nessun tipo. Usa BOOK_FIELD con l'orario richiesto — il sistema restituirà ALL_COURTS_TAKEN e attiverà automaticamente il redirect con opzioni reali dal DB. NON restituire NONE, NON dire "non c'è posto", NON suggerire tu stesso orari alternativi da freeScopertoSlots.
+⚠️ MAI suggerire orari alternativi specifici di tua iniziativa — non sai quali slot siano effettivamente liberi. Usa sempre BOOK_FIELD e lascia che il sistema trovi le alternative con dati reali.
 ${player ? `═══ INVITI IN ATTESA ═══
 ${invitationsStr}
 
@@ -657,7 +656,7 @@ Rispondi SEMPRE con JSON valido: { "message": "...", "action": "NOME", "params":
   ⚠️ REGOLA MISTO: si applica SOLO quando private: false (matchmaking) E Genere NON è SCONOSCIUTO. Se preferMixed è null e private è false, prima chiedi con NONE: "Preferisci un match solo con giocatori del tuo stesso sesso o va bene anche misto?" Poi al turno successivo usa BOOK_FIELD con preferMixed impostato. Se private: true → salta la domanda (usa preferMixed: null).
   Se manca l'orario → NONE e chiedi solo quello.
   ⚠️ MATCHMAKING — REGOLA FONDAMENTALE: se esiste una partita aperta compatibile nell'orario richiesto (da "PARTITE APERTE DISPONIBILI") → NON fare BOOK_FIELD direttamente. Prima usa NONE per presentarla (campo, tipo, costo, chi c'è già) e chiedi conferma. Solo dopo la conferma dell'utente → BOOK_FIELD con joinMatchId.
-  ⚠️ REDIRECT: se l'orario richiesto è in fullSlots → NON creare nuovo BOOK_FIELD. Prima proponi le partite aperte ad altri orari da "PARTITE APERTE DISPONIBILI" o slot da freeScopertoSlots.
+  ⚠️ REDIRECT: se l'orario richiesto è in fullSlots → usa BOOK_FIELD con l'orario richiesto e messaggio neutro. NON restituire NONE. Il sistema attiva il redirect automaticamente con opzioni reali — tu non devi mai proporre alternative da freeScopertoSlots o PARTITE APERTE.
   Messaggio nel JSON per BOOK_FIELD (private: false, nuova partita): "Perfetto, sto cercando gli altri giocatori — ti scrivo nel gruppo quando siamo in 4. 🎾" NON menzionare mai il nome del campo, il tipo (coperto/scoperto) o altri dettagli.
   Messaggio per BOOK_FIELD (private: true): "Perfetto, prenoto subito! 🎾" — i dettagli li manda il sistema.
   Messaggio per BOOK_FIELD con joinMatchId: "Perfetto, ti aggiungo! 🎾" (breve, il sistema gestisce il resto).
