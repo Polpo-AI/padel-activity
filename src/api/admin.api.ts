@@ -154,7 +154,7 @@ router.get('/clubs', adminAuth, async (_req: Request, res: Response) => {
         const clubs = await prisma.club.findMany({
             select: {
                 id: true, name: true, city: true, address: true,
-                botPhoneNumber: true, adminPhone: true,
+                botName: true, botPhoneNumber: true, adminPhone: true,
                 matchLowerRange: true, matchUpperRange: true,
                 maxDailyMessages: true, openTime: true, closeTime: true,
                 _count: {
@@ -177,7 +177,7 @@ router.get('/clubs', adminAuth, async (_req: Request, res: Response) => {
             const locked = c.matches.filter(m => m.status === 'LOCKED').length;
             return {
                 id: c.id, name: c.name, city: c.city, address: c.address,
-                botPhoneNumber: c.botPhoneNumber, adminPhone: c.adminPhone,
+                botName: c.botName, botPhoneNumber: c.botPhoneNumber, adminPhone: c.adminPhone,
                 matchLowerRange: c.matchLowerRange,
                 matchUpperRange: c.matchUpperRange, maxDailyMessages: c.maxDailyMessages,
                 openTime: c.openTime, closeTime: c.closeTime,
@@ -214,16 +214,17 @@ router.get('/clubs/:id', adminAuth, async (req: Request, res: Response) => {
 
 router.patch('/clubs/:id', adminAuth, async (req: Request, res: Response) => {
     try {
-        const { name, city, address, matchLowerRange, matchUpperRange, maxDailyMessages } = req.body;
+        const { name, city, address, botName, matchLowerRange, matchUpperRange, maxDailyMessages } = req.body;
         const updated = await prisma.club.update({
             where: { id: req.params.id },
             data: {
-                name: name ?? undefined,
-                city: city ?? undefined,
-                address: address ?? undefined,
-                matchLowerRange: matchLowerRange != null ? parseFloat(matchLowerRange) : undefined,
-                matchUpperRange: matchUpperRange != null ? parseFloat(matchUpperRange) : undefined,
-                maxDailyMessages: maxDailyMessages != null ? parseInt(maxDailyMessages) : undefined,
+                name:             name             ?? undefined,
+                city:             city             ?? undefined,
+                address:          address          ?? undefined,
+                botName:          botName          ?? undefined,
+                matchLowerRange:  matchLowerRange  != null ? parseFloat(matchLowerRange)  : undefined,
+                matchUpperRange:  matchUpperRange  != null ? parseFloat(matchUpperRange)  : undefined,
+                maxDailyMessages: maxDailyMessages != null ? parseInt(maxDailyMessages)   : undefined,
             },
         });
         res.json(updated);

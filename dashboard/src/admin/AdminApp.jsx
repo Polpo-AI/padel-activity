@@ -16,7 +16,7 @@ const NAV = [
   { id: "system",    label: "Sistema",     icon: "⚙️", desc: "Stato WhatsApp per circolo, DB e Redis." },
 ];
 
-const SIDEBAR_W = 214;
+const SIDEBAR_W = 224;
 
 export default function AdminApp() {
   const { C, btnGhost, mode } = useTheme();
