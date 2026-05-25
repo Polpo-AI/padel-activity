@@ -178,7 +178,7 @@ function UnavailabilityPanel({ court, token, onClose }) {
   const DAYS = ["Dom", "Lun", "Mar", "Mer", "Gio", "Ven", "Sab"];
 
   return (
-    <Modal title={`📅 Eventi — ${court.name}`} onClose={onClose}>
+    <Modal title={`Eventi — ${court.name}`} onClose={onClose}>
       {!showForm ? (
         <button type="button" onClick={() => setShowForm(true)} style={{ ...btnPrimary, marginBottom: 16 }}>
           + Nuovo evento
@@ -672,7 +672,7 @@ function DayDetailModal({ date, courts, onCancel, onClose }) {
   ).sort((a, b) => new Date(a.startTime) - new Date(b.startTime));
 
   return (
-    <Modal title={`📅 ${dateLabel}`} onClose={onClose}>
+    <Modal title={dateLabel} onClose={onClose}>
       {allMatches.length === 0 ? (
         <div style={{ textAlign: "center", color: C.muted, fontSize: 13, padding: "24px 0" }}>Nessuna partita in questa giornata</div>
       ) : (

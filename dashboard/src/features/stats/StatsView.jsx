@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback } from "react";
-import { useTheme } from "../../shared/ThemeContext";
+import { useTheme, useMobile } from "../../shared/ThemeContext";
 import { api } from "../../shared/config";
 import Spinner from "../../shared/Spinner";
 
 function HeroCard({ label, value, sub, color, icon, highlight }) {
+  const { C } = useTheme();
   return (
     <div style={{
       background: highlight ? `linear-gradient(135deg, ${C.surface} 0%, ${color}18 100%)` : C.surface,
@@ -22,6 +23,7 @@ function HeroCard({ label, value, sub, color, icon, highlight }) {
 }
 
 function MetricRow({ label, value, detail, color }) {
+  const { C } = useTheme();
   return (
     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 0", borderBottom: `1px solid ${C.dim}` }}>
       <div>
@@ -34,6 +36,7 @@ function MetricRow({ label, value, detail, color }) {
 }
 
 function DonutFill({ rate, color, label, sub }) {
+  const { C } = useTheme();
   const pct = Math.round(rate * 100);
   const r = 36;
   const circ = 2 * Math.PI * r;
@@ -62,6 +65,7 @@ function DonutFill({ rate, color, label, sub }) {
 
 export default function StatsView({ token }) {
   const { C, btnGhost } = useTheme();
+  const isMobile = useMobile();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [range, setRange] = useState(30);
@@ -112,7 +116,7 @@ export default function StatsView({ token }) {
       </div>
 
       {/* Hero: revenue + partite completate */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+      <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 16 }}>
         <HeroCard
           label="Revenue generata"
           value={hasRevenue ? `€${data.revenue.toLocaleString("it-IT")}` : "—"}

@@ -2,7 +2,6 @@ import { useState, useEffect, useCallback } from "react";
 import { useTheme } from "../../shared/ThemeContext";
 import Spinner from "../../shared/Spinner";
 
-const WA_COLOR = { open: "#22d3ee", connecting: "#f59e0b", closed: "#ef4444", disconnected: "#94a3b8" };
 const WA_LABEL = { open: "Connesso", connecting: "Connessione…", closed: "Chiuso", disconnected: "—" };
 
 function StatCard({ label, value, sub, color, icon }) {
@@ -95,7 +94,7 @@ export default function OverviewView({ token }) {
                   <td style={{ padding: "12px 16px", color: C.text }}>{c.matchesThisMonth}</td>
                   <td style={{ padding: "12px 16px", minWidth: 120 }}><FillBar value={c.fillRate} /></td>
                   <td style={{ padding: "12px 16px" }}>
-                    <span style={{ fontSize: 11, padding: "3px 8px", borderRadius: 4, background: `${WA_COLOR[c.waStatus] || C.muted}22`, color: WA_COLOR[c.waStatus] || C.muted }}>
+                    <span style={{ fontSize: 11, padding: "3px 8px", borderRadius: 4, background: `${{ open: C.open, connecting: C.warning, closed: C.cancelled, disconnected: C.muted }[c.waStatus] || C.muted}22`, color: { open: C.open, connecting: C.warning, closed: C.cancelled, disconnected: C.muted }[c.waStatus] || C.muted }}>
                       {WA_LABEL[c.waStatus] || c.waStatus}
                     </span>
                   </td>

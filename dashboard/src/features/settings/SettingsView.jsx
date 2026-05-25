@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useTheme } from "../../shared/ThemeContext";
+import { useTheme, useMobile } from "../../shared/ThemeContext";
 import { api } from "../../shared/config";
 import Toast from "../../shared/Toast";
 
@@ -55,7 +55,8 @@ function Toggle({ value, onChange, labelOn = "Sì", labelOff = "No" }) {
 }
 
 function Grid({ children }) {
-  return <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, alignItems: "end" }}>{children}</div>;
+  const isMobile = useMobile();
+  return <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 14, alignItems: "end" }}>{children}</div>;
 }
 
 export default function SettingsView({ token, club, onClubUpdate }) {

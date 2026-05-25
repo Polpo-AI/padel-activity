@@ -37,18 +37,18 @@ export default function PlayersAdminView({ token, clubs }) {
     <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
       {/* Filters */}
       <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-end" }}>
-        <select value={filters.clubId} onChange={e => setFilter("clubId", e.target.value)}
+        <select aria-label="Filtra per circolo" value={filters.clubId} onChange={e => setFilter("clubId", e.target.value)}
           style={{ ...inputSt, width: "auto", minWidth: 160 }}>
           <option value="">Tutti i circoli</option>
           {(clubs || []).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
         </select>
-        <select value={filters.active} onChange={e => setFilter("active", e.target.value)}
+        <select aria-label="Filtra per stato" value={filters.active} onChange={e => setFilter("active", e.target.value)}
           style={{ ...inputSt, width: "auto", minWidth: 120 }}>
           <option value="">Tutti</option>
           <option value="true">Attivi</option>
           <option value="false">Inattivi</option>
         </select>
-        <input placeholder="Cerca nome / telefono…" value={filters.search}
+        <input aria-label="Cerca giocatore" placeholder="Cerca nome / telefono…" value={filters.search}
           onChange={e => setFilter("search", e.target.value)} style={{ ...inputSt, flex: "1 1 220px", maxWidth: 320 }} />
         <button type="button" onClick={() => { setFilters({ clubId: "", search: "", active: "" }); setPage(0); }} style={btnGhost}>Reset</button>
         <div style={{ marginLeft: "auto", fontSize: 12, color: C.muted, alignSelf: "center" }}>{total} giocatori</div>

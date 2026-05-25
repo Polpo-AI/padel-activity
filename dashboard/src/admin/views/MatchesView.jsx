@@ -40,21 +40,21 @@ export default function MatchesView({ token, clubs }) {
       {/* Filters */}
       <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-end" }}>
         <div style={{ minWidth: 160 }}>
-          <select value={filters.clubId} onChange={e => setFilter("clubId", e.target.value)}
+          <select aria-label="Filtra per circolo" value={filters.clubId} onChange={e => setFilter("clubId", e.target.value)}
             style={{ ...inputSt, width: "auto", minWidth: 160 }}>
             <option value="">Tutti i circoli</option>
             {(clubs || []).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
         </div>
         <div>
-          <select value={filters.status} onChange={e => setFilter("status", e.target.value)}
+          <select aria-label="Filtra per stato" value={filters.status} onChange={e => setFilter("status", e.target.value)}
             style={{ ...inputSt, width: "auto", minWidth: 140 }}>
             <option value="">Tutti gli stati</option>
             {Object.entries(STATUS_LABEL).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
           </select>
         </div>
         <div>
-          <input type="date" value={filters.date} onChange={e => setFilter("date", e.target.value)}
+          <input aria-label="Filtra per data" type="date" value={filters.date} onChange={e => setFilter("date", e.target.value)}
             style={{ ...inputSt, width: "auto" }} />
         </div>
         <button type="button" onClick={() => { setFilters({ clubId: "", status: "", date: "" }); setPage(0); }} style={btnGhost}>Reset</button>
