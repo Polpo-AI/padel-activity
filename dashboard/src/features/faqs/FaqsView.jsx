@@ -29,6 +29,7 @@ function DecisionBadge({ decision }) {
 // ─── PendingFaqCard ──────────────────────────
 
 function PendingFaqCard({ faq, token, onUpdated, onDelete }) {
+  const { C, inputSt, btnPrimary, btnGhost, labelSt } = useTheme();
   const [answer, setAnswer] = useState("");
   const [notifyPlayer, setNotifyPlayer] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
@@ -306,6 +307,7 @@ function PendingFaqCard({ faq, token, onUpdated, onDelete }) {
 // ─── AnsweredFaqCard ──────────────────────────
 
 function AnsweredFaqCard({ faq, token, onUpdated }) {
+  const { C, inputSt, btnPrimary, btnGhost, labelSt } = useTheme();
   const [expanded, setExpanded] = useState(false);
   const [editing, setEditing] = useState(false);
   const [editQ, setEditQ] = useState(faq.question);
@@ -415,6 +417,7 @@ function AnsweredFaqCard({ faq, token, onUpdated }) {
 // ─── AddFaqForm ──────────────────────────────
 
 function AddFaqForm({ token, onCreated }) {
+  const { C, inputSt, btnPrimary, labelSt } = useTheme();
   const [question, setQuestion] = useState("");
   const [answer, setAnswer] = useState("");
   const [saving, setSaving] = useState(false);

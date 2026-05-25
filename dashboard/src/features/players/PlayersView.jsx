@@ -106,6 +106,7 @@ function FilterDropdown({ trigger, children, active }) {
 // ─── TextFilterDropdown ────────────────────────────────────────────────────────
 
 function TextFilterDropdown({ value, onChange, placeholder, active }) {
+  const { C, inputSt, btnGhost } = useTheme();
   return (
     <FilterDropdown trigger="⌕" active={active}>
       {({ close }) => (
@@ -138,6 +139,7 @@ function TextFilterDropdown({ value, onChange, placeholder, active }) {
 // ─── MultiSelectFilterDropdown ────────────────────────────────────────────────
 
 function MultiSelectFilterDropdown({ options, selected, onChange, active }) {
+  const { C, btnPrimary } = useTheme();
   const allSelected = selected.size === 0;
 
   const toggle = (value) => {
@@ -225,6 +227,7 @@ function MultiSelectFilterDropdown({ options, selected, onChange, active }) {
 // ─── ReliabilityFilterDropdown ─────────────────────────────────────────────────
 
 function ReliabilityFilterDropdown({ minReliability, onChange, active }) {
+  const { C, btnGhost } = useTheme();
   // localPct: valore durante il drag (anteprima) — il filtro si applica solo al rilascio
   const [localPct, setLocalPct] = useState(Math.round(minReliability * 100));
   const [dragging, setDragging] = useState(false);
@@ -468,6 +471,7 @@ function PlayerProfile({ playerId, token, onClose, onUpdated }) {
 // ─── AddPlayerModal ────────────────────────────
 
 function AddPlayerModal({ token, onClose, onCreated }) {
+  const { C, inputSt, btnPrimary, btnGhost, labelSt } = useTheme();
   const [name, setName]         = useState("");
   const [phone, setPhone]       = useState("");
   const [skillLevel, setSkill]  = useState("");
