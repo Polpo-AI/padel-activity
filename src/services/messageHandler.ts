@@ -28,6 +28,62 @@ const logger = pino({ level: 'info' });
 const conversationalPhase = new Map<string, boolean>();
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 const randomInt = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1)) + min;
+
+// ─── Booking card — 5 varianti (prima e ultima frase ruotano, centro fisso) ──
+
+const _BOOKING_VARIANTS = [
+    {
+        mm:   { first: `*Sei in lista!*`,                last: `Ti scrivo quando siamo in 4.` },
+        priv: { first: `*Prenotazione confermata.*`,     last: `A presto in campo!` },
+    },
+    {
+        mm:   { first: `*Ci sei — cerco gli altri tre.*`, last: `Ti avviso appena siamo al completo.` },
+        priv: { first: `*Campo prenotato.*`,              last: `Ci vediamo lì!` },
+    },
+    {
+        mm:   { first: `*Dentro. Cerco i compagni.*`,   last: `Appena troviamo gli altri ti faccio sapere.` },
+        priv: { first: `*Tutto confermato.*`,            last: `Buona partita!` },
+    },
+    {
+        mm:   { first: `*Fatto, sei in lista.*`,         last: `Ti mando un messaggio quando la partita è piena.` },
+        priv: { first: `*Fatto, hai il campo.*`,         last: `A presto!` },
+    },
+    {
+        mm:   { first: `*Sei in — ora trovo gli altri.*`, last: `Appena siamo in 4 ti scrivo.` },
+        priv: { first: `*Ci siamo — campo tuo.*`,        last: `Ci vediamo sul campo.` },
+    },
+];
+
+function buildBookingCard(p: {
+    courtName: string;
+    timeStr: string;
+    pricePerPerson: string | null;
+    racketPrice?: string | null;
+    otherPlayers?: string[];
+    location?: string | null;
+    waveWillStart: boolean;
+}): string {
+    const v = _BOOKING_VARIANTS[Math.floor(Math.random() * _BOOKING_VARIANTS.length)];
+    const others = p.otherPlayers ?? [];
+    const lines = p.waveWillStart ? [
+        v.mm.first,
+        p.timeStr,
+        p.courtName,
+        p.pricePerPerson ? `${p.pricePerPerson}€ a persona` : null,
+        others.length > 0 ? `Già dentro: ${others.join(', ')}` : null,
+        v.mm.last,
+    ] : [
+        v.priv.first,
+        p.timeStr,
+        p.courtName,
+        p.pricePerPerson ? `${p.pricePerPerson}€ a persona` : null,
+        p.racketPrice ? `Noleggio racchetta ${p.racketPrice}/persona` : null,
+        others.length > 0 ? `Con: ${others.join(', ')}` : null,
+        p.location || null,
+        v.priv.last,
+    ];
+    return lines.filter(Boolean).join('\n');
+}
 type PrismaTransactionClient = Parameters<Parameters<typeof prisma.$transaction>[0]>[0];
 
 // ─────────────────────────────────────────────
@@ -647,17 +703,15 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[], cor
                                     timeZone: 'Europe/Rome', weekday: 'long', day: 'numeric',
                                     month: 'long', hour: '2-digit', minute: '2-digit',
                                 });
-                                const courtType = match2.court.isCovered ? '🏟️ coperto' : '☀️ all\'aperto';
                                 const clubLocation = [club?.address, club?.city].filter(Boolean).join(' — ');
-                                const lines = [
-                                    `📋 *Prenotazione confermata*`,
-                                    `📅 ${timeStr}`,
-                                    `🎾 ${match2.court.name} (${courtType})`,
-                                    pricePerPerson ? `💶 ${pricePerPerson}€ a persona` : null,
-                                    racketPrice ? `🎾 Noleggio racchetta: ${racketPrice}/persona` : null,
-                                    clubLocation ? `📍 ${clubLocation}` : null,
-                                ].filter(Boolean);
-                                await simulateTypingAndSend(jid, lines.join('\n'));
+                                await simulateTypingAndSend(jid, buildBookingCard({
+                                    courtName:    match2.court.name,
+                                    timeStr,
+                                    pricePerPerson,
+                                    racketPrice,
+                                    location:     clubLocation || null,
+                                    waveWillStart: false,
+                                }));
                             }
                             // Per match OPEN (matchmaking): msg2 è già stato inviato sopra
                         } else if (!result2.success && result2.errorMessage) {
@@ -763,7 +817,6 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[], cor
                         timeZone: 'Europe/Rome', weekday: 'long', day: 'numeric',
                         month: 'long', hour: '2-digit', minute: '2-digit',
                     });
-                    const courtType = match.court.isCovered ? '🏟️ coperto' : '☀️ all\'aperto';
                     const waveWillStart = match.status === 'OPEN';
 
                     // Giocatori già dentro (escludo il giocatore corrente)
@@ -774,23 +827,15 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[], cor
                             return `${mp.player?.name?.split(' ')[0] || '?'}${lvl}`;
                         });
 
-                    const lines = waveWillStart ? [
-                        `📋 *Sei in lista!*`,
-                        `📅 ${timeStr}`,
-                        `🎾 ${match.court.name} (${courtType})`,
-                        pricePerPerson ? `💶 ${pricePerPerson}€ a persona` : null,
-                        otherPlayers.length > 0 ? `👥 Già dentro: ${otherPlayers.join(', ')}` : null,
-                        `⏳ Ti avviso quando siamo in 4`,
-                    ] : [
-                        `📋 *Prenotazione confermata*`,
-                        `📅 ${timeStr}`,
-                        `🎾 ${match.court.name} (${courtType})`,
-                        pricePerPerson ? `💶 ${pricePerPerson}€ a persona` : null,
-                        racketPrice ? `🎾 Noleggio racchetta: ${racketPrice}/persona` : null,
-                        otherPlayers.length > 0 ? `👥 ${otherPlayers.join(', ')}` : null,
-                        [club?.address, club?.city].filter(Boolean).join(' — ') || null,
-                    ];
-                    await simulateTypingAndSend(jid, lines.filter(Boolean).join('\n'));
+                    await simulateTypingAndSend(jid, buildBookingCard({
+                        courtName:    match.court.name,
+                        timeStr,
+                        pricePerPerson,
+                        racketPrice,
+                        otherPlayers,
+                        location:     [club?.address, club?.city].filter(Boolean).join(' — ') || null,
+                        waveWillStart,
+                    }));
                 }
 
                 // Se il giocatore preferito non è stato trovato nel circolo, avvisa l'utente
@@ -890,16 +935,13 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[], cor
                         const totalCost = await calculateSlotCost(secMatch.court.id, secMatch.startTime);
                         const pricePerPerson = totalCost > 0 ? (totalCost / 4).toFixed(2) : null;
                         const timeStr = secMatch.startTime.toLocaleString('it-IT', { timeZone: 'Europe/Rome', weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' });
-                        const courtType = secMatch.court.isCovered ? '🏟️ coperto' : '☀️ all\'aperto';
-                        const lines = secMatch.status === 'OPEN' ? [
-                            `📋 *Sei in lista!*`, `📅 ${timeStr}`, `🎾 ${secMatch.court.name} (${courtType})`,
-                            pricePerPerson ? `💶 ${pricePerPerson}€ a persona` : null, `⏳ Ti avviso quando siamo in 4`,
-                        ] : [
-                            `📋 *Prenotazione confermata*`, `📅 ${timeStr}`, `🎾 ${secMatch.court.name} (${courtType})`,
-                            pricePerPerson ? `💶 ${pricePerPerson}€ a persona` : null,
-                            [club?.address, club?.city].filter(Boolean).join(' — ') || null,
-                        ];
-                        await simulateTypingAndSend(jid, lines.filter(Boolean).join('\n'));
+                        await simulateTypingAndSend(jid, buildBookingCard({
+                            courtName:    secMatch.court.name,
+                            timeStr,
+                            pricePerPerson,
+                            location:     [club?.address, club?.city].filter(Boolean).join(' — ') || null,
+                            waveWillStart: secMatch.status === 'OPEN',
+                        }));
                     }
                 } else if (!secResult.success && secResult.errorMessage) {
                     const _secErrMsgs: Record<string, string> = {
@@ -954,7 +996,7 @@ export async function handleMatchFilled(matchId: string, startTime: Date): Promi
     const groupName = `Padel · ${courtShort} · ${shortDay} · ${timeStr}`;
 
     // Scheda riepilogativa — unico messaggio inviato nel gruppo alla creazione
-    let confirmationMsg = `📋 *Riepilogo partita*\n📅 ${dateStr} alle ${timeStr}\n🎾 ${match.court?.name || 'Campo'} (${match.court?.isCovered ? '🏟️ coperto' : '☀️ scoperto'})`;
+    let confirmationMsg = `*Riepilogo partita*\n${dateStr} alle ${timeStr}\n${match.court?.name || 'Campo'}`;
     try {
         const { calculateSlotCost } = await import('./pricing');
         const totalCost = await calculateSlotCost(match.court!.id, startTime);
@@ -962,12 +1004,12 @@ export async function handleMatchFilled(matchId: string, startTime: Date): Promi
         const racketPrice = (match.club as any)?.racketPrice != null ? `${(match.club as any).racketPrice}€` : null;
         const clubLocation = [(match.club as any)?.address, (match.club as any)?.city].filter(Boolean).join(' — ');
         const lines = [
-            `📋 *Riepilogo partita*`,
-            `📅 ${dateStr} alle ${timeStr}`,
-            `🎾 ${match.court?.name || 'Campo'} (${match.court?.isCovered ? '🏟️ coperto' : '☀️ scoperto'})`,
-            pricePerPerson ? `💶 ${pricePerPerson}€ a persona` : null,
-            racketPrice ? `🎾 Noleggio racchetta: ${racketPrice}/persona` : null,
-            clubLocation ? `📍 ${clubLocation}` : null,
+            `*Riepilogo partita*`,
+            `${dateStr} alle ${timeStr}`,
+            match.court?.name || 'Campo',
+            pricePerPerson ? `${pricePerPerson}€ a persona` : null,
+            racketPrice ? `Noleggio racchetta ${racketPrice}/persona` : null,
+            clubLocation || null,
         ].filter(Boolean);
         confirmationMsg = lines.join('\n');
     } catch { /* usa il fallback sopra */ }

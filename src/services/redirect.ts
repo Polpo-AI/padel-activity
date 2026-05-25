@@ -892,8 +892,8 @@ Se non è chiaro, rispondi: UNCLEAR
 // ─────────────────────────────────────────────
 
 function courtTypeLabel(isCovered: boolean | null): string {
-    if (isCovered === true)  return '🏟️ coperto';
-    if (isCovered === false) return '☀️ scoperto';
+    if (isCovered === true)  return 'coperto';
+    if (isCovered === false) return 'scoperto';
     return '';
 }
 
@@ -912,7 +912,7 @@ function buildOptionDescription(
     if (isOpenMatch) {
         return `${courtPart} — ${dateStr} alle ${timeStr} — 👥 partita aperta, mancano ${spotsLeft}`;
     }
-    return `${courtPart} — ${dateStr} alle ${timeStr} — 🔑 solo campo (affitto)`;
+    return `${courtPart} — ${dateStr} alle ${timeStr}`;
 }
 
 function buildRedirectMessage(group: RedirectGroup, options: RedirectOption[]): string {
@@ -1015,7 +1015,8 @@ function buildRedirectMessage(group: RedirectGroup, options: RedirectOption[]): 
     tailParts.push('📅 Preferisci un giorno diverso? Scrivimi quando e vedo le disponibilità.');
     if (group.originalCourtIsCovered !== null) {
         const otherType = group.originalCourtIsCovered ? 'scoperto' : 'coperto';
-        tailParts.push(`☀️ Vuoi che cerchi anche campi ${otherType}? Dimmelo!`);
+        const otherTypePlural = otherType === 'coperto' ? 'coperti' : 'scoperti';
+        tailParts.push(`Vuoi che cerchi anche campi ${otherTypePlural}? Dimmelo!`);
     }
 
     return `${reason}\n\n${introLine}\n\n${lines}\n\n${closing}\n\n${tailParts.join('\n')}`;
