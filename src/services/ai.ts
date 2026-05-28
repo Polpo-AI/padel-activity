@@ -229,8 +229,8 @@ export async function generateInvitation(
 
     const matchTypeStr = matchTypeLabel ? ` ${matchTypeLabel}` : '';
     const fallback = isFriend
-        ? `Ciao ${playerName}, un amico ti ha invitato a padel ${weekdayStr} ${timeOfDay} alle ${timeStr}. Sei disponibile?`
-        : `Ciao ${playerName}, ${weekdayStr.toLowerCase()} ${timeOfDay} c'è una partita di padel${matchTypeStr} alle ${timeStr}. Ti può interessare?`;
+        ? `Ciao ${playerName}, come va? Un amico ti ha invitato a padel ${weekdayStr} ${timeOfDay} alle ${timeStr}. Sei disponibile?`
+        : `Ciao ${playerName}, come va? ${weekdayStr} ${timeOfDay} c'è una partita di padel${matchTypeStr} alle ${timeStr}. Ti può interessare?`;
 
     let aiTone = '';
     if (clubId) {

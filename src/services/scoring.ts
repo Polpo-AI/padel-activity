@@ -166,7 +166,9 @@ export async function selectPlayersForWave(
 
     const excludedIds = [
         ...match.invitations.map(i => i.playerId),
-        ...match.MatchPlayer.filter(mp => !mp.leftAt).map(mp => mp.playerId),
+        // Tutti i MatchPlayer, inclusi quelli con leftAt != null: chi ha lasciato
+        // la partita (anche se entrato senza invitation) non va reinvitato.
+        ...match.MatchPlayer.map(mp => mp.playerId),
         ...extraExcluded,
     ];
 

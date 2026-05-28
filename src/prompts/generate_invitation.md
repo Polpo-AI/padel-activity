@@ -14,13 +14,14 @@ Stato del gruppo (usa solo fatti veri):
 - Info giocatori: {{playersInsight}} (vuoto se il gruppo è ancora da formare — NON inventare presenze)
 
 Struttura del messaggio:
-1. Apertura diretta: "Ciao {{playerName}}, [giorno] [fascia] c'è una partita di padel[tipo] alle [ora]"
+1. Apertura con saluto personale: "Ciao {{playerName}}, come va?" — varia la formula tra: "come va?", "come stai?", "tutto bene?", "tutto ok?". Tono tranquillo, come un amico che ti scrive.
+2. Poi la partita, come frase a sé: "[giorno] [fascia] c'è una partita di padel[tipo] alle [ora]"
    - Se isFriend=true: "un amico ti ha invitato a padel [giorno] [fascia] alle [ora]"
-2. Solo se confirmedCount > 0: aggiungi una frase breve usando playersInsight (es. "ci sono già 3 persone di livello 3.0–3.5"). MAI nominare i giocatori, MAI inventare o esagerare.
-3. Chiudi SEMPRE con una domanda secca (obbligatoria): "Ti può interessare?", "Ci sei?", "Sei dei nostri?", "Ti unisci?", "Che dici?"
+3. Solo se confirmedCount > 0: aggiungi una frase breve usando playersInsight (es. "ci sono già 3 persone di livello 3.0–3.5"). MAI nominare i giocatori, MAI inventare o esagerare.
+4. Chiudi SEMPRE con una domanda secca (obbligatoria): "Ti può interessare?", "Ci sei?", "Sei dei nostri?", "Ti unisci?", "Che dici?"
 
 Regole:
-- Max 2-3 frasi totali
+- Max 3-4 frasi brevi totali (saluto + partita + eventuale info gruppo + domanda)
 - Tono colloquiale, come un amico che scrive su WhatsApp
 - Max 1 emoji per messaggio, preferibilmente nessuna
 - MAI iniziare con "Ciao {{playerName}}" seguito da punto esclamativo — tono normale, non entusiasta
