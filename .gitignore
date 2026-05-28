@@ -3,3 +3,15 @@ node_modules
 .env
 
 /src/generated/prisma
+
+# macOS junk
+.DS_Store
+
+# Local tooling / agent config (may contain credentials)
+.claude/
+.claire/
+.impeccable/
+.mcp.json
+
+# Regenerable test output
+test-results-*.txt
