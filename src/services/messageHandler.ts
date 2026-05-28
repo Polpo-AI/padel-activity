@@ -398,7 +398,7 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[], cor
 
     // Salva bozza prenotazione in Redis quando il brain produce BOOK_FIELD:
     // permette di ricordare giorno/orario/formato nelle risposte successive senza ri-chiedere all'utente.
-    if (action === 'BOOK_FIELD' && params?.day && params?.time) {
+    if (action === 'BOOK_FIELD' && params?.day && params?.time && !params?.joinMatchId) {
         try {
             const { getRedis } = await import('./queue');
             await getRedis().set(
@@ -531,6 +531,14 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[], cor
                         await simulateTypingAndSend(jid, _notFoundMsgs[Math.floor(Math.random() * _notFoundMsgs.length)]);
                     }
                 }
+            } else if (result.errorMessage === 'ALREADY_JOINED') {
+                const _alreadyMsgs = [
+                    "Sei già dentro a questa partita! Non devi fare altro, ci vediamo in campo 🎾",
+                    "Tranquillo, sei già iscritto a questa partita — è tutto a posto 🎾",
+                    "Ci sei già dentro! Non serve confermare di nuovo, ci vediamo in campo 🎾",
+                    "Sei già in questa partita, non devi fare nulla 🎾",
+                ];
+                await simulateTypingAndSend(jid, _alreadyMsgs[Math.floor(Math.random() * _alreadyMsgs.length)]);
             } else if (result.errorMessage === 'MATCH_CLOSED') {
                 const _closedMsgs = [
                     "Questa partita non è più disponibile (è stata chiusa o completata). Vuoi che cerchi un altro orario?",

@@ -1078,7 +1078,7 @@ export async function executeAction(
                         const phone = rmp.player?.phoneNumber;
                         if (phone) {
                             simulateTypingAndSend(`${phone}@s.whatsapp.net`,
-                                `${leavingName} non può più venire alla partita di ${matchTimeStr}. Stiamo cercando un sostituto 🎾`
+                                `${leavingName} non può più venire alla partita di ${matchTimeStr}. Tu resti dentro, al sostituto ci pensiamo noi — non devi fare nulla 🎾`
                             ).catch(() => {});
                         }
                     }
@@ -1553,7 +1553,9 @@ async function joinExistingMatch(matchId: string, player: any): Promise<{ succes
                 where: { id: matchId },
                 include: { MatchPlayer: { where: { leftAt: null }, include: { player: { select: { gender: true } } } } },
             });
-            if (!match || match.status !== 'OPEN') throw new Error('MATCH_CLOSED');
+            if (!match) throw new Error('MATCH_CLOSED');
+            if (match.MatchPlayer.some((mp: any) => mp.playerId === player.id)) throw new Error('ALREADY_JOINED');
+            if (match.status !== 'OPEN') throw new Error('MATCH_CLOSED');
             if (match.MatchPlayer.length >= match.playersNeeded) throw new Error('MATCH_FULL');
 
             // Gender compatibility check
@@ -1646,8 +1648,9 @@ async function joinExistingMatch(matchId: string, player: any): Promise<{ succes
 
         return { success: true };
     } catch (err: any) {
-        if (err.message === 'MATCH_CLOSED') return { success: false, errorMessage: 'La partita si è chiusa nel frattempo.' };
-        if (err.message === 'MATCH_FULL') return { success: false, errorMessage: 'La partita si è riempita nel frattempo.' };
+        if (err.message === 'MATCH_CLOSED') return { success: false, errorMessage: 'MATCH_CLOSED' };
+        if (err.message === 'MATCH_FULL') return { success: false, errorMessage: 'MATCH_FULL' };
+        if (err.message === 'ALREADY_JOINED') return { success: false, errorMessage: 'ALREADY_JOINED' };
         if (err.message === 'GENDER_MISMATCH') return { success: false, errorMessage: 'GENDER_MISMATCH' };
         throw err;
     }
