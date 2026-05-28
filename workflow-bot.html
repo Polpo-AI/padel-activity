@@ -1,0 +1,715 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Padel Bot — Come funziona</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --bg:      #020817;
+    --surface: #0d1428;
+    --card:    #111b2e;
+    --border:  rgba(255,255,255,0.07);
+    --border2: rgba(255,255,255,0.13);
+    --text:    #e2e8f0;
+    --muted:   #475569;
+    --muted2:  #64748b;
+    --cyan:    #22d3ee;
+    --violet:  #a78bfa;
+    --blue:    #60a5fa;
+    --amber:   #fbbf24;
+    --emerald: #34d399;
+    --rose:    #f87171;
+    --orange:  #fb923c;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: radial-gradient(ellipse 120% 80% at 15% 20%, #0d1d3d 0%, var(--bg) 55%),
+                radial-gradient(ellipse 80% 60% at 85% 80%, #0b0d22 0%, var(--bg) 55%);
+    background-attachment: fixed;
+    color: var(--text);
+    font-family: 'Inter', -apple-system, system-ui, sans-serif;
+    font-size: 13px;
+    line-height: 1.5;
+    min-height: 100vh;
+  }
+  body::before {
+    content: '';
+    position: fixed; inset: 0;
+    background-image:
+      linear-gradient(rgba(255,255,255,0.016) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,0.016) 1px, transparent 1px);
+    background-size: 52px 52px;
+    pointer-events: none; z-index: 0;
+  }
+
+  .orb { position: fixed; border-radius: 50%; pointer-events: none; z-index: 0; filter: blur(1px); }
+  .orb-1 { top: -200px; right: -100px; width: 640px; height: 640px;
+    background: radial-gradient(circle, rgba(34,211,238,0.18) 0%, transparent 65%);
+    animation: float1 28s ease-in-out infinite; }
+  .orb-2 { bottom: -160px; left: -120px; width: 560px; height: 560px;
+    background: radial-gradient(circle, rgba(139,92,246,0.15) 0%, transparent 65%);
+    animation: float2 35s ease-in-out infinite; }
+  .orb-3 { top: 40%; left: 30%; width: 400px; height: 400px;
+    background: radial-gradient(circle, rgba(96,165,250,0.07) 0%, transparent 65%);
+    animation: float3 42s ease-in-out infinite; }
+
+  @keyframes float1 { 0%,100%{transform:translate(0,0) scale(1)} 33%{transform:translate(48px,-72px) scale(1.06)} 66%{transform:translate(-36px,36px) scale(0.96)} }
+  @keyframes float2 { 0%,100%{transform:translate(0,0) scale(1)} 40%{transform:translate(-56px,44px) scale(1.04)} 70%{transform:translate(32px,-48px) scale(0.97)} }
+  @keyframes float3 { 0%,100%{transform:translate(0,0)} 50%{transform:translate(60px,-40px)} }
+
+  .wrapper {
+    position: relative; z-index: 1;
+    max-width: 1200px; margin: 0 auto;
+    padding: 48px 32px 80px;
+  }
+
+  /* Header */
+  .header { margin-bottom: 48px; }
+  .header-eyebrow {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px; font-weight: 500;
+    letter-spacing: 0.2em; text-transform: uppercase;
+    color: var(--cyan); margin-bottom: 14px;
+    display: flex; align-items: center; gap: 10px;
+  }
+  .header-eyebrow::before { content: ''; width: 28px; height: 1px; background: var(--cyan); opacity: 0.6; }
+  .header h1 {
+    font-size: 38px; font-weight: 800; letter-spacing: -0.03em; line-height: 1.1;
+    margin-bottom: 16px;
+    background: linear-gradient(135deg, #f1f5f9 0%, #94a3b8 40%, var(--cyan) 100%);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+  }
+  .header-rule { width: 80px; height: 2px; background: linear-gradient(90deg, var(--cyan), transparent); margin-bottom: 18px; }
+  .header p { font-size: 14px; color: var(--muted2); max-width: 560px; line-height: 1.7; }
+
+  /* Tabs */
+  .tabs-wrap { margin-bottom: 36px; }
+  .tabs {
+    display: inline-flex; gap: 4px;
+    background: rgba(13,20,40,0.9); border: 1px solid var(--border2);
+    border-radius: 14px; padding: 5px; backdrop-filter: blur(12px);
+  }
+  .tab-btn {
+    background: transparent; border: 1px solid transparent; border-radius: 9px;
+    padding: 9px 20px; font-size: 12px; font-weight: 500; font-family: inherit;
+    color: var(--muted2); cursor: pointer; transition: all 0.2s; white-space: nowrap;
+  }
+  .tab-btn:hover { color: var(--text); background: rgba(255,255,255,0.04); }
+  .tab-btn.active {
+    background: linear-gradient(135deg, rgba(34,211,238,0.14) 0%, rgba(139,92,246,0.08) 100%);
+    color: var(--cyan); border-color: rgba(34,211,238,0.28);
+    box-shadow: 0 0 20px rgba(34,211,238,0.08);
+  }
+  .tab-num { font-family: 'JetBrains Mono', monospace; font-size: 10px; opacity: 0.55; margin-right: 6px; }
+  .tab-btn.active .tab-num { opacity: 0.8; }
+  .panel { display: none; }
+  .panel.active { display: block; }
+
+  .section-title {
+    font-family: 'JetBrains Mono', monospace; font-size: 10px; font-weight: 500;
+    text-transform: uppercase; letter-spacing: 0.18em; color: var(--muted); margin-bottom: 24px;
+  }
+
+  /* ── TAB 1: Servizi ── */
+  .services { display: flex; flex-direction: column; gap: 16px; }
+
+  .service-card {
+    background: linear-gradient(160deg, var(--surface) 0%, rgba(11,15,35,0.95) 100%);
+    border: 1px solid var(--border); border-radius: 16px;
+    padding: 28px 32px; border-left: 3px solid;
+    transition: box-shadow 0.2s;
+  }
+  .service-card:hover { box-shadow: 0 8px 40px rgba(0,0,0,0.3); }
+
+  .service-header { display: flex; align-items: center; gap: 14px; margin-bottom: 6px; }
+  .service-icon { font-size: 22px; }
+  .service-name { font-size: 17px; font-weight: 700; letter-spacing: -0.01em; }
+  .service-desc { font-size: 13px; color: var(--muted2); margin-bottom: 20px; margin-left: 36px; }
+
+  .step-chain {
+    display: flex; align-items: stretch;
+    flex-wrap: wrap; gap: 0;
+    margin-left: 36px;
+  }
+  .step-node {
+    background: rgba(255,255,255,0.04);
+    border: 1px solid var(--border2);
+    border-radius: 8px; padding: 10px 16px;
+    font-size: 12px; color: var(--text); line-height: 1.4;
+    flex-shrink: 0;
+  }
+  .step-node.final { color: var(--cyan); border-color: rgba(34,211,238,0.3); background: rgba(34,211,238,0.06); }
+  .step-node.final-green { color: var(--emerald); border-color: rgba(52,211,153,0.3); background: rgba(52,211,153,0.06); }
+  .step-node.final-amber { color: var(--amber); border-color: rgba(251,191,36,0.3); background: rgba(251,191,36,0.06); }
+  .step-sep { display: flex; align-items: center; padding: 0 10px; color: var(--muted); font-size: 16px; }
+
+  .service-note {
+    background: rgba(255,255,255,0.02); border: 1px solid var(--border);
+    border-radius: 10px; padding: 14px 18px;
+    font-size: 12px; color: var(--muted2); display: flex; align-items: center; gap: 10px;
+  }
+  .service-note-icon { font-size: 16px; flex-shrink: 0; }
+
+  /* ── TAB 2 & 3: Chat ── */
+  .chat-layout { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+  @media (max-width: 860px) { .chat-layout { grid-template-columns: 1fr; } }
+
+  .chat-col-label {
+    font-size: 11px; font-weight: 600; color: var(--muted2);
+    text-transform: uppercase; letter-spacing: 0.1em;
+    margin-bottom: 12px; display: flex; align-items: center; gap: 8px;
+  }
+  .chat-col-label::before {
+    content: ''; width: 6px; height: 6px; border-radius: 50%;
+  }
+
+  .chat-window {
+    background: #070d18;
+    border: 1px solid var(--border2); border-radius: 16px;
+    overflow: hidden;
+  }
+  .chat-topbar {
+    background: #0d1428; border-bottom: 1px solid var(--border);
+    padding: 12px 16px; display: flex; align-items: center; gap: 10px;
+  }
+  .chat-avatar {
+    width: 34px; height: 34px; border-radius: 50%;
+    background: linear-gradient(135deg, var(--cyan), var(--violet));
+    display: flex; align-items: center; justify-content: center;
+    font-size: 15px; flex-shrink: 0;
+  }
+  .chat-avatar-plain {
+    width: 34px; height: 34px; border-radius: 50%;
+    background: #1e3550;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 15px; flex-shrink: 0;
+  }
+  .chat-contact { flex: 1; }
+  .chat-contact-name { font-size: 13px; font-weight: 600; color: var(--text); }
+  .chat-contact-status { font-size: 10px; color: var(--emerald); margin-top: 1px; }
+
+  .chat-body { padding: 16px; display: flex; flex-direction: column; gap: 10px; }
+
+  .bubble {
+    max-width: 82%; padding: 9px 13px;
+    font-size: 12.5px; line-height: 1.55; color: var(--text);
+    position: relative;
+  }
+  .bubble-bot {
+    align-self: flex-start;
+    background: #131d30; border: 1px solid rgba(34,211,238,0.12);
+    border-radius: 4px 14px 14px 14px;
+  }
+  .bubble-player {
+    align-self: flex-end;
+    background: #1a3050; border: 1px solid rgba(96,165,250,0.15);
+    border-radius: 14px 4px 14px 14px;
+  }
+  .bubble-time {
+    font-size: 10px; color: var(--muted); margin-top: 4px;
+    display: flex; align-items: center; gap: 4px;
+  }
+  .bubble-bot .bubble-time { justify-content: flex-start; }
+  .bubble-player .bubble-time { justify-content: flex-end; }
+
+  .bubble-card {
+    align-self: flex-start;
+    background: #0d1e35; border: 1px solid rgba(34,211,238,0.2);
+    border-radius: 4px 14px 14px 14px;
+    max-width: 85%; overflow: hidden;
+  }
+  .bubble-card-img {
+    background: linear-gradient(135deg, #0a2a1e, #071830);
+    padding: 14px 16px; display: flex; align-items: center; gap: 10px;
+    border-bottom: 1px solid rgba(34,211,238,0.1);
+  }
+  .bubble-card-icon { font-size: 22px; }
+  .bubble-card-title { font-size: 13px; font-weight: 700; color: var(--cyan); }
+  .bubble-card-sub { font-size: 11px; color: var(--muted2); margin-top: 2px; }
+  .bubble-card-body { padding: 10px 14px; font-size: 12px; color: var(--text); line-height: 1.6; }
+  .bubble-card-row { display: flex; gap: 6px; align-items: center; margin-top: 3px; }
+  .bubble-card-label { color: var(--muted); font-size: 11px; }
+
+  .chat-divider {
+    display: flex; align-items: center; gap: 8px;
+    margin: 4px 0;
+  }
+  .chat-divider-line { flex: 1; height: 1px; background: rgba(255,255,255,0.05); }
+  .chat-divider-text { font-size: 10px; color: var(--muted); font-style: italic; white-space: nowrap; }
+
+  .chat-system {
+    align-self: center; font-size: 10px; color: var(--muted);
+    background: rgba(255,255,255,0.03); border-radius: 20px;
+    padding: 4px 12px; font-style: italic; text-align: center;
+  }
+
+  /* parallel connector */
+  .parallel-connector {
+    display: flex; align-items: center; justify-content: center;
+    padding: 0 4px;
+  }
+  .parallel-connector-inner {
+    display: flex; flex-direction: column; align-items: center; gap: 6px;
+  }
+  .parallel-line { width: 1px; height: 40px; background: linear-gradient(to bottom, transparent, var(--cyan), transparent); }
+  .parallel-label {
+    font-size: 9px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase;
+    color: var(--cyan); writing-mode: vertical-rl; text-orientation: mixed;
+    transform: rotate(180deg); opacity: 0.6;
+  }
+
+  /* Tab 3 layout */
+  .chat-layout-3 { display: grid; grid-template-columns: 1fr 40px 1fr; gap: 0; align-items: start; }
+  @media (max-width: 860px) { .chat-layout-3 { grid-template-columns: 1fr; } .parallel-connector { display: none; } }
+
+  /* ── TAB 4: Edge cases ── */
+  .edge-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; }
+  .edge-card {
+    background: linear-gradient(160deg, var(--surface) 0%, rgba(9,12,26,0.95) 100%);
+    border: 1px solid var(--border); border-radius: 12px; padding: 20px 22px;
+    transition: transform 0.18s ease, box-shadow 0.18s ease; border-top: 2px solid;
+  }
+  .edge-card:hover { transform: translateY(-3px); box-shadow: 0 12px 40px rgba(0,0,0,0.35); }
+  .edge-card-header { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+  .edge-icon { width: 34px; height: 34px; border-radius: 9px; display: flex; align-items: center; justify-content: center; font-size: 15px; flex-shrink: 0; border: 1px solid; }
+  .edge-title { font-size: 13px; font-weight: 600; color: var(--text); line-height: 1.3; }
+  .edge-when { font-size: 11px; color: var(--muted2); margin-bottom: 10px; font-style: italic; }
+  .edge-flow { font-size: 12px; color: var(--muted2); line-height: 1.65; }
+  .edge-flow strong { color: var(--text); font-weight: 500; }
+  .step { display: flex; align-items: flex-start; gap: 7px; margin-top: 5px; }
+  .arrow { color: var(--cyan); flex-shrink: 0; font-size: 11px; margin-top: 1px; font-weight: 600; }
+
+  ::-webkit-scrollbar { width: 4px; height: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: rgba(34,211,238,0.22); border-radius: 2px; }
+</style>
+</head>
+<body>
+
+<div class="orb orb-1"></div>
+<div class="orb orb-2"></div>
+<div class="orb orb-3"></div>
+
+<div class="wrapper">
+
+  <div class="header">
+    <div class="header-eyebrow">Come funziona il bot</div>
+    <h1>Dal primo messaggio<br>alla partita</h1>
+    <div class="header-rule"></div>
+    <p>Il bot gestisce automaticamente iscrizioni, prenotazioni e ricerca giocatori — il tutto su WhatsApp, senza nessuna app aggiuntiva.</p>
+  </div>
+
+  <div class="tabs-wrap">
+    <div class="tabs">
+      <button class="tab-btn active" onclick="switchTab('servizi', this)">
+        <span class="tab-num">01</span>I servizi
+      </button>
+      <button class="tab-btn" onclick="switchTab('iscrizione', this)">
+        <span class="tab-num">02</span>Primo contatto
+      </button>
+      <button class="tab-btn" onclick="switchTab('prenotazione', this)">
+        <span class="tab-num">03</span>Prenota e trova compagni
+      </button>
+      <button class="tab-btn" onclick="switchTab('edge', this)">
+        <span class="tab-num">04</span>Situazioni speciali
+      </button>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════
+       TAB 1 — I SERVIZI
+  ══════════════════════════════════════ -->
+  <div class="panel active" id="panel-servizi">
+    <div class="section-title">Cosa fa il bot — tre servizi principali</div>
+    <div class="services">
+
+      <div class="service-card" style="border-left-color: var(--cyan)">
+        <div class="service-header">
+          <span class="service-icon">&#x1F4F1;</span>
+          <span class="service-name" style="color:var(--cyan)">Prenota un campo in pochi secondi</span>
+        </div>
+        <div class="service-desc">Il giocatore scrive su WhatsApp quando vuole giocare. Il bot verifica la disponibilità, prenota e manda la conferma. Nessuna app, nessun sito, nessuna telefonata.</div>
+        <div class="step-chain">
+          <div class="step-node">"Domani alle 18"</div>
+          <div class="step-sep">›</div>
+          <div class="step-node">Il bot controlla disponibilità</div>
+          <div class="step-sep">›</div>
+          <div class="step-node">Campo prenotato</div>
+          <div class="step-sep">›</div>
+          <div class="step-node final">Conferma con campo, orario e prezzo</div>
+        </div>
+      </div>
+
+      <div class="service-card" style="border-left-color: var(--emerald)">
+        <div class="service-header">
+          <span class="service-icon">&#x1F91D;</span>
+          <span class="service-name" style="color:var(--emerald)">Trova compagni automaticamente</span>
+        </div>
+        <div class="service-desc">Dopo la prenotazione, il bot cerca altri giocatori dello stesso livello e manda loro un invito personalizzato. Il circolo non deve fare nulla — il campo si riempie da solo. Disponibile per i giocatori con livello assegnato.</div>
+        <div class="step-chain">
+          <div class="step-node">Campo prenotato</div>
+          <div class="step-sep">›</div>
+          <div class="step-node">Seleziona giocatori compatibili</div>
+          <div class="step-sep">›</div>
+          <div class="step-node">Inviti WhatsApp personalizzati</div>
+          <div class="step-sep">›</div>
+          <div class="step-node final-green">Campo al completo</div>
+        </div>
+      </div>
+
+      <div class="service-card" style="border-left-color: var(--amber)">
+        <div class="service-header">
+          <span class="service-icon">&#x1F6A8;</span>
+          <span class="service-name" style="color:var(--amber)">Salva le partite dalle cancellazioni</span>
+        </div>
+        <div class="service-desc">Quando un giocatore cancella all'ultimo momento, il bot lancia una ricerca urgente per trovare un sostituto. Nella maggior parte dei casi la partita si salva senza che il circolo debba intervenire.</div>
+        <div class="step-chain">
+          <div class="step-node">Giocatore cancella</div>
+          <div class="step-sep">›</div>
+          <div class="step-node">Ricerca urgente di un sostituto</div>
+          <div class="step-sep">›</div>
+          <div class="step-node">Sostituto trovato</div>
+          <div class="step-sep">›</div>
+          <div class="step-node final-amber">Partita confermata</div>
+        </div>
+      </div>
+
+      <div class="service-note">
+        <span class="service-note-icon">&#x1F514;</span>
+        <span>Il circolo riceve notifiche WhatsApp per ogni evento importante: nuovi iscritti, campi non riempiti, partite confermate.</span>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════
+       TAB 2 — PRIMO CONTATTO
+  ══════════════════════════════════════ -->
+  <div class="panel" id="panel-iscrizione">
+    <div class="section-title">Come si iscrive un nuovo giocatore — conversazione reale su WhatsApp</div>
+    <div class="chat-layout">
+
+      <!-- Conversazione iscrizione -->
+      <div>
+        <div class="chat-col-label" style="--dot-color:var(--cyan)">
+          <span style="width:6px;height:6px;border-radius:50%;background:var(--cyan);flex-shrink:0"></span>
+          Conversazione con il bot
+        </div>
+        <div class="chat-window">
+          <div class="chat-topbar">
+            <div class="chat-avatar">&#x1F916;</div>
+            <div class="chat-contact">
+              <div class="chat-contact-name">Francesca — Circolo Padel Roma</div>
+              <div class="chat-contact-status">online</div>
+            </div>
+          </div>
+          <div class="chat-body">
+
+            <div class="bubble bubble-player">
+              Ciao! Ho sentito che potete gestire le prenotazioni
+              <div class="bubble-time">10:04 ✓✓</div>
+            </div>
+
+            <div class="bubble bubble-bot">
+              Ciao! Sono Francesca, il bot del Circolo Padel Roma. Benvenuto!<br><br>
+              Per iscriverti ho bisogno solo del tuo nome e cognome.
+              <div class="bubble-time">10:04</div>
+            </div>
+
+            <div class="bubble bubble-player">
+              Marco Rossi
+              <div class="bubble-time">10:05 ✓✓</div>
+            </div>
+
+            <div class="bubble bubble-bot">
+              Perfetto Marco, sei ufficialmente iscritto al Circolo Padel Roma!<br><br>
+              Puoi già prenotare un campo scrivendo quando vuoi giocare — ad esempio <em>"domani alle 18"</em>.
+              <div class="bubble-time">10:05</div>
+            </div>
+
+            <div class="bubble bubble-bot">
+              Per trovare compagni in automatico il circolo ti assegnerà un livello dopo uno skill test. Da quel momento il bot si occuperà di riempire il campo per te.
+              <div class="bubble-time">10:05</div>
+            </div>
+
+            <div class="chat-system">Il circolo ha ricevuto una notifica: nuovo iscritto — Marco Rossi</div>
+
+          </div>
+        </div>
+      </div>
+
+      <!-- Cosa succede nel sistema -->
+      <div>
+        <div class="chat-col-label">
+          <span style="width:6px;height:6px;border-radius:50%;background:var(--violet);flex-shrink:0"></span>
+          Cosa succede nel sistema
+        </div>
+        <div style="display:flex;flex-direction:column;gap:12px">
+
+          <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:18px 20px">
+            <div style="font-size:11px;font-weight:600;color:var(--violet);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:10px">Quando il giocatore scrive per la prima volta</div>
+            <div class="step" style="margin-top:0"><span class="arrow">›</span> <span style="color:var(--muted2);font-size:12px">Il bot risponde subito, senza che il circolo faccia nulla</span></div>
+            <div class="step"><span class="arrow">›</span> <span style="color:var(--muted2);font-size:12px">Raccoglie nome e cognome in modo naturale</span></div>
+            <div class="step"><span class="arrow">›</span> <span style="color:var(--muted2);font-size:12px">Crea il profilo automaticamente</span></div>
+            <div class="step"><span class="arrow">›</span> <span style="color:var(--muted2);font-size:12px">Notifica l'admin su WhatsApp: nuovo iscritto</span></div>
+          </div>
+
+          <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:18px 20px">
+            <div style="font-size:11px;font-weight:600;color:var(--emerald);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:10px">Subito dopo l'iscrizione</div>
+            <div class="step" style="margin-top:0"><span style="color:var(--emerald);flex-shrink:0;font-size:11px;margin-top:1px;font-weight:600">›</span> <span style="color:var(--muted2);font-size:12px">Il giocatore <strong style="color:var(--text)">può già prenotare un campo</strong> — porta chi vuole</span></div>
+            <div class="step"><span style="color:var(--emerald);flex-shrink:0;font-size:11px;margin-top:1px;font-weight:600">›</span> <span style="color:var(--muted2);font-size:12px">Il matchmaking automatico si attiva dopo lo skill test</span></div>
+            <div class="step"><span style="color:var(--emerald);flex-shrink:0;font-size:11px;margin-top:1px;font-weight:600">›</span> <span style="color:var(--muted2);font-size:12px">Lo skill test viene organizzato dal circolo quando preferisce</span></div>
+          </div>
+
+          <div style="background:rgba(251,191,36,0.06);border:1px solid rgba(251,191,36,0.18);border-radius:12px;padding:14px 18px;font-size:12px;color:var(--muted2);line-height:1.6">
+            <span style="color:var(--amber);font-weight:600">Nessun modulo, nessuna app.</span> L'intera iscrizione avviene in conversazione naturale su WhatsApp, in meno di un minuto.
+          </div>
+
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════
+       TAB 3 — PRENOTA E TROVA COMPAGNI
+  ══════════════════════════════════════ -->
+  <div class="panel" id="panel-prenotazione">
+    <div class="section-title">Cosa succede quando un giocatore prenota — due conversazioni in parallelo</div>
+
+    <div class="chat-layout-3">
+
+      <!-- Chat: chi prenota -->
+      <div>
+        <div class="chat-col-label">
+          <span style="width:6px;height:6px;border-radius:50%;background:var(--cyan);flex-shrink:0"></span>
+          Chi prenota il campo
+        </div>
+        <div class="chat-window">
+          <div class="chat-topbar">
+            <div class="chat-avatar">&#x1F916;</div>
+            <div class="chat-contact">
+              <div class="chat-contact-name">Francesca — Circolo Padel Roma</div>
+              <div class="chat-contact-status">online</div>
+            </div>
+          </div>
+          <div class="chat-body">
+
+            <div class="bubble bubble-player">
+              Ciao! Voglio prenotare domani alle 18
+              <div class="bubble-time">14:21 ✓✓</div>
+            </div>
+
+            <div class="bubble bubble-bot">
+              Ho trovato un campo per domani martedì alle 18:00!
+              <div class="bubble-time">14:21</div>
+            </div>
+
+            <div class="bubble-card">
+              <div class="bubble-card-img">
+                <span class="bubble-card-icon">&#x1F3BE;</span>
+                <div>
+                  <div class="bubble-card-title">Campo B — scoperto</div>
+                  <div class="bubble-card-sub">Circolo Padel Roma</div>
+                </div>
+              </div>
+              <div class="bubble-card-body">
+                <div class="bubble-card-row"><span class="bubble-card-label">&#x1F4C5; Data</span> Martedì 21 maggio, 18:00 – 19:30</div>
+                <div class="bubble-card-row"><span class="bubble-card-label">&#x1F4B0; Prezzo</span> €12 a testa</div>
+                <div class="bubble-card-row"><span class="bubble-card-label">&#x1F4CD; Dove</span> Via Roma 1, Roma</div>
+              </div>
+            </div>
+
+            <div class="bubble bubble-player">
+              Perfetto, confermo!
+              <div class="bubble-time">14:22 ✓✓</div>
+            </div>
+
+            <div class="bubble bubble-bot">
+              Prenotato! A domani 🎾
+              <div class="bubble-time">14:22</div>
+            </div>
+
+            <div class="chat-divider">
+              <div class="chat-divider-line"></div>
+              <div class="chat-divider-text">più tardi...</div>
+              <div class="chat-divider-line"></div>
+            </div>
+
+            <div class="bubble bubble-bot">
+              Ottima notizia — il campo è al completo! Giocherai con Luca, Sara e Marco. A domani! &#x1F91D;
+              <div class="bubble-time">16:45</div>
+            </div>
+
+          </div>
+        </div>
+      </div>
+
+      <!-- Connettore parallelo -->
+      <div class="parallel-connector">
+        <div class="parallel-connector-inner">
+          <div class="parallel-line"></div>
+          <div class="parallel-label">in parallelo</div>
+          <div class="parallel-line"></div>
+        </div>
+      </div>
+
+      <!-- Chat: chi riceve l'invito -->
+      <div>
+        <div class="chat-col-label">
+          <span style="width:6px;height:6px;border-radius:50%;background:var(--emerald);flex-shrink:0"></span>
+          Chi riceve l'invito (in automatico)
+        </div>
+        <div class="chat-window">
+          <div class="chat-topbar">
+            <div class="chat-avatar">&#x1F916;</div>
+            <div class="chat-contact">
+              <div class="chat-contact-name">Francesca — Circolo Padel Roma</div>
+              <div class="chat-contact-status">online</div>
+            </div>
+          </div>
+          <div class="chat-body">
+
+            <div class="chat-system">Il bot ha trovato 3 posti da riempire per Davide</div>
+
+            <div class="bubble bubble-bot">
+              Ciao Luca! Domani alle 18 c'è un posto per te con Davide e altri del tuo stesso livello. Ti va di unirti?
+              <div class="bubble-time">14:25</div>
+            </div>
+
+            <div class="bubble bubble-player">
+              Sì dai!
+              <div class="bubble-time">14:31 ✓✓</div>
+            </div>
+
+            <div class="bubble bubble-bot">
+              Perfetto! Campo B, domani alle 18:00. Ti aspettiamo &#x1F3BE;
+              <div class="bubble-time">14:31</div>
+            </div>
+
+            <div class="chat-divider">
+              <div class="chat-divider-line"></div>
+              <div class="chat-divider-text">stessa cosa per Sara e Marco</div>
+              <div class="chat-divider-line"></div>
+            </div>
+
+            <div class="chat-system">3 su 3 posti trovati — partita confermata</div>
+
+            <div class="bubble bubble-bot">
+              Tutto confermato! Domani alle 18 sarete in quattro: Davide, Luca, Sara e Marco.
+              <div class="bubble-time">16:45</div>
+            </div>
+
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════
+       TAB 4 — SITUAZIONI SPECIALI
+  ══════════════════════════════════════ -->
+  <div class="panel" id="panel-edge">
+    <div class="section-title">Situazioni speciali — gestite in automatico, senza intervento del circolo</div>
+    <div class="edge-grid">
+
+      <div class="edge-card" style="border-top-color:var(--amber)">
+        <div class="edge-card-header">
+          <div class="edge-icon" style="background:rgba(251,191,36,0.10);border-color:rgba(251,191,36,0.22)">&#x1F3E0;</div>
+          <div class="edge-title">Solo campo coperto disponibile</div>
+        </div>
+        <div class="edge-when">Il giocatore chiede uno scoperto ma sono tutti occupati</div>
+        <div class="edge-flow">
+          <div class="step"><span class="arrow">›</span> Il bot lo rileva prima di confermare</div>
+          <div class="step"><span class="arrow">›</span> Chiede conferma: <strong>"A quell'orario ho solo il coperto — confermo?"</strong></div>
+          <div class="step"><span class="arrow">›</span> Il giocatore decide. Nessuna sorpresa.</div>
+        </div>
+      </div>
+
+      <div class="edge-card" style="border-top-color:var(--cyan)">
+        <div class="edge-card-header">
+          <div class="edge-icon" style="background:rgba(34,211,238,0.10);border-color:rgba(34,211,238,0.22)">&#x1F504;</div>
+          <div class="edge-title">Orario già occupato</div>
+        </div>
+        <div class="edge-when">Il campo richiesto è pieno in quell'orario</div>
+        <div class="edge-flow">
+          <div class="step"><span class="arrow">›</span> Il bot cerca fino a 5 orari alternativi nella stessa giornata</div>
+          <div class="step"><span class="arrow">›</span> Li propone numerati in chat</div>
+          <div class="step"><span class="arrow">›</span> Il giocatore sceglie con un numero. Fine.</div>
+        </div>
+      </div>
+
+      <div class="edge-card" style="border-top-color:var(--orange)">
+        <div class="edge-card-header">
+          <div class="edge-icon" style="background:rgba(251,146,60,0.10);border-color:rgba(251,146,60,0.22)">&#x26A1;</div>
+          <div class="edge-title">Cancellazione last minute</div>
+        </div>
+        <div class="edge-when">Un giocatore cancella e lascia il campo incompleto</div>
+        <div class="edge-flow">
+          <div class="step"><span class="arrow">›</span> Gli altri giocatori vengono avvisati subito</div>
+          <div class="step"><span class="arrow">›</span> <strong>Il bot lancia una ricerca urgente</strong> con priorità alta</div>
+          <div class="step"><span class="arrow">›</span> Nella maggior parte dei casi la partita si salva</div>
+          <div class="step"><span class="arrow">›</span> Il circolo non perde il campo</div>
+        </div>
+      </div>
+
+      <div class="edge-card" style="border-top-color:var(--violet)">
+        <div class="edge-card-header">
+          <div class="edge-icon" style="background:rgba(167,139,250,0.10);border-color:rgba(167,139,250,0.22)">&#x1F393;</div>
+          <div class="edge-title">Giocatore senza livello assegnato</div>
+        </div>
+        <div class="edge-when">Il giocatore si è iscritto ma non ha ancora fatto lo skill test</div>
+        <div class="edge-flow">
+          <div class="step"><span class="arrow">›</span> Può prenotare un campo e portare chi vuole</div>
+          <div class="step"><span class="arrow">›</span> Il matchmaking automatico si attiva appena il circolo assegna il livello</div>
+          <div class="step"><span class="arrow">›</span> Nessun blocco — solo una funzione in più da sbloccare</div>
+        </div>
+      </div>
+
+      <div class="edge-card" style="border-top-color:var(--rose)">
+        <div class="edge-card-header">
+          <div class="edge-icon" style="background:rgba(248,113,113,0.10);border-color:rgba(248,113,113,0.22)">&#x1F4EB;</div>
+          <div class="edge-title">Campo non riempito</div>
+        </div>
+        <div class="edge-when">Non si trovano abbastanza giocatori prima della partita</div>
+        <div class="edge-flow">
+          <div class="step"><span class="arrow">›</span> Il bot rileva la situazione in anticipo</div>
+          <div class="step"><span class="arrow">›</span> Notifica il circolo su WhatsApp</div>
+          <div class="step"><span class="arrow">›</span> Avvisa i giocatori già confermati</div>
+        </div>
+      </div>
+
+      <div class="edge-card" style="border-top-color:var(--emerald)">
+        <div class="edge-card-header">
+          <div class="edge-icon" style="background:rgba(52,211,153,0.10);border-color:rgba(52,211,153,0.22)">&#x1F319;</div>
+          <div class="edge-title">Nessun messaggio di notte</div>
+        </div>
+        <div class="edge-when">Una partita ha bisogno di giocatori ma sono le 22:30</div>
+        <div class="edge-flow">
+          <div class="step"><span class="arrow">›</span> Il bot non invia nulla dopo le 22:00</div>
+          <div class="step"><span class="arrow">›</span> La ricerca riprende automaticamente alle 08:00</div>
+          <div class="step"><span class="arrow">›</span> I giocatori non vengono mai disturbati di notte</div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+</div>
+
+<script>
+  function switchTab(tab, btn) {
+    document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.getElementById('panel-' + tab).classList.add('active');
+    btn.classList.add('active');
+  }
+</script>
+</body>
+</html>
