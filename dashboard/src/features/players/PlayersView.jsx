@@ -259,61 +259,56 @@ function MultiSelectFilterDropdown({ options, selected, onChange, active }) {
   );
 }
 
-// ─── ReliabilityFilterDropdown ─────────────────────────────────────────────────
+// ─── RangeFilterDropdown — filtro intervallo Min/Max (due slider) ───────────────
 
-function ReliabilityFilterDropdown({ minReliability, onChange, active }) {
+function RangeFilterDropdown({ label, min, max, step, value, onChange, format, color, active, isFull, extra }) {
   const { C, btnGhost } = useTheme();
-  // localPct: valore durante il drag (anteprima) — il filtro si applica solo al rilascio
-  const [localPct, setLocalPct] = useState(Math.round(minReliability * 100));
-  const [dragging, setDragging] = useState(false);
+  const [lo, hi] = value;
+  const c = color || C.accent;
+  const pct = v => max > min ? ((v - min) / (max - min)) * 100 : 0;
 
-  // Sincronizza localPct se il valore esterno cambia (es. reset)
-  useEffect(() => { if (!dragging) setLocalPct(Math.round(minReliability * 100)); }, [minReliability, dragging]);
-
-  const displayPct = dragging ? localPct : Math.round(minReliability * 100);
-  const color = displayPct >= 60 ? C.open : displayPct >= 30 ? C.warning : C.cancelled;
+  const setLo = v => onChange([Math.min(v, hi), hi]);
+  const setHi = v => onChange([lo, Math.max(v, lo)]);
 
   return (
     <FilterDropdown trigger="⌕" active={active}>
       {() => (
         <div style={{ padding: "12px 16px", width: 240, boxSizing: "border-box", overflow: "hidden" }}>
-          {/* Intestazione con valore live */}
+          {/* Intestazione con range live */}
           <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 10, fontSize: 12 }}>
-            <span style={{ color: C.muted }}>Affidabilità minima</span>
-            <span style={{
-              color, fontWeight: 700, fontSize: 13,
-              transition: dragging ? "none" : "color 0.2s",
-              minWidth: 80, textAlign: "right",
-            }}>
-              ≥ {displayPct}%
-              {dragging && <span style={{ fontSize: 10, color: C.muted, fontWeight: 400, marginLeft: 4 }}>(lascia per applicare)</span>}
-            </span>
+            <span style={{ color: C.muted }}>{label}</span>
+            <span style={{ color: c, fontWeight: 700, fontSize: 13 }}>{format(lo)} – {format(hi)}</span>
           </div>
 
-          {/* Barra di anteprima */}
-          <div style={{ height: 4, background: C.dim, borderRadius: 2, overflow: "hidden", marginBottom: 8 }}>
+          {/* Barra range selezionato */}
+          <div style={{ position: "relative", height: 4, background: C.dim, borderRadius: 2, marginBottom: 14 }}>
             <div style={{
-              height: "100%", width: "100%", background: color, borderRadius: 2,
-              transform: `scaleX(${displayPct / 100})`, transformOrigin: "left",
-              transition: "transform 0.05s, background 0.2s",
+              position: "absolute", height: "100%", borderRadius: 2, background: c,
+              left: `${pct(lo)}%`, right: `${100 - pct(hi)}%`,
             }} />
           </div>
 
-          {/* Slider */}
-          <input
-            type="range" min={0} max={100} step={5}
-            value={localPct}
-            onChange={e => { setLocalPct(parseInt(e.target.value)); setDragging(true); }}
-            onPointerUp={e => { const v = parseInt(e.target.value); setLocalPct(v); setDragging(false); onChange(v / 100); }}
-            style={{ width: "100%", accentColor: color, cursor: "pointer" }}
-          />
-          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: C.dim, marginTop: 2 }}>
-            <span>0%</span><span>50%</span><span>100%</span>
+          {/* Due slider Min / Max */}
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {[
+              { k: "min", val: lo, set: setLo },
+              { k: "max", val: hi, set: setHi },
+            ].map(({ k, val, set }) => (
+              <label key={k} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 11, color: C.muted }}>
+                <span style={{ minWidth: 30, textTransform: "capitalize" }}>{k}</span>
+                <input type="range" min={min} max={max} step={step} value={val}
+                  onChange={e => set(parseFloat(e.target.value))}
+                  style={{ flex: 1, accentColor: c, cursor: "pointer" }} />
+                <span style={{ minWidth: 42, textAlign: "right", color: C.text, fontWeight: 600 }}>{format(val)}</span>
+              </label>
+            ))}
           </div>
 
-          {minReliability > 0 && !dragging && (
-            <button type="button" onClick={() => { setLocalPct(0); onChange(0); }}
-              style={{ ...btnGhost, fontSize: 11, padding: "4px 10px", marginTop: 8, width: "100%" }}>
+          {extra}
+
+          {!isFull && (
+            <button type="button" onClick={() => onChange([min, max])}
+              style={{ ...btnGhost, fontSize: 11, padding: "4px 10px", marginTop: 10, width: "100%" }}>
               ✕ Rimuovi filtro
             </button>
           )}
@@ -593,9 +588,10 @@ export default function PlayersView({ token }) {
   const [fName,        setFName]        = useState("");         // text
   const [fPhone,       setFPhone]       = useState("");         // text
   const [fGender,      setFGender]      = useState(new Set());  // multiselect
-  const [fSkill,       setFSkill]       = useState(new Set());  // multiselect ("no-skill" | "1.0" | "2.0" ...)
   const [fStatus,      setFStatus]      = useState(new Set());  // multiselect ("active" | "inactive")
-  const [fReliability, setFReliability] = useState(0);         // slider 0-1
+  const [fSkillRange,  setFSkillRange]  = useState(null);       // [lo, hi] livelli — null = nessun filtro
+  const [fSkillInclNone, setFSkillInclNone] = useState(true);  // includi giocatori senza livello
+  const [fRelRange,    setFRelRange]    = useState([0, 100]);   // [minPct, maxPct] affidabilità
 
   const [selectedPlayer, setSelectedPlayer] = useState(null);
   const [showAddPlayer,  setShowAddPlayer]  = useState(false);
@@ -614,13 +610,13 @@ export default function PlayersView({ token }) {
 
   useEffect(() => { load(); }, [load]);
 
-  // Opzioni dinamiche per livello (da dati reali)
-  const skillOptions = useMemo(() => {
-    const levels = new Set(players.filter(p => p.skillLevel > 0).map(p => String(p.skillLevel)));
-    return [
-      { value: "no-skill", label: "⚠ Senza livello" },
-      ...[...levels].sort((a, b) => parseFloat(a) - parseFloat(b)).map(l => ({ value: l, label: `Livello ${l}` })),
-    ];
+  // Estremi livello dinamici dai dati reali (arrotondati a 0.5), fallback 1.0–7.0
+  const skillBounds = useMemo(() => {
+    const lv = players.filter(p => p.skillLevel > 0).map(p => p.skillLevel);
+    if (!lv.length) return [1, 7];
+    const lo = Math.floor(Math.min(...lv) * 2) / 2;
+    const hi = Math.ceil(Math.max(...lv) * 2) / 2;
+    return [lo, hi <= lo ? lo + 0.5 : hi];
   }, [players]);
 
   const genderOptions = [
@@ -644,11 +640,13 @@ export default function PlayersView({ token }) {
 
     if (fGender.size > 0) list = list.filter(p => fGender.has(p.gender || "UNKNOWN"));
 
-    if (fSkill.size > 0) {
+    // Livello: range [lo, hi] sui giocatori con livello; senza livello inclusi/esclusi via toggle
+    if (fSkillRange || !fSkillInclNone) {
+      const [lo, hi] = fSkillRange || skillBounds;
       list = list.filter(p => {
-        if (fSkill.has("no-skill") && p.skillLevel <= 0) return true;
-        if (fSkill.has(String(p.skillLevel)) && p.skillLevel > 0) return true;
-        return false;
+        if (p.skillLevel <= 0) return fSkillInclNone;
+        if (!fSkillRange) return true;
+        return p.skillLevel >= lo && p.skillLevel <= hi;
       });
     }
 
@@ -660,7 +658,13 @@ export default function PlayersView({ token }) {
       });
     }
 
-    if (fReliability > 0) list = list.filter(p => (p.reliabilityScore || 0.33) >= fReliability);
+    // Affidabilità: range [minPct, maxPct]
+    if (fRelRange[0] > 0 || fRelRange[1] < 100) {
+      list = list.filter(p => {
+        const pct = (p.reliabilityScore || 0.33) * 100;
+        return pct >= fRelRange[0] && pct <= fRelRange[1];
+      });
+    }
 
     list.sort((a, b) => {
       for (const { field, dir } of sortCriteria) {
@@ -671,7 +675,7 @@ export default function PlayersView({ token }) {
     });
 
     return list;
-  }, [players, fName, fPhone, fGender, fSkill, fStatus, fReliability, sortCriteria]);
+  }, [players, fName, fPhone, fGender, fSkillRange, fSkillInclNone, fStatus, fRelRange, skillBounds, sortCriteria]);
 
   // Clic su una colonna: cicla ↑ → ↓ → off. Una colonna nuova entra come primaria (ultima azione).
   const onSort = (field) => {
@@ -689,10 +693,12 @@ export default function PlayersView({ token }) {
 
   const resetSort = () => setSortCriteria([{ field: "name", dir: "asc" }]);
 
-  const hasAnyFilter = fName || fPhone || fGender.size > 0 || fSkill.size > 0 || fStatus.size > 0 || fReliability > 0;
+  const hasAnyFilter = fName || fPhone || fGender.size > 0 || fStatus.size > 0
+    || fSkillRange || !fSkillInclNone || fRelRange[0] > 0 || fRelRange[1] < 100;
 
   const clearAll = () => {
-    setFName(""); setFPhone(""); setFGender(new Set()); setFSkill(new Set()); setFStatus(new Set()); setFReliability(0);
+    setFName(""); setFPhone(""); setFGender(new Set()); setFStatus(new Set());
+    setFSkillRange(null); setFSkillInclNone(true); setFRelRange([0, 100]);
   };
 
   const exportCsv = () => {
@@ -810,9 +816,35 @@ export default function PlayersView({ token }) {
             <Th label="Sesso" sortField="gender" sortCriteria={sortCriteria} onSort={onSort}
               filterEl={<MultiSelectFilterDropdown options={genderOptions} selected={fGender} onChange={setFGender} active={fGender.size > 0} />} />
             <Th label="Liv." sortField="skillLevel" sortCriteria={sortCriteria} onSort={onSort}
-              filterEl={<MultiSelectFilterDropdown options={skillOptions} selected={fSkill} onChange={setFSkill} active={fSkill.size > 0} />} />
+              filterEl={
+                <RangeFilterDropdown
+                  label="Intervallo livello"
+                  min={skillBounds[0]} max={skillBounds[1]} step={0.5}
+                  value={fSkillRange || skillBounds}
+                  onChange={r => setFSkillRange(r[0] <= skillBounds[0] && r[1] >= skillBounds[1] ? null : r)}
+                  format={v => Number(v).toFixed(1)}
+                  isFull={!fSkillRange && fSkillInclNone}
+                  active={!!fSkillRange || !fSkillInclNone}
+                  extra={
+                    <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 11, color: C.muted, marginTop: 12, cursor: "pointer" }}>
+                      <input type="checkbox" checked={fSkillInclNone} onChange={e => setFSkillInclNone(e.target.checked)} style={{ accentColor: C.accent }} />
+                      Includi giocatori senza livello
+                    </label>
+                  }
+                />
+              } />
             <Th label="Affidabilità" sortField="reliability" sortCriteria={sortCriteria} onSort={onSort}
-              filterEl={<ReliabilityFilterDropdown minReliability={fReliability} onChange={setFReliability} active={fReliability > 0} />} />
+              filterEl={
+                <RangeFilterDropdown
+                  label="Intervallo affidabilità"
+                  min={0} max={100} step={5}
+                  value={fRelRange}
+                  onChange={setFRelRange}
+                  format={v => `${v}%`}
+                  isFull={fRelRange[0] === 0 && fRelRange[1] === 100}
+                  active={fRelRange[0] > 0 || fRelRange[1] < 100}
+                />
+              } />
             <Th label="Contattato" sortField="contacted" sortCriteria={sortCriteria} onSort={onSort} />
             <Th label="Stato" sortField="status" sortCriteria={sortCriteria} onSort={onSort}
               filterEl={<MultiSelectFilterDropdown options={statusOptions} selected={fStatus} onChange={setFStatus} active={fStatus.size > 0} />} />
