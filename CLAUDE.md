@@ -30,6 +30,24 @@ cd /root/padel-staging/dashboard && npm run build && cd ..
 systemctl restart padel-staging
 ```
 
+#### Pagine dashboard bianche (Utenti/FAQ) = dist STALE, non un bug di codice
+Sintomo ricorrente: alcune view (es. Utenti, FAQ) si caricano bianche. Causa quasi sempre la stessa: la
+`dashboard/dist` servita è una build vecchia che NON corrisponde ai sorgenti (es. manca un fix già
+committato come `a917aa8` "useTheme nei sub-componenti", o le migliorie impeccable). **NON è un bug nuovo
+nel codice** — è build non rifatta. Insidia: committare i file `dist/` senza aver lanciato `npm run build`
+li lascia stale anche se il commit si chiama "rebuild".
+**Verifica e fix:**
+```bash
+# 1. Confronta il bundle servito con un rebuild fresco: se l'hash cambia, la dist era stale
+cd /root/padel-staging/dashboard && npm run build   # nota il nuovo index-XXXX.js
+grep -oE 'assets/index-[A-Za-z0-9]+\.js' dist/index.html   # deve puntare al bundle appena buildato
+# 2. Conferma dal bundle servito pubblicamente (stringhe attuali presenti = sorgenti aggiornati)
+curl -s https://padel-staging.polpo-ai.com/dashboard/$(curl -s https://padel-staging.polpo-ai.com/dashboard/ | grep -oE 'assets/index-[A-Za-z0-9]+\.js' | head -1) | grep -c "In attesa di risposta"
+systemctl restart padel-staging
+```
+`npm run build` svuota `dist/` e rigenera l'hash: se cambia rispetto a quello committato, la dist era vecchia.
+Committare sempre la dist APPENA buildata, mai una pre-esistente nel working tree.
+
 #### Query DB rapide: psql diretto, MAI `npx tsx -e` inline
 `$` in `tsx -e` viene interpretato come shell → errore esbuild. `node -e "SELECT ..."` → bash: command not found. Usare sempre psql:
 ```bash
