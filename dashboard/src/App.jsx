@@ -84,7 +84,7 @@ export default function PadelDashboard() {
           background: ${C.accent}; flex-shrink: 0;
         }
         .nav-btn:hover { background: ${dark ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.04)"} !important; color: ${C.text} !important; }
-        .nav-btn.active { background: rgba(6,182,212,0.10) !important; }
+        .nav-btn.active { background: linear-gradient(90deg, ${C.accentSoft} 0%, ${C.indigoDim} 100%) !important; box-shadow: inset 0 0 0 1px ${C.accentDim}; }
       `}</style>
 
       {/* Theme toggle pill — top-right fixed */}
@@ -119,9 +119,11 @@ export default function PadelDashboard() {
         />
       )}
 
-      {/* Aurora orbs — solo angoli, nessun orb centrato */}
+      {/* Aurora orbs — angoli, multi-hue come l'hero del sito */}
       <div style={{ position: "fixed", top: -200, right: -150, width: 600, height: 600, borderRadius: "50%", background: `radial-gradient(circle, ${C.orbCyan} 0%, transparent 70%)`, pointerEvents: "none", zIndex: 0, transition: "background 0.5s, opacity 0.5s", willChange: "opacity" }} />
       <div style={{ position: "fixed", bottom: -150, left: -100, width: 500, height: 500, borderRadius: "50%", background: `radial-gradient(circle, ${C.orbViolet} 0%, transparent 70%)`, pointerEvents: "none", zIndex: 0, transition: "background 0.5s, opacity 0.5s", willChange: "opacity" }} />
+      <div style={{ position: "fixed", top: "38%", right: -180, width: 420, height: 420, borderRadius: "50%", background: `radial-gradient(circle, ${C.orbEmerald} 0%, transparent 70%)`, pointerEvents: "none", zIndex: 0, transition: "background 0.5s, opacity 0.5s", willChange: "opacity" }} />
+      <div style={{ position: "fixed", bottom: -120, right: "30%", width: 360, height: 360, borderRadius: "50%", background: `radial-gradient(circle, ${C.orbPink} 0%, transparent 70%)`, pointerEvents: "none", zIndex: 0, transition: "background 0.5s, opacity 0.5s", willChange: "opacity" }} />
 
       {/* Sidebar */}
       <div style={{

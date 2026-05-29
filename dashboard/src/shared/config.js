@@ -7,11 +7,11 @@ export function makeTheme(mode = 'dark') {
   const dark = mode === 'dark';
 
   const C = dark ? {
-    // ── Sfondi ──────────────────────────────────────────
-    bg:           "#0B1228",
-    surface:      "#0F1730",
-    surfaceHover: "#131C3D",
-    card:         "#1A234A",
+    // ── Sfondi — navy luminoso (meno cupo, vicino all'hero del sito) ──
+    bg:           "#131D40",
+    surface:      "#1C2A52",
+    surfaceHover: "#25345F",
+    card:         "#2E3C6B",
 
     // ── Bordi — white-alpha ──────────────────────────────
     border:       "rgba(255,255,255,0.10)",
@@ -20,6 +20,7 @@ export function makeTheme(mode = 'dark') {
 
     // ── Accent primario — cyan ───────────────────────────
     accent:       "#22d3ee",
+    accentBright: "#67e8f9",
     accentDim:    "rgba(6,182,212,0.10)",
     accentSoft:   "rgba(6,182,212,0.20)",
 
@@ -27,6 +28,21 @@ export function makeTheme(mode = 'dark') {
     indigo:       "#a78bfa",
     indigoDim:    "rgba(139,92,246,0.10)",
     indigoSoft:   "rgba(139,92,246,0.22)",
+
+    // ── Palette brand estesa (allineata al sito Polpo AI) ──
+    siteBlue:  "#38bdf8",
+    teal:      "#14b8a6",
+    emerald:   "#34d399",
+    magenta:   "#ff3d8a",
+    amber:     "#ffb547",
+    rose:      "#fb7185",
+
+    // ── Gradienti & glow firma (dal sito) ─────────────────
+    accentGradient: "linear-gradient(135deg, #22d3ee 0%, #06b6d4 45%, #0891b2 100%)",
+    brandGradient:  "linear-gradient(120deg, #22d3ee 0%, #38bdf8 32%, #8b5cf6 68%, #ff3d8a 100%)",
+    glowCyan:    "0 8px 32px rgba(6,182,212,0.25)",
+    glowViolet:  "0 8px 32px rgba(139,92,246,0.22)",
+    glowEmerald: "0 8px 32px rgba(16,185,129,0.22)",
 
     // ── Testi ────────────────────────────────────────────
     text:         "#f8fafc",
@@ -47,17 +63,18 @@ export function makeTheme(mode = 'dark') {
     overlay:       "rgba(0,0,0,0.75)",
     male:          "#3b82f6",
     female:        "#ec4899",
-    success:       "#22c55e",
+    success:       "#10b981",
 
     // ── Sidebar ──────────────────────────────────────────
-    sidebarBg:     "#0d1530",
+    sidebarBg:     "#17214C",
     sidebarBorder: "rgba(255,255,255,0.08)",
     sidebarSep:    "rgba(255,255,255,0.07)",
 
-    // ── Orbs opacity (aurora) ────────────────────────────
-    orbCyan:   "rgba(34,211,238,0.18)",
-    orbViolet: "rgba(139,92,246,0.16)",
-    orbPink:   "rgba(255,61,138,0.10)",
+    // ── Orbs opacity (aurora — più vivida, come l'hero del sito) ──
+    orbCyan:    "rgba(34,211,238,0.26)",
+    orbViolet:  "rgba(139,92,246,0.22)",
+    orbPink:    "rgba(255,61,138,0.16)",
+    orbEmerald: "rgba(16,185,129,0.14)",
   } : {
     // ── Sfondi ──────────────────────────────────────────
     bg:           "#e8f4fd",
@@ -72,6 +89,7 @@ export function makeTheme(mode = 'dark') {
 
     // ── Accent primario — cyan-600 (più leggibile su bianco) ──
     accent:       "#0891b2",
+    accentBright: "#06b6d4",
     accentDim:    "rgba(8,145,178,0.10)",
     accentSoft:   "rgba(8,145,178,0.18)",
 
@@ -79,6 +97,21 @@ export function makeTheme(mode = 'dark') {
     indigo:       "#7c3aed",
     indigoDim:    "rgba(124,58,237,0.08)",
     indigoSoft:   "rgba(124,58,237,0.18)",
+
+    // ── Palette brand estesa (varianti accessibili su fondo chiaro) ──
+    siteBlue:  "#0284c7",
+    teal:      "#0d9488",
+    emerald:   "#059669",
+    magenta:   "#db2777",
+    amber:     "#d97706",
+    rose:      "#e11d48",
+
+    // ── Gradienti & glow firma (dal sito) ─────────────────
+    accentGradient: "linear-gradient(135deg, #06b6d4 0%, #0891b2 100%)",
+    brandGradient:  "linear-gradient(120deg, #0891b2 0%, #38bdf8 32%, #8b5cf6 68%, #db2777 100%)",
+    glowCyan:    "0 6px 24px rgba(8,145,178,0.20)",
+    glowViolet:  "0 6px 24px rgba(124,58,237,0.18)",
+    glowEmerald: "0 6px 24px rgba(5,150,105,0.18)",
 
     // ── Testi ────────────────────────────────────────────
     text:         "#0f172a",
@@ -99,7 +132,7 @@ export function makeTheme(mode = 'dark') {
     overlay:       "rgba(15,23,42,0.40)",
     male:          "#1d4ed8",
     female:        "#be185d",
-    success:       "#16a34a",
+    success:       "#059669",
 
     // ── Sidebar ──────────────────────────────────────────
     sidebarBg:     "#ddeef8",
@@ -107,15 +140,16 @@ export function makeTheme(mode = 'dark') {
     sidebarSep:    "rgba(15,23,42,0.10)",
 
     // ── Orbs opacity (aurora — più vivi in light per dare profondità) ─
-    orbCyan:   "rgba(34,211,238,0.22)",
-    orbViolet: "rgba(139,92,246,0.18)",
-    orbPink:   "rgba(255,61,138,0.12)",
+    orbCyan:    "rgba(34,211,238,0.28)",
+    orbViolet:  "rgba(139,92,246,0.22)",
+    orbPink:    "rgba(255,61,138,0.16)",
+    orbEmerald: "rgba(16,185,129,0.16)",
   };
 
   // ── Stili derivati ──────────────────────────────────────────────────────────
 
   const inputSt = {
-    background:  dark ? "rgba(15,23,48,0.8)" : "#ffffff",
+    background:  dark ? "rgba(28,42,82,0.85)" : "#ffffff",
     border:      `1px solid ${C.border}`,
     borderRadius: 10,
     padding:     "10px 14px",
@@ -140,7 +174,7 @@ export function makeTheme(mode = 'dark') {
     transition:     "transform 0.20s cubic-bezier(0.23,1,0.32,1), box-shadow 0.20s",
     letterSpacing:  "0.01em",
     boxShadow:      dark
-      ? "0 8px 32px rgba(6,182,212,0.28), inset 0 1px 0 rgba(255,255,255,0.18)"
+      ? "0 8px 32px rgba(6,182,212,0.30), 0 2px 14px rgba(139,92,246,0.12), inset 0 1px 0 rgba(255,255,255,0.18)"
       : "0 4px 20px rgba(8,145,178,0.30), inset 0 1px 0 rgba(255,255,255,0.25)",
   };
 
@@ -171,12 +205,12 @@ export function makeTheme(mode = 'dark') {
   };
 
   const cardSt = dark ? {
-    background:     "rgba(15,23,48,0.60)",
+    background:     "rgba(28,42,82,0.62)",
     backdropFilter: "blur(16px) saturate(1.5)",
     border:         "1px solid rgba(255,255,255,0.10)",
     borderRadius:    20,
     padding:        "20px 22px",
-    boxShadow:      "0 4px 24px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.07)",
+    boxShadow:      "0 4px 24px rgba(0,0,0,0.35), 0 0 24px rgba(34,211,238,0.05), inset 0 1px 0 rgba(255,255,255,0.07)",
   } : {
     background:     "rgba(244,250,255,0.90)",
     backdropFilter: "blur(12px)",

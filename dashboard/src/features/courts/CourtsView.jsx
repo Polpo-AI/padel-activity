@@ -1052,13 +1052,21 @@ export default function CourtsView({ token, onClubUpdate }) {
       {/* Weekly stats */}
       <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(3, 1fr)", gap: 12 }}>
         {[
-          { l: "Partite aperte (settimana)", v: weekMatches.filter(m => m.status === "OPEN").length, c: C.open },
-          { l: "Partite chiuse (settimana)", v: weekMatches.filter(m => m.status === "LOCKED").length, c: C.locked },
-          { l: "Giocatori confermati", v: weekMatches.filter(m => m.status === "LOCKED").reduce((s, m) => s + (m.MatchPlayer?.filter(mp => !mp.leftAt).length || 0), 0), c: C.accent },
+          { l: "Partite aperte (settimana)", v: weekMatches.filter(m => m.status === "OPEN").length, c: C.accent },
+          { l: "Partite chiuse (settimana)", v: weekMatches.filter(m => m.status === "LOCKED").length, c: C.indigo },
+          { l: "Giocatori confermati", v: weekMatches.filter(m => m.status === "LOCKED").reduce((s, m) => s + (m.MatchPlayer?.filter(mp => !mp.leftAt).length || 0), 0), c: C.emerald },
         ].map(s => (
-          <div key={s.l} style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: "18px 20px" }}>
-            <div style={{ fontSize: 10, color: C.muted, textTransform: "uppercase", letterSpacing: "0.1em" }}>{s.l}</div>
-            <div style={{ fontSize: 28, fontWeight: 700, color: s.c, marginTop: 4, fontVariantNumeric: "tabular-nums" }}>{s.v}</div>
+          <div key={s.l} style={{
+            position: "relative", overflow: "hidden",
+            background: `linear-gradient(135deg, ${s.c}1A 0%, ${C.surface} 55%)`,
+            border: `1px solid ${s.c}33`,
+            borderRadius: 16,
+            padding: "18px 20px",
+            boxShadow: `0 8px 32px ${s.c}1f`,
+          }}>
+            <div style={{ position: "absolute", top: -28, right: -28, width: 120, height: 120, borderRadius: "50%", background: `radial-gradient(circle, ${s.c}26 0%, transparent 70%)`, pointerEvents: "none" }} />
+            <div style={{ position: "relative", fontSize: 10, color: C.muted, textTransform: "uppercase", letterSpacing: "0.1em" }}>{s.l}</div>
+            <div style={{ position: "relative", fontSize: 34, fontWeight: 800, color: s.c, marginTop: 4, fontVariantNumeric: "tabular-nums", textShadow: `0 0 24px ${s.c}55` }}>{s.v}</div>
           </div>
         ))}
       </div>
