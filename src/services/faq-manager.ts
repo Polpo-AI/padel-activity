@@ -34,10 +34,9 @@ export async function analyzeFaq(
     newAnswer: string,
     existingFaqs: { id: string; question: string; answer: string }[]
 ): Promise<FaqAnalysisResult> {
-    // Fast-path: no existing FAQs → always NEW
-    if (!existingFaqs || existingFaqs.length === 0) {
-        return { decision: 'NEW', reason: 'Nessuna FAQ esistente.' };
-    }
+    // Nota: anche senza FAQ esistenti chiamiamo l'AI per RISCRIVERE la domanda
+    // (la decisione sarà comunque NEW, ma la domanda va sempre normalizzata).
+    const hasExisting = existingFaqs && existingFaqs.length > 0;
 
     const prompt = `Sei un curatore di FAQ per un circolo padel italiano. Fai due cose: (1) RISCRIVI la domanda in forma pulita, e (2) confrontala con le FAQ esistenti.
 
@@ -108,7 +107,12 @@ Rispondi SOLO con JSON valido, nessun testo aggiuntivo. Schema:
         const validDecisions: FaqDecision[] = ['NEW', 'DUPLICATE', 'CONFLICT', 'MERGE'];
         if (!validDecisions.includes(parsed.decision)) {
             logger.warn({ parsed }, 'analyzeFaq: invalid decision value');
-            return { decision: 'NEW', reason: 'Decisione AI non valida, trattata come nuova.' };
+            return { ...parsed, decision: 'NEW', reason: 'Decisione AI non valida, trattata come nuova.' };
+        }
+
+        // Senza FAQ esistenti la decisione può solo essere NEW (la riscrittura resta valida)
+        if (!hasExisting && parsed.decision !== 'NEW') {
+            return { ...parsed, decision: 'NEW', relatedFaqId: undefined, reason: 'Nessuna FAQ esistente.' };
         }
 
         return parsed;
