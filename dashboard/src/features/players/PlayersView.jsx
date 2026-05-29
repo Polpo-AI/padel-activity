@@ -628,10 +628,13 @@ export default function PlayersView({ token }) {
 
     list.sort((a, b) => {
       let va, vb;
+      const genderRank = g => g === "FEMALE" ? 0 : g === "MALE" ? 1 : 2;
       if (sortBy === "name")             { va = (a.name || "").toLowerCase(); vb = (b.name || "").toLowerCase(); }
       else if (sortBy === "skillLevel")  { va = a.skillLevel;                 vb = b.skillLevel; }
       else if (sortBy === "reliability") { va = a.reliabilityScore || 0.33;   vb = b.reliabilityScore || 0.33; }
       else if (sortBy === "contacted")   { va = a.lastContactedAt ? new Date(a.lastContactedAt).getTime() : 0; vb = b.lastContactedAt ? new Date(b.lastContactedAt).getTime() : 0; }
+      else if (sortBy === "gender")      { va = genderRank(a.gender);         vb = genderRank(b.gender); }
+      else if (sortBy === "status")      { va = a.active ? 1 : 0;             vb = b.active ? 1 : 0; }
       if (va < vb) return sortDir === "asc" ? -1 : 1;
       if (va > vb) return sortDir === "asc" ?  1 : -1;
       return 0;
@@ -744,14 +747,14 @@ export default function PlayersView({ token }) {
               filterEl={<TextFilterDropdown value={fName} onChange={setFName} placeholder="Cerca nome…" active={!!fName} />} />
             <Th label="Telefono" sortBy={sortBy} sortDir={sortDir} onSort={onSort}
               filterEl={<TextFilterDropdown value={fPhone} onChange={setFPhone} placeholder="Cerca numero…" active={!!fPhone} />} />
-            <Th label="Sesso" sortBy={sortBy} sortDir={sortDir} onSort={onSort}
+            <Th label="Sesso" sortField="gender" sortBy={sortBy} sortDir={sortDir} onSort={onSort}
               filterEl={<MultiSelectFilterDropdown options={genderOptions} selected={fGender} onChange={setFGender} active={fGender.size > 0} />} />
             <Th label="Liv." sortField="skillLevel" sortBy={sortBy} sortDir={sortDir} onSort={onSort}
               filterEl={<MultiSelectFilterDropdown options={skillOptions} selected={fSkill} onChange={setFSkill} active={fSkill.size > 0} />} />
             <Th label="Affidabilità" sortField="reliability" sortBy={sortBy} sortDir={sortDir} onSort={onSort}
               filterEl={<ReliabilityFilterDropdown minReliability={fReliability} onChange={setFReliability} active={fReliability > 0} />} />
             <Th label="Contattato" sortField="contacted" sortBy={sortBy} sortDir={sortDir} onSort={onSort} />
-            <Th label="Stato" sortBy={sortBy} sortDir={sortDir} onSort={onSort}
+            <Th label="Stato" sortField="status" sortBy={sortBy} sortDir={sortDir} onSort={onSort}
               filterEl={<MultiSelectFilterDropdown options={statusOptions} selected={fStatus} onChange={setFStatus} active={fStatus.size > 0} />} />
           </div>
 
