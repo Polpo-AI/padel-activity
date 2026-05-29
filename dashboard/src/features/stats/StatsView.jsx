@@ -5,19 +5,25 @@ import Spinner from "../../shared/Spinner";
 
 function HeroCard({ label, value, sub, color, icon, highlight }) {
   const { C } = useTheme();
+  const c = color || C.accent;
+  // highlight controlla l'intensità: dati reali → glow pieno; stato vuoto ("—") → tinta più tenue
+  const tint = highlight ? "22" : "12";
   return (
     <div style={{
-      background: highlight ? `linear-gradient(135deg, ${C.surface} 0%, ${color}18 100%)` : C.surface,
-      border: `1px solid ${highlight ? color + "50" : C.border}`,
-      borderRadius: 14, padding: "24px 26px",
+      position: "relative", overflow: "hidden",
+      background: `linear-gradient(135deg, ${c}${tint} 0%, ${C.surface} 55%)`,
+      border: `1px solid ${c}${highlight ? "40" : "26"}`,
+      borderRadius: 16, padding: "24px 26px",
+      boxShadow: highlight ? `0 8px 32px ${c}22` : "none",
       display: "flex", flexDirection: "column", gap: 10,
     }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+      <div style={{ position: "absolute", top: -28, right: -28, width: 130, height: 130, borderRadius: "50%", background: `radial-gradient(circle, ${c}${highlight ? "29" : "14"} 0%, transparent 70%)`, pointerEvents: "none" }} />
+      <div style={{ position: "relative", display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
         <div style={{ fontSize: 10, color: C.muted, textTransform: "uppercase", letterSpacing: "0.12em", fontWeight: 600 }}>{label}</div>
         <span style={{ fontSize: 22 }}>{icon}</span>
       </div>
-      <div style={{ fontSize: 38, fontWeight: 700, color: color || C.accent, fontVariantNumeric: "tabular-nums", lineHeight: 1 }}>{value}</div>
-      {sub && <div style={{ fontSize: 12, color: C.muted, lineHeight: 1.4 }}>{sub}</div>}
+      <div style={{ position: "relative", fontSize: 38, fontWeight: 800, color: c, fontVariantNumeric: "tabular-nums", lineHeight: 1, textShadow: highlight ? `0 0 24px ${c}55` : "none" }}>{value}</div>
+      {sub && <div style={{ position: "relative", fontSize: 12, color: C.muted, lineHeight: 1.4 }}>{sub}</div>}
     </div>
   );
 }
