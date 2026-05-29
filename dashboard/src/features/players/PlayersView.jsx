@@ -33,7 +33,7 @@ function SortArrow({ field, sortBy, sortDir, onSort }) {
       title={active ? (sortDir === "asc" ? "Ordina decrescente" : "Ordina crescente") : "Ordina"}
       style={{
         cursor: "pointer", fontSize: 11, marginLeft: 3, lineHeight: 1,
-        color: active ? C.accent : C.dim,
+        color: active ? C.accent : C.muted,
         display: "inline-block", userSelect: "none",
       }}
     >
