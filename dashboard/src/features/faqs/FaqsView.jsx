@@ -38,6 +38,7 @@ function PendingFaqCard({ faq, token, onUpdated, onDelete }) {
   const [relatedFaq, setRelatedFaq] = useState(null);
   const [mergedQ, setMergedQ] = useState("");
   const [mergedA, setMergedA] = useState("");
+  const [reviewedQ, setReviewedQ] = useState("");  // domanda riscritta dall'AI, editabile
   const [toast, setToast] = useState(null);
 
   const handleAnalyze = async () => {
@@ -50,6 +51,7 @@ function PendingFaqCard({ faq, token, onUpdated, onDelete }) {
         body: JSON.stringify({ question: faq.question, answer: answer.trim() }),
       });
       setAnalysisResult(result);
+      setReviewedQ((result.normalizedQuestion || faq.question || "").trim());
       if (result.suggestedQuestion) setMergedQ(result.suggestedQuestion);
       if (result.suggestedAnswer) setMergedA(result.suggestedAnswer);
       // Load related FAQ for CONFLICT side-by-side view
@@ -72,7 +74,7 @@ function PendingFaqCard({ faq, token, onUpdated, onDelete }) {
     try {
       await api(`/faqs/${faq.id}/answer`, token, {
         method: "POST",
-        body: JSON.stringify({ answer: answer.trim(), notifyPlayer }),
+        body: JSON.stringify({ answer: answer.trim(), notifyPlayer, question: reviewedQ.trim() || undefined }),
       });
       setToast({ msg: "Risposta salvata", type: "ok" });
       onUpdated();
@@ -120,7 +122,7 @@ function PendingFaqCard({ faq, token, onUpdated, onDelete }) {
     try {
       await api(`/faqs/${faq.id}/answer`, token, {
         method: "POST",
-        body: JSON.stringify({ answer: answer.trim(), notifyPlayer }),
+        body: JSON.stringify({ answer: answer.trim(), notifyPlayer, question: reviewedQ.trim() || undefined }),
       });
       setToast({ msg: "Salvata come nuova FAQ", type: "ok" });
       onUpdated();
@@ -203,6 +205,24 @@ function PendingFaqCard({ faq, token, onUpdated, onDelete }) {
             <DecisionBadge decision={analysisResult.decision} />
             <span style={{ fontSize: 12, color: C.muted }}>{analysisResult.reason}</span>
           </div>
+
+          {/* Domanda rivista dall'AI — editabile (non per MERGE che ha il suo campo) */}
+          {analysisResult.decision !== "MERGE" && (
+            <div>
+              <label style={{ ...labelSt, display: "flex", alignItems: "center", gap: 6 }}>
+                Domanda (rivista dall'AI)
+                {analysisResult.questionRewritten && (
+                  <span style={{ fontSize: 9, fontWeight: 700, padding: "2px 6px", borderRadius: 5, background: `${C.indigo}1E`, color: C.indigo, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                    riformulata
+                  </span>
+                )}
+              </label>
+              <input value={reviewedQ} onChange={e => setReviewedQ(e.target.value)} style={inputSt} />
+              {faq.question !== reviewedQ && (
+                <div style={{ fontSize: 11, color: C.muted, marginTop: 4 }}>Originale: "{faq.question}"</div>
+              )}
+            </div>
+          )}
 
           {/* NEW */}
           {analysisResult.decision === "NEW" && (

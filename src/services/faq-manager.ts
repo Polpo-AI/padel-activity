@@ -21,8 +21,12 @@ export interface FaqAnalysisResult {
     decision: FaqDecision;
     relatedFaqId?: string;
     reason: string;
-    suggestedQuestion?: string;  // only for MERGE
-    suggestedAnswer?: string;    // only for MERGE
+    suggestedQuestion?: string;  // for MERGE
+    suggestedAnswer?: string;    // for MERGE
+    /** Domanda riscritta in forma chiara, completa e autonoma (sempre presente). */
+    normalizedQuestion?: string;
+    /** true se la domanda originale era un frammento/ambigua ed è stata riformulata. */
+    questionRewritten?: boolean;
 }
 
 export async function analyzeFaq(
@@ -35,22 +39,32 @@ export async function analyzeFaq(
         return { decision: 'NEW', reason: 'Nessuna FAQ esistente.' };
     }
 
-    const prompt = `Sei un curatore di FAQ per un circolo padel italiano. Analizza la nuova domanda+risposta e confrontala con le FAQ esistenti.
+    const prompt = `Sei un curatore di FAQ per un circolo padel italiano. Fai due cose: (1) RISCRIVI la domanda in forma pulita, e (2) confrontala con le FAQ esistenti.
 
-NUOVA FAQ:
+NUOVA FAQ (domanda grezza, estratta da una chat):
 ${JSON.stringify({ question: newQuestion, answer: newAnswer })}
 
 FAQ ESISTENTI:
 ${JSON.stringify(existingFaqs.map(f => ({ id: f.id, question: f.question, answer: f.answer })))}
 
-Decidi una delle seguenti opzioni:
+═══ PASSO 1 — RISCRITTURA DOMANDA (normalizedQuestion) ═══
+La domanda grezza spesso è un frammento dipendente dal contesto (es. "se sì quali?", "e il costo?", "a che ora?"), incompleta o sgrammaticata. Devi SEMPRE produrre "normalizedQuestion": una domanda autonoma, chiara, completa e generica (riutilizzabile da chiunque), ricavando il vero significato dalla RISPOSTA.
+Esempi:
+- "se sì quali?" + risposta sulle palline fornite → "Il circolo fornisce le palline per le partite?"
+- "e il costo?" + risposta sul noleggio racchette → "Quanto costa noleggiare una racchetta?"
+Imposta "questionRewritten": true se l'hai modificata in modo sostanziale, false se era già chiara e autonoma.
+
+═══ PASSO 2 — CONFRONTO CON ESISTENTI ═══
+Confronta la normalizedQuestion (NON la grezza) con le FAQ esistenti e decidi:
 - "NEW": nessuna sovrapposizione significativa, salva come nuova FAQ
-- "DUPLICATE": già completamente coperta da una FAQ esistente (restituisci il suo id)
+- "DUPLICATE": stessa domanda/argomento già coperto da una FAQ esistente (restituisci il suo id). Due formulazioni diverse della stessa domanda sono DUPLICATE, non NEW.
 - "CONFLICT": contraddice una FAQ esistente (restituisci l'id + la ragione)
-- "MERGE": simile/complementare a una FAQ esistente, proponi una Q+A unificata (restituisci id + suggestedQuestion + suggestedAnswer)
+- "MERGE": simile/complementare a una FAQ esistente sullo stesso tema, proponi una Q+A unificata (restituisci id + suggestedQuestion + suggestedAnswer)
 
 Rispondi SOLO con JSON valido, nessun testo aggiuntivo. Schema:
 {
+  "normalizedQuestion": "string (SEMPRE — domanda riscritta e autonoma)",
+  "questionRewritten": true | false,
   "decision": "NEW" | "DUPLICATE" | "CONFLICT" | "MERGE",
   "relatedFaqId": "string (solo per DUPLICATE, CONFLICT, MERGE)",
   "reason": "string (spiega brevemente la decisione)",

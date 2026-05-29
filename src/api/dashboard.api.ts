@@ -1380,7 +1380,7 @@ router.delete('/faqs/:id', authMiddleware, async (req: Request, res: Response) =
 router.post('/faqs/:id/answer', authMiddleware, async (req: Request, res: Response) => {
     const clubId = (req as any).clubId as string;
     const { id } = req.params;
-    const { answer, notifyPlayer } = req.body || {};
+    const { answer, notifyPlayer, question } = req.body || {};
 
     if (!answer) {
         return res.status(400).json({ error: 'answer richiesta' });
@@ -1390,6 +1390,9 @@ router.post('/faqs/:id/answer', authMiddleware, async (req: Request, res: Respon
         const faq = await prisma.faq.findFirst({ where: { id, clubId } });
         if (!faq) return res.status(404).json({ error: 'FAQ non trovata' });
 
+        // Domanda finale: usa quella rivista dall'admin se fornita, altrimenti l'originale
+        const finalQuestion = (question && String(question).trim()) ? String(question).trim() : faq.question;
+
         // Run AI analysis before saving (dashboard uses this for warnings)
         const existingFaqs = await prisma.faq.findMany({
             where: { clubId, answer: { not: null }, id: { not: id } },
@@ -1397,15 +1400,15 @@ router.post('/faqs/:id/answer', authMiddleware, async (req: Request, res: Respon
         });
         const { analyzeFaq } = await import('../services/faq-manager');
         const decision = await analyzeFaq(
-            faq.question,
+            finalQuestion,
             String(answer),
             existingFaqs.map(f => ({ id: f.id, question: f.question, answer: f.answer! }))
         );
 
-        // Save the answer
+        // Save the answer (e l'eventuale domanda rivista)
         const updated = await prisma.faq.update({
             where: { id },
-            data: { answer: String(answer) },
+            data: { answer: String(answer), question: finalQuestion },
         });
 
         // Notify player via WhatsApp if requested
@@ -1416,14 +1419,14 @@ router.post('/faqs/:id/answer', authMiddleware, async (req: Request, res: Respon
             runWithContext({ clubId }, () =>
                 simulateTypingAndSend(
                     `${askedBy}@s.whatsapp.net`,
-                    `Risposta alla tua domanda: "${faq.question}"\n\n${answer}`
+                    `Risposta alla tua domanda: "${finalQuestion}"\n\n${answer}`
                 ).catch(() => {})
             );
         }
 
         // Notifica anche gli utenti con domande simili ancora in sospeso in Redis
         const { notifyPendingFaqUsers } = await import('../services/admin-commands');
-        notifyPendingFaqUsers(clubId, faq.question, String(answer)).catch(() => {});
+        notifyPendingFaqUsers(clubId, finalQuestion, String(answer)).catch(() => {});
 
         res.json({ decision, faq: updated });
     } catch (e: any) {

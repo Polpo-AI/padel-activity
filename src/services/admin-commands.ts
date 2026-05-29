@@ -691,25 +691,30 @@ export async function notifyPendingFaqUsers(
 
     if (pendingItems.length === 0) return;
 
+    // Dedup: ogni giocatore riceve AL MASSIMO un messaggio per questa chiamata, anche se
+    // ha più pending coperte dalla stessa risposta (domanda duplicata o follow-up correlato).
+    // Le pending matchate vengono comunque tutte rimosse dalla coda.
+    const notifiedJids = new Set<string>();
+
     // Per ogni pending, chiede all'AI se la nuova FAQ risponde alla domanda
     for (const item of pendingItems) {
         try {
             const covered = await isFaqCoveringQuestion(faqQuestion, faqAnswer, item.question);
             if (!covered) continue;
 
-            // Risponde all'utente
-            if (item.playerJid) {
+            // Risponde all'utente — solo se non già notificato in questa chiamata
+            if (item.playerJid && !notifiedJids.has(item.playerJid)) {
+                notifiedJids.add(item.playerJid);
                 const { runWithContext } = await import('../utils/request-context');
                 await runWithContext({ correlationId: `faq-notify-${item.id}`, clubId }, () =>
                     simulateTypingAndSend(item.playerJid, faqAnswer).catch(() => {})
                 );
+                logger.info({ clubId, faqQuestion, askedBy: item.askedBy }, 'Pending FAQ user notified via new FAQ');
             }
 
-            // Rimuove dalla coda
+            // Rimuove dalla coda (sempre, anche se l'invio è stato deduplicato)
             await redis.lrem(idsKey, 1, item.id);
             await redis.del(`faq:pending:${clubId}:${item.id}`);
-
-            logger.info({ clubId, faqQuestion, askedBy: item.askedBy }, 'Pending FAQ user notified via new FAQ');
         } catch (err) {
             logger.warn({ err, itemId: item.id }, 'notifyPendingFaqUsers: error processing item');
         }
