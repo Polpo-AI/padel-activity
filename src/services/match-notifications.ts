@@ -184,10 +184,15 @@ export async function cancelMatchesWithNotification(
     let notified = 0;
     for (const matchId of matchIds) {
         try {
-            await prisma.match.update({
-                where: { id: matchId },
+            // Scope per club (difesa in profondità): non cancellare match di altri club anche se l'ID è errato/allucinato
+            const res = await prisma.match.updateMany({
+                where: { id: matchId, clubId },
                 data: { status: 'CANCELLED', cancelledAt: new Date(), cancelledReason: reason },
             });
+            if (res.count === 0) {
+                logger.warn({ matchId, clubId }, 'cancelMatchesWithNotification: match non trovato per questo club — skip');
+                continue;
+            }
             await notifyMatchCancelled(matchId, clubId);
             notified++;
         } catch (err) {

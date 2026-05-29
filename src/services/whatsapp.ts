@@ -96,15 +96,15 @@ async function waitForSocket(clubId: string | undefined, timeoutMs = SEND_WAIT_T
 // ─────────────────────────────────────────────
 
 function getSocketForClub(clubId?: string): ClubSocketState | null {
-    // 1. Club esplicito dal context
-    if (clubId && clubSockets.has(clubId)) return clubSockets.get(clubId)!;
+    // Multi-tenant: se il context specifica un club, usa SOLO il suo socket.
+    // Mai ripiegare su quello di un altro club → altrimenti invieremmo dal numero WhatsApp sbagliato.
+    // Se non è ancora pronto restituiamo null (il chiamante attende/fallisce invece di misroutare).
+    if (clubId) return clubSockets.get(clubId) ?? null;
 
-    // 2. Fallback: primo socket 'open' disponibile
+    // Legacy single-tenant (nessun clubId nel context): primo socket 'open', poi qualsiasi inizializzato
     for (const [, cs] of clubSockets) {
         if (cs.status === 'open') return cs;
     }
-
-    // 3. Fallback: qualsiasi socket inizializzato
     if (clubSockets.size > 0) return clubSockets.values().next().value!;
 
     return null;
@@ -376,7 +376,9 @@ async function processOfflineMessages(
         let lastBotTs = 0;
         try {
             const lastBotMsg = await prisma.whatsAppMessage.findFirst({
-                where: { chatId: jid, role: 'BOT' },
+                // Scope per club: con lo stesso numero utente su più club, il "last bot reply" di un altro
+                // club falserebbe il filtro dei messaggi offline non risposti.
+                where: { chatId: jid, role: 'BOT', clubId },
                 orderBy: { timestamp: 'desc' },
             });
             if (lastBotMsg) lastBotTs = lastBotMsg.timestamp.getTime();
@@ -468,7 +470,9 @@ export async function humanSend(
     try {
         const { prisma } = await import('./db');
         const lastMsg = await prisma.whatsAppMessage.findFirst({
-            where: { chatId: formattedJid, role: 'BOT' },
+            // Scope per club: evita falsi "duplicati" tra club diversi che parlano con lo stesso numero
+            // (clubId undefined nel legacy single-tenant → Prisma ignora il filtro)
+            where: { chatId: formattedJid, role: 'BOT', clubId },
             orderBy: { timestamp: 'desc' },
         });
         if (lastMsg && lastMsg.content.trim() === text.trim()) {

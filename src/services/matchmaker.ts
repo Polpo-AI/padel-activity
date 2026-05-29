@@ -466,7 +466,9 @@ export async function buildMatchSocialContext(
         };
     });
 
-    const hour = matchStartTime.getHours();
+    // Ora nel fuso del circolo (Europe/Rome), non quella del server (es. UTC sul VPS),
+    // altrimenti una partita serale verrebbe etichettata "pomeriggio" nell'invito.
+    const hour = Number(matchStartTime.toLocaleString('en-US', { timeZone: 'Europe/Rome', hour: '2-digit', hour12: false }));
     const timeOfDay = hour < 13 ? 'mattina' : hour < 18 ? 'pomeriggio' : 'sera';
 
     return {

@@ -114,12 +114,15 @@ export interface RedirectGroup {
 export async function redirectGroup(group: RedirectGroup): Promise<void> {
     logger.info(`Redirecting ${group.playerCount} players from match ${group.originalMatchId} (intent: ${group.intent || 'auto'})`);
 
-    // Dedup: evita messaggi duplicati se due job recovery girano in parallelo per lo stesso match
+    // Dedup: evita messaggi duplicati se due job recovery girano in parallelo per lo stesso match.
+    // La chiave include referentJid e reason: con originalMatchId='none' (caso BOOK_FIELD) un lock
+    // sul solo matchId sarebbe condiviso fra TUTTI gli utenti → il secondo utente non riceverebbe il
+    // redirect. TTL breve: basta a deduplicare job paralleli, non blocca un redirect legittimo successivo.
     const redis = getRedis();
-    const lockKey = `redirect:sent:${group.originalMatchId}`;
-    const acquired = await redis.set(lockKey, '1', 'EX', 300, 'NX').catch(() => null);
+    const lockKey = `redirect:sent:${group.referentJid}:${group.originalMatchId}:${group.reason}`;
+    const acquired = await redis.set(lockKey, '1', 'EX', 90, 'NX').catch(() => null);
     if (!acquired) {
-        logger.warn({ matchId: group.originalMatchId }, 'redirectGroup: già inviato — skip duplicato');
+        logger.warn({ matchId: group.originalMatchId, referentJid: group.referentJid, reason: group.reason }, 'redirectGroup: già inviato — skip duplicato');
         return;
     }
 
@@ -226,6 +229,9 @@ async function _bookFieldSearch(
 ): Promise<RedirectOption[]> {
     const options: RedirectOption[] = [];
 
+    // Non proporre mai slot già passati (o che inizierebbero tra pochissimo): floor su now + 10 min
+    const nowFloorMs = Date.now() + 10 * 60 * 1000;
+
     const courts = await prisma.court.findMany({
         where: { clubId, active: true, ...(isCoveredFilter !== null ? { isCovered: isCoveredFilter } : {}) },
         select: { id: true, name: true, isCovered: true },
@@ -284,7 +290,7 @@ async function _bookFieldSearch(
     let before: { court: string; courtId: string; isCovered: boolean; startTime: Date } | null = null;
     {
         let t = new Date(referenceTime.getTime() - STEP_MS);
-        while (t >= dayStart) {
+        while (t >= dayStart && t.getTime() >= nowFloorMs) {
             for (const c of courts) {
                 if (isSlotFree(c.id, t)) {
                     before = { court: c.name, courtId: c.id, isCovered: c.isCovered, startTime: new Date(t) };
@@ -315,13 +321,15 @@ async function _bookFieldSearch(
             // Inizia da referenceTime stesso (arrotondato al passo successivo)
             let t = new Date(referenceTime.getTime() + STEP_MS);
             while (t <= dayEnd) {
-                for (const c of courts) {
-                    if (isSlotFree(c.id, t)) {
-                        after = { court: c.name, courtId: c.id, isCovered: c.isCovered, startTime: new Date(t) };
-                        break;
+                if (t.getTime() >= nowFloorMs) {
+                    for (const c of courts) {
+                        if (isSlotFree(c.id, t)) {
+                            after = { court: c.name, courtId: c.id, isCovered: c.isCovered, startTime: new Date(t) };
+                            break;
+                        }
                     }
+                    if (after) break;
                 }
-                if (after) break;
                 t = new Date(t.getTime() + STEP_MS);
             }
         }
@@ -796,6 +804,31 @@ async function createMatchForGroup(option: RedirectOption, group: RedirectGroup)
     const skillLevel = group.originalSkillLevel > 0
         ? group.originalSkillLevel
         : referent?.skillLevel && referent.skillLevel > 0 ? referent.skillLevel : 3.5;
+
+    // Re-check occupazione campo: tra l'invio delle opzioni e la scelta dell'utente (TTL 600s)
+    // il campo può essere stato preso da qualcun altro → evita la doppia prenotazione.
+    if (isBookField && option.courtId) {
+        const SLOT_MS = 90 * 60 * 1000;
+        const candidates = await prisma.match.findMany({
+            where: {
+                clubId: group.clubId,
+                courtId: option.courtId,
+                status: { in: ['OPEN', 'LOCKED'] },
+                startTime: { gte: new Date(option.startTime.getTime() - SLOT_MS), lte: new Date(option.startTime.getTime() + SLOT_MS) },
+            },
+            select: { startTime: true },
+        });
+        const conflict = candidates.some(m => Math.abs(m.startTime.getTime() - option.startTime.getTime()) < SLOT_MS);
+        if (conflict) {
+            const _takenMsgs = [
+                "Mi dispiace, quel campo è stato appena preso! Vuoi scegliere un'altra opzione?",
+                "Quel campo si è occupato un attimo prima, quale altra opzione preferisci? 😔",
+                "Ops, quello slot non è più libero, scegline un altro 😅",
+            ];
+            await simulateTypingAndSend(group.referentJid, _takenMsgs[Math.floor(Math.random() * _takenMsgs.length)]);
+            return;
+        }
+    }
 
     const match = await prisma.match.create({
         data: {

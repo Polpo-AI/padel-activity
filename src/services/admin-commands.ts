@@ -1113,7 +1113,8 @@ async function executeAdminSteps(
                 continue;
             }
 
-            await prisma.player.updateMany({ where: { id: { in: playerIds } }, data: { skillLevel: newSkill } });
+            // Scope per club (difesa in profondità): gli ID arrivano dal prompt LLM, mai mutare player di altri club
+            await prisma.player.updateMany({ where: { id: { in: playerIds }, clubId: club.id }, data: { skillLevel: newSkill } });
             const names = allPlayers
                 .filter((p: any) => playerIds.includes(p.id))
                 .map((p: any) => p.name || p.phoneNumber);
