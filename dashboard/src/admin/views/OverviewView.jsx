@@ -5,20 +5,24 @@ import Spinner from "../../shared/Spinner";
 const WA_LABEL  = { open: "Connesso", connecting: "Connessione…", closed: "Chiuso", disconnected: "—" };
 const WA_COLOR  = (status, C) => ({ open: C.open, connecting: C.warning, closed: C.cancelled, disconnected: C.muted }[status] || C.muted);
 
-function StatCard({ label, value, sub, color, icon, highlight }) {
+function StatCard({ label, value, sub, color, icon }) {
   const { C } = useTheme();
+  const c = color || C.accent;
   return (
     <div style={{
-      background: highlight ? `linear-gradient(135deg, ${C.surface} 0%, ${color}18 100%)` : C.surface,
-      border: `1px solid ${highlight ? color + "44" : C.border}`,
-      borderRadius: 12, padding: "20px 22px",
+      position: "relative", overflow: "hidden",
+      background: `linear-gradient(135deg, ${c}1A 0%, ${C.surface} 55%)`,
+      border: `1px solid ${c}33`,
+      borderRadius: 16, padding: "20px 22px",
+      boxShadow: `0 8px 32px ${c}1f`,
     }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
+      <div style={{ position: "absolute", top: -26, right: -26, width: 120, height: 120, borderRadius: "50%", background: `radial-gradient(circle, ${c}26 0%, transparent 70%)`, pointerEvents: "none" }} />
+      <div style={{ position: "relative", display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
         <div style={{ fontSize: 10, color: C.muted, textTransform: "uppercase", letterSpacing: "0.1em", fontWeight: 600 }}>{label}</div>
         <span style={{ fontSize: 18 }}>{icon}</span>
       </div>
-      <div style={{ fontSize: 34, fontWeight: 700, color: color || C.accent, fontVariantNumeric: "tabular-nums", lineHeight: 1 }}>{value}</div>
-      {sub && <div style={{ fontSize: 11, color: C.muted, marginTop: 6, lineHeight: 1.4 }}>{sub}</div>}
+      <div style={{ position: "relative", fontSize: 34, fontWeight: 800, color: c, fontVariantNumeric: "tabular-nums", lineHeight: 1, textShadow: `0 0 24px ${c}55` }}>{value}</div>
+      {sub && <div style={{ position: "relative", fontSize: 11, color: C.muted, marginTop: 6, lineHeight: 1.4 }}>{sub}</div>}
     </div>
   );
 }
@@ -67,10 +71,10 @@ export default function OverviewView({ token }) {
 
       {/* KPI principali */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(190px, 1fr))", gap: 14 }}>
-        <StatCard label="Circoli attivi" value={totals.totalClubs} icon="🏟" color={C.accent} highlight />
-        <StatCard label="Giocatori totali" value={totals.totalPlayers} sub={`${totals.activePlayers} attivi`} icon="👥" color={C.text} />
-        <StatCard label="Partite oggi" value={period.matchesToday} icon="🎾" color={C.text} />
-        <StatCard label="Partite (30 giorni)" value={period.matchesThisMonth} sub={`${period.recentlyActivePlayers} giocatori attivi`} icon="📅" color={C.text} />
+        <StatCard label="Circoli attivi" value={totals.totalClubs} icon="🏟" color={C.accent} />
+        <StatCard label="Giocatori totali" value={totals.totalPlayers} sub={`${totals.activePlayers} attivi`} icon="👥" color={C.indigo} />
+        <StatCard label="Partite oggi" value={period.matchesToday} icon="🎾" color={C.emerald} />
+        <StatCard label="Partite (30 giorni)" value={period.matchesThisMonth} sub={`${period.recentlyActivePlayers} giocatori attivi`} icon="📅" color={C.siteBlue} />
         <StatCard label="In corso / aperte" value={totals.openMatches} icon="🟢" color={C.open} />
         <StatCard label="Confermate" value={totals.lockedMatches} icon="🔒" color={C.locked} />
         <StatCard

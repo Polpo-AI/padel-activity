@@ -104,9 +104,11 @@ export default function AdminApp() {
         />
       )}
 
-      {/* Aurora orbs — solo angoli */}
+      {/* Aurora orbs — angoli, multi-hue come l'hero del sito */}
       <div style={{ position: "fixed", top: -200, right: -150, width: 600, height: 600, borderRadius: "50%", background: `radial-gradient(circle, ${C.orbCyan} 0%, transparent 70%)`, pointerEvents: "none", zIndex: 0, transition: "background 0.5s, opacity 0.5s", willChange: "opacity" }} />
       <div style={{ position: "fixed", bottom: -150, left: -100, width: 500, height: 500, borderRadius: "50%", background: `radial-gradient(circle, ${C.orbViolet} 0%, transparent 70%)`, pointerEvents: "none", zIndex: 0, transition: "background 0.5s, opacity 0.5s", willChange: "opacity" }} />
+      <div style={{ position: "fixed", top: "38%", right: -180, width: 420, height: 420, borderRadius: "50%", background: `radial-gradient(circle, ${C.orbEmerald} 0%, transparent 70%)`, pointerEvents: "none", zIndex: 0, transition: "background 0.5s, opacity 0.5s", willChange: "opacity" }} />
+      <div style={{ position: "fixed", bottom: -120, right: "30%", width: 360, height: 360, borderRadius: "50%", background: `radial-gradient(circle, ${C.orbPink} 0%, transparent 70%)`, pointerEvents: "none", zIndex: 0, transition: "background 0.5s, opacity 0.5s", willChange: "opacity" }} />
 
       {/* Sidebar */}
       <div style={{
