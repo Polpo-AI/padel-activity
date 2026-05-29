@@ -1116,10 +1116,26 @@ export async function executeAction(
             const mp = await prisma.matchPlayer.findUnique({ where: { id: params.matchPlayerId } });
             if (!mp) return { success: false, errorMessage: 'Partecipazione non trovata.' };
 
-            // 1. Cancella partecipazione vecchia
+            // Tipo del vecchio match (privata vs matchmaking) — serve per propagarlo al nuovo slot
+            const oldMatchPre = await prisma.match.findUnique({
+                where: { id: mp.matchId },
+                select: { isPrivateBooking: true },
+            });
+            const preferCovered = params.preferCovered === true;
+            const wasPrivate = oldMatchPre?.isPrivateBooking ?? true;
+
+            // 1. Prenota PRIMA il nuovo slot (escludendo il vecchio match dal check anti-doppia-prenotazione).
+            //    Se fallisce (campo pieno, fuori orario, ecc.) il vecchio booking resta INTATTO e nessuno
+            //    viene avvisato → l'utente non resta mai senza prenotazione.
+            const newResult = await bookSlotForPlayer(
+                startTime, player, club, preferCovered, null, wasPrivate ? true : null, null, mp.matchId,
+            );
+            if (!newResult.success) return newResult;
+
+            // 2. Nuovo slot assegnato → ora libera la vecchia partecipazione
             await prisma.matchPlayer.update({ where: { id: mp.id }, data: { leftAt: new Date() } });
 
-            // 2. Controlla quanti giocatori rimangono nel vecchio match
+            // 3. Gestisci i giocatori rimasti nel vecchio match
             const oldMatch = await prisma.match.findUnique({
                 where: { id: mp.matchId },
                 include: { MatchPlayer: { where: { leftAt: null }, include: { player: { select: { phoneNumber: true, name: true } } } } },
@@ -1152,16 +1168,13 @@ export async function executeAction(
                     const phone = (rmp as any).player?.phoneNumber;
                     if (phone) {
                         simulateTypingAndSend(`${phone}@s.whatsapp.net`,
-                            `${leavingName} non può più venire alla partita di ${matchTimeStr}. Stiamo cercando un sostituto 🎾`
+                            `${leavingName} non può più venire alla partita di ${matchTimeStr}. Tu resti dentro, al sostituto ci pensiamo noi — non devi fare nulla 🎾`
                         ).catch(() => {});
                     }
                 }
             }
 
-            // 3. Prenota nuovo slot — propaga coperto/scoperto e tipo prenotazione (privata/matchmaking)
-            const preferCovered = params.preferCovered === true;
-            const wasPrivate = oldMatch?.isPrivateBooking ?? true;
-            return await bookSlotForPlayer(startTime, player, club, preferCovered, null, wasPrivate ? true : null);
+            return newResult;
         }
 
         if (action === 'REQUEST_LESSON') {
@@ -1573,6 +1586,12 @@ async function joinExistingMatch(matchId: string, player: any): Promise<{ succes
                         throw new Error('GENDER_MISMATCH');
                     }
                 }
+            } else {
+                // Match misto: massimo 2 per genere. Se la quota del genere del giocatore è piena → niente posto
+                if (player.gender === 'MALE' || player.gender === 'FEMALE') {
+                    const sameGenderCount = match.MatchPlayer.filter((mp: any) => mp.player?.gender === player.gender).length;
+                    if (sameGenderCount >= 2) throw new Error('GENDER_SLOT_FULL');
+                }
             }
 
             await tx.matchPlayer.upsert({
@@ -1588,7 +1607,16 @@ async function joinExistingMatch(matchId: string, player: any): Promise<{ succes
                 await tx.invitation.create({ data: { matchId, playerId: player.id, status: 'ACCEPTED', respondedAt: new Date() } });
             }
 
-            if (match.MatchPlayer.length + 1 >= match.playersNeeded) {
+            // Lock: per match misti serve 2M+2F, non solo 4 corpi (altrimenti chiuderebbe con composizione errata es. 3M+1F)
+            let shouldLock: boolean;
+            if (match.isMixed) {
+                const maleCount = match.MatchPlayer.filter((mp: any) => mp.player?.gender === 'MALE').length + (player.gender === 'MALE' ? 1 : 0);
+                const femaleCount = match.MatchPlayer.filter((mp: any) => mp.player?.gender === 'FEMALE').length + (player.gender === 'FEMALE' ? 1 : 0);
+                shouldLock = maleCount >= 2 && femaleCount >= 2;
+            } else {
+                shouldLock = match.MatchPlayer.length + 1 >= match.playersNeeded;
+            }
+            if (shouldLock) {
                 await tx.match.update({ where: { id: matchId }, data: { status: 'LOCKED' } });
             }
         });
@@ -1664,6 +1692,7 @@ async function bookSlotForPlayer(
     preferMixed: boolean | null = null,
     privateBooking: boolean | null = null,
     committedPlayers: number | null = null,
+    excludeMatchId: string | null = null,
 ): Promise<{ success: boolean; errorMessage?: string; matchId?: string; requestedTime?: Date }> {
     // Valida che ci siano almeno 90 minuti prima della chiusura e dopo l'apertura
     if (club?.openTime || club?.closeTime) {
@@ -1714,6 +1743,8 @@ async function bookSlotForPlayer(
             match: {
                 status: { in: ['OPEN', 'LOCKED'] },
                 startTime: { gte: from, lte: to },
+                // Durante un reschedule la vecchia partita va ignorata: la stiamo spostando, non duplicando
+                ...(excludeMatchId ? { id: { not: excludeMatchId } } : {}),
             },
         },
         include: { match: { include: { court: true } } },

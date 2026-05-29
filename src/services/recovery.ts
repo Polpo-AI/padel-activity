@@ -20,6 +20,10 @@ const logger = pino({ level: 'info' });
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 const randomInt = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1)) + min;
 
+// Tetto al numero di cicli di recovery per una stessa partita: oltre questo la consideriamo
+// non riempibile invece di rilanciare all'infinito (gruppi instabili che entrano/escono).
+const MAX_RECOVERY_WAVES = 3;
+
 // Helper: produce "Mercoledì 15 Aprile alle 10:00" — weekday e mese capitalizzati
 function formatMatchSlot(d: Date): string {
     const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
@@ -93,6 +97,14 @@ export async function handleCancellation(
     );
 
     if (spotsLeft <= 0) return; // ✅ FIX N: già calcolato atomicamente sopra
+
+    // Tetto recovery: se abbiamo già rilanciato MAX_RECOVERY_WAVES volte, non insistere all'infinito
+    // → tratta la partita come non riempibile (cancella + notifica) invece di riaprirla di nuovo.
+    if (match.recoveryWaveCount >= MAX_RECOVERY_WAVES) {
+        logger.warn({ matchId, recoveryWaveCount: match.recoveryWaveCount }, `Recovery cap (${MAX_RECOVERY_WAVES}) raggiunto — match non riempibile`);
+        await handleMatchUnfillable(matchId);
+        return;
+    }
 
     // Rimetti in OPEN
     await prisma.match.update({
@@ -212,6 +224,27 @@ export async function launchRecoveryWave(
         } catch (err) {
             logger.error({ err }, `Failed to send recovery message to ${player.phoneNumber}`);
         }
+    }
+
+    // Follow-up: se dopo questo giro restano posti e la partita è ancora OPEN, programma una wave
+    // normale (candidati freschi, esclude chi ha già un invito pendente) con un breve delay.
+    // Senza questo, una recovery in cui tutti ignorano resterebbe ferma fino al cron checkSilentMatches.
+    try {
+        const after = await prisma.match.findUnique({
+            where: { id: matchId },
+            include: { MatchPlayer: { where: { leftAt: null } } },
+        });
+        if (after && after.status === 'OPEN' && after.MatchPlayer.length < after.playersNeeded) {
+            const { waveQueue } = await import('./queue');
+            const followUpDelayMs = isUrgent ? 5 * 60 * 1000 : 15 * 60 * 1000;
+            waveQueue.add('process-wave', {
+                matchId,
+                waveNumber: after.recoveryWaveCount + 1,
+                scheduledAt: Date.now() + followUpDelayMs,
+            }, { delay: followUpDelayMs }).catch(err => logger.warn({ err, matchId }, 'Recovery follow-up wave scheduling failed'));
+        }
+    } catch (err) {
+        logger.warn({ err, matchId }, 'Recovery follow-up check failed');
     }
 }
 
