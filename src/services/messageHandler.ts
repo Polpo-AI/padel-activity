@@ -757,6 +757,16 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[], cor
                                 await simulateTypingAndSend(jid, 'Per prenotare scrivimi giorno e orario 🎾');
                             }
                         }
+
+                        // Pulisci la bozza prenotazione: l'intento è stato gestito in questo turno
+                        // (eseguito o fallito con redirect). Senza questo, una bozza pre-esistente
+                        // sopravviverebbe al return e inquinerebbe i turni successivi.
+                        if (action2 === 'BOOK_FIELD' || action2 === 'RESCHEDULE_MATCH') {
+                            try {
+                                const { getRedis } = await import('./queue');
+                                await getRedis().del(`state:booking_intent:${jid}`);
+                            } catch { /* fire-and-forget */ }
+                        }
                     }
                 }
             } catch (err) {

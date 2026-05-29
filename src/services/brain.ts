@@ -1837,13 +1837,20 @@ async function createNewMatchAction(
     privateBooking: boolean | null = null,
     committedPlayers: number | null = null,
 ): Promise<{ success: boolean; errorMessage?: string; matchId?: string; requestedTime?: Date }> {
-    // Carica tutti i match esistenti a questo startTime con i loro giocatori confermati
-    const occupiedMatches = await prisma.match.findMany({
-        where: { clubId: player.clubId, status: { in: ['OPEN', 'LOCKED'] }, startTime },
+    // Carica i match che potrebbero occupare lo slot richiesto. Le partite durano ~90 min, quindi
+    // un match alle 20:00 occupa il campo anche per una richiesta alle 21:00 (overlap) e viceversa.
+    // Query su finestra ±90min, poi filtro sugli overlap reali (|Δstart| < 90min).
+    const SLOT_DURATION_MIN = 90;
+    const winFrom = new Date(startTime.getTime() - SLOT_DURATION_MIN * 60 * 1000);
+    const winTo = new Date(startTime.getTime() + SLOT_DURATION_MIN * 60 * 1000);
+    const candidateMatches = await prisma.match.findMany({
+        where: { clubId: player.clubId, status: { in: ['OPEN', 'LOCKED'] }, startTime: { gte: winFrom, lte: winTo } },
         include: { MatchPlayer: { where: { leftAt: null } } },
     });
 
-    const allOccupied = occupiedMatches as any[];
+    const allOccupied = (candidateMatches as any[]).filter((m: any) =>
+        Math.abs(m.startTime.getTime() - startTime.getTime()) < SLOT_DURATION_MIN * 60 * 1000
+    );
 
     // Determina se questo è un BOOK_FIELD (prenotazione privata): private=true o skill<=0
     const isPrivateBookingIntent = privateBooking === true || (privateBooking === null && player.skillLevel <= 0);

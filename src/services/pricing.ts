@@ -10,7 +10,25 @@ const logger = pino({ level: 'info' });
 export function calculateCostFromPrices(startTime: Date, prices: any[]): number {
     if (!prices || prices.length === 0) return 0;
 
-    const endTime = new Date(startTime.getTime() + 90 * 60 * 1000); // 90 min
+    // Confronto fasce in "minuti dalla mezzanotte" nel fuso Europe/Rome: le fasce "HH:MM" sono
+    // definite in ora locale del circolo, ma startTime è un istante UTC. Senza convertire al fuso
+    // Rome, su server UTC lo slot finirebbe nella fascia sbagliata (prezzo errato).
+    const romeMinutes = (d: Date): number => {
+        const s = d.toLocaleString('en-US', { timeZone: 'Europe/Rome', hour: '2-digit', minute: '2-digit', hour12: false });
+        const [h, m] = s.split(':').map(Number);
+        return h * 60 + m;
+    };
+    const slotStartMin = romeMinutes(startTime);
+    const slotEndMin = slotStartMin + 90; // partite da 90 min
+
+    const bandIntersects = (p: any): boolean => {
+        const [hStart, mStart] = p.startTime.split(':').map(Number);
+        const [hEnd, mEnd] = p.endTime.split(':').map(Number);
+        let bandStart = hStart * 60 + mStart;
+        let bandEnd = hEnd * 60 + mEnd;
+        if (bandEnd < bandStart) bandEnd += 24 * 60; // fascia che scavalca la mezzanotte
+        return Math.max(slotStartMin, bandStart) < Math.min(slotEndMin, bandEnd);
+    };
 
     // 1. Filtra per periodo (startDate / endDate)
     const validPrices = prices.filter((p: any) => {
@@ -23,50 +41,14 @@ export function calculateCostFromPrices(startTime: Date, prices: any[]): number 
     const exceptionPrices = validPrices.filter((p: any) => p.startDate || p.endDate);
     const standardPrices = validPrices.filter((p: any) => !p.startDate && !p.endDate);
 
-    // 3. Trova la tariffa massima tra le intersezioni.
-    // Se ci sono eccezioni sovrapposte, hanno la precedenza!
+    // 3. Le eccezioni hanno la precedenza solo se intersecano davvero lo slot; altrimenti standard.
+    const hasExceptionIntersect = exceptionPrices.some(bandIntersects);
+    const itemsToProcess = hasExceptionIntersect ? exceptionPrices : standardPrices;
+
+    // 4. Tariffa massima tra le fasce che intersecano lo slot
     let maxPrice = 0;
-    let itemsToProcess = exceptionPrices.length > 0 ? exceptionPrices : standardPrices;
-
-    // Se per caso le eccezioni non coprono lo slot, potremmo dover fare un fallback su standard?
-    // Come da richiesta: "quello andrà a scrivere il vecchio prezzo" -> Sostituisce.
-    // Verifichiamo se ci sono intersezioni vere nelle eccezioni prima di escludere gli standard.
-    const hasExceptionIntersect = exceptionPrices.some((p: any) => {
-        const [hStart, mStart] = p.startTime.split(':').map(Number);
-        const [hEnd, mEnd] = p.endTime.split(':').map(Number);
-        const slotStart = new Date(startTime); slotStart.setHours(hStart, mStart, 0, 0);
-        const slotEnd = new Date(startTime); slotEnd.setHours(hEnd, mEnd, 0, 0);
-        if (slotEnd < slotStart) slotEnd.setDate(slotEnd.getDate() + 1);
-        return Math.max(startTime.getTime(), slotStart.getTime()) < Math.min(endTime.getTime(), slotEnd.getTime());
-    });
-
-    if (hasExceptionIntersect) {
-        itemsToProcess = exceptionPrices;
-    } else {
-        itemsToProcess = standardPrices;
-    }
-
     for (const p of itemsToProcess) {
-        const [hStart, mStart] = p.startTime.split(':').map(Number);
-        const [hEnd, mEnd] = p.endTime.split(':').map(Number);
-
-        const slotStart = new Date(startTime);
-        slotStart.setHours(hStart, mStart, 0, 0);
-
-        const slotEnd = new Date(startTime);
-        slotEnd.setHours(hEnd, mEnd, 0, 0);
-
-        if (slotEnd < slotStart) {
-            slotEnd.setDate(slotEnd.getDate() + 1);
-        }
-
-        const intersect = Math.max(startTime.getTime(), slotStart.getTime()) < Math.min(endTime.getTime(), slotEnd.getTime());
-
-        if (intersect) {
-            if (p.price > maxPrice) {
-                maxPrice = p.price;
-            }
-        }
+        if (bandIntersects(p) && p.price > maxPrice) maxPrice = p.price;
     }
 
     if (maxPrice === 0 && itemsToProcess.length > 0) {
