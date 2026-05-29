@@ -28,7 +28,17 @@ import rateLimit from 'express-rate-limit';
 
 const logger = pino({ level: 'info' });
 const router = Router();
-const JWT_SECRET = process.env.JWT_SECRET || 'padel-dashboard-secret-change-in-production';
+
+// In staging/produzione JWT_SECRET DEVE essere impostato via env var: niente fallback insicuro.
+const _INSECURE_JWT_DEFAULT = 'padel-dashboard-secret-change-in-production';
+if ((process.env.NODE_ENV === 'production' || process.env.NODE_ENV === 'staging')
+    && (!process.env.JWT_SECRET || process.env.JWT_SECRET === _INSECURE_JWT_DEFAULT)) {
+    throw new Error(
+        `[SECURITY] JWT_SECRET non impostato o uguale al default insicuro in ambiente "${process.env.NODE_ENV}". ` +
+        `Imposta una variabile d'ambiente sicura prima di avviare il servizio.`,
+    );
+}
+const JWT_SECRET = process.env.JWT_SECRET || _INSECURE_JWT_DEFAULT;
 
 // ✅ FIX E (Sicurezza): rate-limit su /dashboard/login — max 10 tentativi / 15min per IP
 const loginRateLimit = rateLimit({
@@ -1171,9 +1181,15 @@ router.post('/prices', authMiddleware, async (req: Request, res: Response) => {
             if (!court) continue; // Salta se il campo non appartiene al club
 
             if (p._delete && p.id) {
+                // Tenant scoping: cancella solo se il prezzo appartiene a un campo di QUESTO club
+                const existing = await prisma.courtPrice.findFirst({ where: { id: p.id, court: { clubId } } });
+                if (!existing) continue;
                 await prisma.courtPrice.delete({ where: { id: p.id } });
                 results.push({ id: p.id, action: 'deleted' });
             } else if (p.id) {
+                // Tenant scoping: aggiorna solo se il prezzo appartiene a un campo di QUESTO club
+                const existing = await prisma.courtPrice.findFirst({ where: { id: p.id, court: { clubId } } });
+                if (!existing) continue;
                 const updated = await prisma.courtPrice.update({
                     where: { id: p.id },
                     data: {

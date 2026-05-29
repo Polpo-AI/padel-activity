@@ -26,9 +26,26 @@ import rateLimit from 'express-rate-limit';
 const logger = pino({ level: 'info' });
 const router = Router();
 
-const ADMIN_JWT_SECRET = process.env.ADMIN_JWT_SECRET || 'padel-admin-secret-change-in-production';
-const ADMIN_USERNAME   = process.env.ADMIN_USERNAME   || 'admin';
-const ADMIN_PASSWORD   = process.env.ADMIN_PASSWORD   || 'admin123';
+// In staging/produzione i segreti DEVONO essere impostati via env var: niente fallback insicuri.
+// Se mancano (o sono uguali al default noto) l'avvio fallisce di proposito.
+const IS_LIVE_ENV = process.env.NODE_ENV === 'production' || process.env.NODE_ENV === 'staging';
+function requireSecret(name: string, value: string | undefined, insecureDefault: string): string {
+    if (!value || value === insecureDefault) {
+        if (IS_LIVE_ENV) {
+            throw new Error(
+                `[SECURITY] ${name} non impostata o uguale al default insicuro in ambiente "${process.env.NODE_ENV}". ` +
+                `Imposta una variabile d'ambiente sicura prima di avviare il servizio.`,
+            );
+        }
+        logger.warn(`[SECURITY] ${name} usa il default insicuro — accettabile SOLO in sviluppo locale`);
+        return value || insecureDefault;
+    }
+    return value;
+}
+
+const ADMIN_JWT_SECRET = requireSecret('ADMIN_JWT_SECRET', process.env.ADMIN_JWT_SECRET, 'padel-admin-secret-change-in-production');
+const ADMIN_USERNAME   = process.env.ADMIN_USERNAME || 'admin';
+const ADMIN_PASSWORD   = requireSecret('ADMIN_PASSWORD', process.env.ADMIN_PASSWORD, 'admin123');
 
 const loginRateLimit = rateLimit({
     windowMs: 15 * 60 * 1000,
