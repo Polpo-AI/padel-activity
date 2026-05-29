@@ -22,33 +22,68 @@ const fmtDate = (d) => {
   return dt.toLocaleDateString("it-IT", { day: "numeric", month: "short" });
 };
 
-// ─── SortArrow — freccia ordinamento ──────────────────────────────────────────
+// ─── Ordinamento multi-colonna ─────────────────────────────────────────────────
 
-function SortArrow({ field, sortBy, sortDir, onSort }) {
+const SORT_LABELS = {
+  name: "Nome", gender: "Sesso", skillLevel: "Livello",
+  reliability: "Affidabilità", contacted: "Contattato", status: "Stato",
+};
+
+// Confronta due giocatori su un singolo campo (verso ascendente)
+function compareByField(a, b, field) {
+  const genderRank = g => g === "FEMALE" ? 0 : g === "MALE" ? 1 : 2;
+  let va, vb;
+  switch (field) {
+    case "name":        va = (a.name || "").toLowerCase(); vb = (b.name || "").toLowerCase(); break;
+    case "skillLevel":  va = a.skillLevel;                 vb = b.skillLevel; break;
+    case "reliability": va = a.reliabilityScore || 0.33;   vb = b.reliabilityScore || 0.33; break;
+    case "contacted":   va = a.lastContactedAt ? new Date(a.lastContactedAt).getTime() : 0;
+                        vb = b.lastContactedAt ? new Date(b.lastContactedAt).getTime() : 0; break;
+    case "gender":      va = genderRank(a.gender);          vb = genderRank(b.gender); break;
+    case "status":      va = a.active ? 1 : 0;              vb = b.active ? 1 : 0; break;
+    default: return 0;
+  }
+  if (va < vb) return -1;
+  if (va > vb) return 1;
+  return 0;
+}
+
+// ─── SortArrow — freccia ordinamento (con badge priorità quando multi) ──────────
+
+function SortArrow({ field, sortCriteria, onSort }) {
   const { C } = useTheme();
-  const active = sortBy === field;
+  const idx = sortCriteria.findIndex(c => c.field === field);
+  const active = idx !== -1;
+  const dir = active ? sortCriteria[idx].dir : null;
+  const showPriority = active && sortCriteria.length > 1;
+  const title = !active
+    ? "Clic: ordina (crescente)"
+    : dir === "asc" ? "Clic: decrescente" : "Clic: rimuovi da ordinamento";
   return (
     <span
-      onClick={(e) => { e.stopPropagation(); onSort(field, active && sortDir === "asc" ? "desc" : "asc"); }}
-      title={active ? (sortDir === "asc" ? "Ordina decrescente" : "Ordina crescente") : "Ordina"}
+      onClick={(e) => { e.stopPropagation(); onSort(field); }}
+      title={title}
       style={{
         cursor: "pointer", fontSize: 11, marginLeft: 3, lineHeight: 1,
         color: active ? C.accent : C.muted,
         display: "inline-block", userSelect: "none",
       }}
     >
-      {!active ? "↕" : sortDir === "asc" ? "↑" : "↓"}
+      {!active ? "↕" : dir === "asc" ? "↑" : "↓"}
+      {showPriority && (
+        <span style={{ fontSize: 8, verticalAlign: "super", marginLeft: 1, fontWeight: 700 }}>{idx + 1}</span>
+      )}
     </span>
   );
 }
 
 // ─── Th — intestazione colonna (DEVE stare fuori da PlayersView per non smontarsi ad ogni render) ──
 
-function Th({ label, sortField, sortBy, sortDir, onSort, filterEl }) {
+function Th({ label, sortField, sortCriteria, onSort, filterEl }) {
   return (
     <div style={{ display: "inline-flex", alignItems: "center", gap: 4, whiteSpace: "nowrap" }}>
       {label}
-      {sortField && <SortArrow field={sortField} sortBy={sortBy} sortDir={sortDir} onSort={onSort} />}
+      {sortField && <SortArrow field={sortField} sortCriteria={sortCriteria} onSort={onSort} />}
       {filterEl}
     </div>
   );
@@ -550,8 +585,9 @@ export default function PlayersView({ token }) {
   const { C, inputSt, btnPrimary, btnGhost, labelSt } = useTheme();
   const [players, setPlayers]   = useState([]);
   const [loading, setLoading]   = useState(true);
-  const [sortBy, setSortBy]     = useState("name");
-  const [sortDir, setSortDir]   = useState("asc");
+  // Ordinamento multi-colonna: array ordinato per priorità (indice 0 = primario).
+  // L'ultima colonna cliccata diventa primaria; le precedenti scalano a tiebreaker.
+  const [sortCriteria, setSortCriteria] = useState([{ field: "name", dir: "asc" }]);
 
   // Filtri per colonna
   const [fName,        setFName]        = useState("");         // text
@@ -627,23 +663,31 @@ export default function PlayersView({ token }) {
     if (fReliability > 0) list = list.filter(p => (p.reliabilityScore || 0.33) >= fReliability);
 
     list.sort((a, b) => {
-      let va, vb;
-      const genderRank = g => g === "FEMALE" ? 0 : g === "MALE" ? 1 : 2;
-      if (sortBy === "name")             { va = (a.name || "").toLowerCase(); vb = (b.name || "").toLowerCase(); }
-      else if (sortBy === "skillLevel")  { va = a.skillLevel;                 vb = b.skillLevel; }
-      else if (sortBy === "reliability") { va = a.reliabilityScore || 0.33;   vb = b.reliabilityScore || 0.33; }
-      else if (sortBy === "contacted")   { va = a.lastContactedAt ? new Date(a.lastContactedAt).getTime() : 0; vb = b.lastContactedAt ? new Date(b.lastContactedAt).getTime() : 0; }
-      else if (sortBy === "gender")      { va = genderRank(a.gender);         vb = genderRank(b.gender); }
-      else if (sortBy === "status")      { va = a.active ? 1 : 0;             vb = b.active ? 1 : 0; }
-      if (va < vb) return sortDir === "asc" ? -1 : 1;
-      if (va > vb) return sortDir === "asc" ?  1 : -1;
+      for (const { field, dir } of sortCriteria) {
+        const c = compareByField(a, b, field);
+        if (c !== 0) return dir === "asc" ? c : -c;
+      }
       return 0;
     });
 
     return list;
-  }, [players, fName, fPhone, fGender, fSkill, fStatus, fReliability, sortBy, sortDir]);
+  }, [players, fName, fPhone, fGender, fSkill, fStatus, fReliability, sortCriteria]);
 
-  const onSort = (field, dir) => { setSortBy(field); setSortDir(dir); };
+  // Clic su una colonna: cicla ↑ → ↓ → off. Una colonna nuova entra come primaria (ultima azione).
+  const onSort = (field) => {
+    setSortCriteria(prev => {
+      const idx = prev.findIndex(c => c.field === field);
+      if (idx === -1) return [{ field, dir: "asc" }, ...prev];        // nuova → primaria
+      if (prev[idx].dir === "asc") {                                   // asc → desc (stessa posizione)
+        const next = [...prev];
+        next[idx] = { field, dir: "desc" };
+        return next;
+      }
+      return prev.filter(c => c.field !== field);                     // desc → rimuovi
+    });
+  };
+
+  const resetSort = () => setSortCriteria([{ field: "name", dir: "asc" }]);
 
   const hasAnyFilter = fName || fPhone || fGender.size > 0 || fSkill.size > 0 || fStatus.size > 0 || fReliability > 0;
 
@@ -718,6 +762,22 @@ export default function PlayersView({ token }) {
           {noSkillCount > 0 && <> · <strong style={{ color: C.warning }}>{noSkillCount}</strong> senza livello</>}
           {filtered.length !== players.length && <> · <strong style={{ color: C.accent }}>{filtered.length}</strong> visibili</>}
         </span>
+        {sortCriteria.length > 1 && (
+          <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 11, color: C.muted, flexWrap: "wrap" }}>
+            <span>
+              Ordina:{" "}
+              {sortCriteria.map((c, i) => (
+                <span key={c.field} style={{ color: i === 0 ? C.accent : C.muted }}>
+                  {i > 0 && <span style={{ color: C.dim }}> › </span>}
+                  {SORT_LABELS[c.field] || c.field} {c.dir === "asc" ? "↑" : "↓"}
+                </span>
+              ))}
+            </span>
+            <button type="button" onClick={resetSort} style={{ ...btnGhost, fontSize: 11, padding: "3px 10px" }}>
+              ✕ Azzera
+            </button>
+          </div>
+        )}
         <div style={{ flex: 1 }} />
         {hasAnyFilter && (
           <button type="button" onClick={clearAll} style={{ ...btnGhost, fontSize: 11, padding: "4px 12px", color: C.cancelled, borderColor: `${C.cancelled}40` }}>
@@ -743,18 +803,18 @@ export default function PlayersView({ token }) {
             fontSize: 10, color: C.muted, textTransform: "uppercase", letterSpacing: "0.1em",
             position: "relative",
           }}>
-            <Th label="Nome" sortField="name" sortBy={sortBy} sortDir={sortDir} onSort={onSort}
+            <Th label="Nome" sortField="name" sortCriteria={sortCriteria} onSort={onSort}
               filterEl={<TextFilterDropdown value={fName} onChange={setFName} placeholder="Cerca nome…" active={!!fName} />} />
-            <Th label="Telefono" sortBy={sortBy} sortDir={sortDir} onSort={onSort}
+            <Th label="Telefono" sortCriteria={sortCriteria} onSort={onSort}
               filterEl={<TextFilterDropdown value={fPhone} onChange={setFPhone} placeholder="Cerca numero…" active={!!fPhone} />} />
-            <Th label="Sesso" sortField="gender" sortBy={sortBy} sortDir={sortDir} onSort={onSort}
+            <Th label="Sesso" sortField="gender" sortCriteria={sortCriteria} onSort={onSort}
               filterEl={<MultiSelectFilterDropdown options={genderOptions} selected={fGender} onChange={setFGender} active={fGender.size > 0} />} />
-            <Th label="Liv." sortField="skillLevel" sortBy={sortBy} sortDir={sortDir} onSort={onSort}
+            <Th label="Liv." sortField="skillLevel" sortCriteria={sortCriteria} onSort={onSort}
               filterEl={<MultiSelectFilterDropdown options={skillOptions} selected={fSkill} onChange={setFSkill} active={fSkill.size > 0} />} />
-            <Th label="Affidabilità" sortField="reliability" sortBy={sortBy} sortDir={sortDir} onSort={onSort}
+            <Th label="Affidabilità" sortField="reliability" sortCriteria={sortCriteria} onSort={onSort}
               filterEl={<ReliabilityFilterDropdown minReliability={fReliability} onChange={setFReliability} active={fReliability > 0} />} />
-            <Th label="Contattato" sortField="contacted" sortBy={sortBy} sortDir={sortDir} onSort={onSort} />
-            <Th label="Stato" sortField="status" sortBy={sortBy} sortDir={sortDir} onSort={onSort}
+            <Th label="Contattato" sortField="contacted" sortCriteria={sortCriteria} onSort={onSort} />
+            <Th label="Stato" sortField="status" sortCriteria={sortCriteria} onSort={onSort}
               filterEl={<MultiSelectFilterDropdown options={statusOptions} selected={fStatus} onChange={setFStatus} active={fStatus.size > 0} />} />
           </div>
 
