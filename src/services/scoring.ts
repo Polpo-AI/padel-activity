@@ -1,8 +1,9 @@
 /**
  * SCORING SERVICE
  *
- * Metrica unica: showUpRate ∈ [0, 1]
- * Media mobile esponenziale α=0.15, prior=0.33
+ * Metrica unica: tasso di risposta/presentazione ∈ [0, 1]
+ * Media mobile esponenziale con α adattivo = max(0.08, 1/(n+2)), prior=0.33
+ *   (n = osservazioni precedenti: impara in fretta da nuovo, stabile con storia lunga)
  * Bonus ×1.3 se viene con < 2h di preavviso
  *
  * Soglia esclusione: < 0.05 SOLO dopo almeno 10 inviti.
@@ -15,7 +16,9 @@ import pino from 'pino';
 const logger = pino({ level: 'info' });
 
 export const PRIOR = 0.33; // fallback EMA per giocatori legacy con reliabilityScore=0 nel DB
-const ALPHA = 0.15;
+// Alpha adattivo: alto con poche osservazioni (impara in fretta, no cold-start), basso con storia
+// lunga (stabile, un singolo evento non fa crollare un veterano). α = max(MIN_ALPHA, 1/(n+2)).
+const MIN_ALPHA = 0.08;
 const LAST_MINUTE_BONUS = 1.3;
 const LAST_MINUTE_THRESHOLD_MIN = 120;
 const EXCLUSION_MIN_INVITES = 10;
@@ -37,10 +40,19 @@ export async function updateShowUpRate(
 
     let eventValue = showed ? 1.0 : 0.0;
     if (showed && minutesUntilMatchWhenInvited <= LAST_MINUTE_THRESHOLD_MIN) {
-        eventValue = 1.3;
+        eventValue = LAST_MINUTE_BONUS;
     }
 
-    const newRate = Math.min(1.0, (1 - ALPHA) * currentRate + ALPHA * eventValue);
+    // n = osservazioni precedenti (inviti già processati, cioè non più PENDING).
+    // Alpha adattivo: con n piccolo impara in fretta (cold-start), con n grande è stabile.
+    const priorObservations = await prisma.invitation.count({
+        where: { playerId, status: { in: ['ACCEPTED', 'REJECTED', 'IGNORED', 'EXPIRED'] } },
+    });
+    // +2 a denominatore (smoothing): anche alla prima osservazione il prior pesa ancora (α=0.5),
+    // così un singolo evento non porta lo score a 0 o 1.
+    const alpha = Math.max(MIN_ALPHA, 1 / (priorObservations + 2));
+
+    const newRate = Math.min(1.0, (1 - alpha) * currentRate + alpha * eventValue);
 
     await prisma.player.update({
         where: { id: playerId },
@@ -49,7 +61,7 @@ export async function updateShowUpRate(
 
     logger.info(
         `Player ${playerId}: showUpRate ${currentRate.toFixed(3)} → ${newRate.toFixed(3)} ` +
-        `(showed=${showed}, preavviso=${minutesUntilMatchWhenInvited}min` +
+        `(showed=${showed}, n=${priorObservations}, α=${alpha.toFixed(3)}, preavviso=${minutesUntilMatchWhenInvited}min` +
         `${showed && minutesUntilMatchWhenInvited <= LAST_MINUTE_THRESHOLD_MIN ? ' +LM bonus' : ''})`
     );
 }
