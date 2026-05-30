@@ -18,7 +18,7 @@ import { Router, Request, Response, NextFunction } from 'express';
 import { prisma } from '../services/db';
 import { getAllClubStatuses } from '../services/whatsapp';
 import { checkDbHealth } from '../services/db';
-import { checkRedisHealth } from '../services/queue';
+import { checkRedisHealth, waveQueue, recoveryQueue, reminderQueue, maintenanceQueue } from '../services/queue';
 import * as jwt from 'jsonwebtoken';
 import pino from 'pino';
 import rateLimit from 'express-rate-limit';
@@ -365,6 +365,17 @@ router.get('/system', adminAuth, async (_req: Request, res: Response) => {
         const [dbOk, redisOk] = await Promise.all([checkDbHealth(), checkRedisHealth()]);
         const waStatuses = getAllClubStatuses();
 
+        // Conteggi code BullMQ (best-effort: se Redis è giù, fallback a null)
+        let queues: Record<string, any> | null = null;
+        try {
+            const defs: [string, any][] = [['wave', waveQueue], ['recovery', recoveryQueue], ['reminder', reminderQueue], ['maintenance', maintenanceQueue]];
+            const counts = await Promise.all(defs.map(([, q]) => q.getJobCounts('waiting', 'active', 'delayed', 'failed')));
+            queues = {};
+            defs.forEach(([name], i) => { queues![name] = counts[i]; });
+        } catch (e) {
+            logger.warn({ e }, 'Admin system: queue counts unavailable');
+        }
+
         const clubs = await prisma.club.findMany({
             select: { id: true, name: true, botPhoneNumber: true, adminPhone: true },
             orderBy: { name: 'asc' },
@@ -373,6 +384,7 @@ router.get('/system', adminAuth, async (_req: Request, res: Response) => {
         res.json({
             db: dbOk ? 'ok' : 'down',
             redis: redisOk ? 'ok' : 'down',
+            queues,
             clubs: clubs.map(c => ({
                 id: c.id, name: c.name,
                 botPhoneNumber: c.botPhoneNumber,

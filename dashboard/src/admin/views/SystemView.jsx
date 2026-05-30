@@ -55,12 +55,42 @@ export default function SystemView({ token }) {
         </div>
       </div>
 
+      {/* Code di lavoro (BullMQ) */}
+      <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: "20px 24px" }}>
+        <div style={{ fontSize: 13, fontWeight: 600, color: C.text, marginBottom: 16 }}>Code di lavoro</div>
+        {data.queues ? (
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))", gap: 12 }}>
+            {Object.entries(data.queues).map(([name, q]) => {
+              const failed = q.failed || 0;
+              const accent = failed > 0 ? C.cancelled : (q.waiting + q.active + q.delayed) > 0 ? C.warning : C.open;
+              return (
+                <div key={name} style={{ background: C.bg, border: `1px solid ${accent}33`, borderRadius: 10, padding: "12px 14px" }}>
+                  <div style={{ fontSize: 11, fontWeight: 600, color: C.text, textTransform: "capitalize", marginBottom: 8, display: "flex", alignItems: "center", gap: 6 }}>
+                    <span style={{ width: 7, height: 7, borderRadius: "50%", background: accent, display: "inline-block" }} />{name}
+                  </div>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: "4px 12px", fontSize: 11, color: C.muted }}>
+                    <span>attesa <strong style={{ color: C.text }}>{q.waiting}</strong></span>
+                    <span>attive <strong style={{ color: C.text }}>{q.active}</strong></span>
+                    <span>ritardate <strong style={{ color: C.text }}>{q.delayed}</strong></span>
+                    <span style={{ color: failed > 0 ? C.cancelled : C.muted }}>fallite <strong style={{ color: failed > 0 ? C.cancelled : C.text }}>{failed}</strong></span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <div style={{ fontSize: 12, color: C.muted }}>Conteggi non disponibili (Redis non raggiungibile).</div>
+        )}
+      </div>
+
       {/* WhatsApp per circolo */}
       <div>
         <div style={{ fontSize: 13, fontWeight: 600, color: C.text, marginBottom: 14 }}>WhatsApp per circolo</div>
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          {(data.clubs || []).map(c => (
-            <div key={c.id} style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, padding: "14px 18px", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
+          {(data.clubs || []).map(c => {
+            const alert = c.botPhoneNumber && c.waStatus !== "open";
+            return (
+            <div key={c.id} style={{ background: C.surface, border: `1px solid ${alert ? C.cancelled + "55" : C.border}`, borderRadius: 10, padding: "14px 18px", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
               <div>
                 <div style={{ fontSize: 13, fontWeight: 600, color: C.text }}>{c.name}</div>
                 <div style={{ fontSize: 11, color: C.muted, marginTop: 3 }}>
@@ -72,7 +102,7 @@ export default function SystemView({ token }) {
                 {WA_LABEL[c.waStatus] || c.waStatus}
               </div>
             </div>
-          ))}
+          ); })}
           {!data.clubs?.length && (
             <div style={{ padding: 24, textAlign: "center", color: C.muted, fontSize: 13 }}>Nessun circolo</div>
           )}
