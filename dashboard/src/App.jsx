@@ -6,6 +6,7 @@ import CourtsView from "./features/courts/CourtsView";
 import PricesView from "./features/prices/PricesView";
 import PlayersView from "./features/players/PlayersView";
 import StatsView from "./features/stats/StatsView";
+import RevenueView from "./features/revenue/RevenueView";
 import SystemView from "./features/system/SystemView";
 import SettingsView from "./features/settings/SettingsView";
 import FaqsView from "./features/faqs/FaqsView";
@@ -15,6 +16,7 @@ const NAV = [
   { id: "prices",   label: "Tariffe",         icon: "💵", desc: "Gestisci prezzi standard ed eccezioni di calendario." },
   { id: "players",  label: "Giocatori",         icon: "👥", desc: "Anagrafica giocatori. Cerca, modifica livello, attiva/disattiva." },
   { id: "stats",    label: "Statistiche",      icon: "📊", desc: "Performance del circolo. Fill rate, affidabilità, wave lanciate." },
+  { id: "revenue",  label: "Guadagni",         icon: "💰", desc: "Quanto incassa il circolo grazie al bot. Mese, anno e confronto tra periodi." },
   { id: "faqs",     label: "FAQ",              icon: "💬", desc: "Gestisci le domande frequenti. Analisi AI per deduplicazione e merge automatici." },
   { id: "system",   label: "Sistema",          icon: "⚙️", desc: "Health check infrastruttura. Redis, WhatsApp, sicurezza API." },
   { id: "settings", label: "Impostazioni",     icon: "🛠", desc: "Configurazione circolo e checklist SaaS readiness." },
@@ -229,6 +231,7 @@ export default function PadelDashboard() {
         {tab === "prices"   && <PricesView   token={token} />}
         {tab === "players"  && <PlayersView  token={token} club={club} />}
         {tab === "stats"    && <StatsView    token={token} />}
+        {tab === "revenue"  && <RevenueView  token={token} />}
         {tab === "faqs"     && <FaqsView     token={token} />}
         {tab === "system"   && <SystemView   token={token} />}
         {tab === "settings" && <SettingsView token={token} club={club} onClubUpdate={setClub} />}

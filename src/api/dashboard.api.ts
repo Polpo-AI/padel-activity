@@ -906,6 +906,103 @@ router.get('/stats', authMiddleware, async (req: Request, res: Response) => {
 });
 
 // ─────────────────────────────────────────────
+// REVENUE — serie temporale (grafico guadagni)
+// ─────────────────────────────────────────────
+
+const MONTH_NAMES_IT = ['Gen', 'Feb', 'Mar', 'Apr', 'Mag', 'Giu', 'Lug', 'Ago', 'Set', 'Ott', 'Nov', 'Dic'];
+
+// Parti calendario in fuso Europe/Rome (DST-safe) per un timestamp.
+function romeParts(d: Date): { y: number; mo: number; da: number } {
+    const s = new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'Europe/Rome', year: 'numeric', month: '2-digit', day: '2-digit',
+    }).format(d); // "YYYY-MM-DD"
+    const [y, mo, da] = s.split('-').map(Number);
+    return { y, mo, da };
+}
+
+// Prezzo del campo per la fascia oraria della partita (stessa logica di /stats).
+function priceForMatch(match: any): number {
+    if (!match.court?.prices?.length) return 0;
+    const rome = new Date(match.startTime).toLocaleTimeString('it-IT', { timeZone: 'Europe/Rome', hour: '2-digit', minute: '2-digit' });
+    const price = match.court.prices.find((p: any) => {
+        if (rome < p.startTime || rome >= p.endTime) return false;
+        if (p.startDate && match.startTime < p.startDate) return false;
+        if (p.endDate && match.startTime > p.endDate) return false;
+        return true;
+    });
+    return price ? price.price : 0;
+}
+
+// GET /revenue?period=month&year=2026&month=5  → serie giornaliera
+// GET /revenue?period=year&year=2026           → serie mensile (12)
+// Nota: il grafico storico IGNORA volutamente revenueResetAt (che vale solo sul
+// contatore live di /stats), così il confronto anno-su-anno resta coerente.
+router.get('/revenue', authMiddleware, async (req: Request, res: Response) => {
+    const clubId = (req as any).clubId as string;
+    const now = new Date();
+    const nowRome = romeParts(now);
+
+    const period = req.query.period === 'year' ? 'year' : 'month';
+    const year = parseInt(req.query.year as string) || nowRome.y;
+    const month = period === 'month'
+        ? Math.min(12, Math.max(1, parseInt(req.query.month as string) || nowRome.mo))
+        : null;
+
+    try {
+        // Finestra UTC con padding (±3h) per non perdere partite a cavallo del
+        // confine fuso; il bucketing preciso avviene poi per data Rome.
+        const PAD = 3 * 60 * 60 * 1000;
+        let winStart: number, winEnd: number, buckets: number;
+        if (period === 'month') {
+            winStart = Date.UTC(year, month! - 1, 1) - PAD;
+            winEnd = Date.UTC(year, month!, 1) + PAD;
+            buckets = new Date(Date.UTC(year, month!, 0)).getUTCDate(); // giorni del mese
+        } else {
+            winStart = Date.UTC(year, 0, 1) - PAD;
+            winEnd = Date.UTC(year + 1, 0, 1) + PAD;
+            buckets = 12;
+        }
+        const since = new Date(winStart);
+        const until = new Date(Math.min(winEnd, now.getTime()));
+
+        const lockedMatches = await prisma.match.findMany({
+            where: { clubId, startTime: { gte: since, lte: until }, status: 'LOCKED' },
+            include: { court: { include: { prices: true } } },
+        });
+
+        const series = new Array(buckets).fill(0);
+        let matchCount = 0;
+        for (const match of lockedMatches) {
+            const rp = romeParts(new Date(match.startTime));
+            if (period === 'month') {
+                if (rp.y !== year || rp.mo !== month) continue;        // fuori dal mese target
+                series[rp.da - 1] += priceForMatch(match);
+            } else {
+                if (rp.y !== year) continue;                            // fuori dall'anno target
+                series[rp.mo - 1] += priceForMatch(match);
+            }
+            matchCount++;
+        }
+
+        const total = series.reduce((a, b) => a + b, 0);
+
+        // Quanti bucket sono "trascorsi" (per troncare il grafico del periodo corrente a oggi)
+        let elapsed = buckets;
+        if (period === 'month' && year === nowRome.y && month === nowRome.mo) elapsed = nowRome.da;
+        else if (period === 'year' && year === nowRome.y) elapsed = nowRome.mo;
+
+        const labels = period === 'month'
+            ? Array.from({ length: buckets }, (_, i) => String(i + 1))
+            : MONTH_NAMES_IT;
+
+        res.json({ period, year, month, total, matchCount, elapsed, series, labels });
+    } catch (err) {
+        logger.error({ err }, 'Error fetching revenue series');
+        res.status(500).json({ error: 'Errore nel recupero dei guadagni' });
+    }
+});
+
+// ─────────────────────────────────────────────
 // GIOCATORI
 // ─────────────────────────────────────────────
 
