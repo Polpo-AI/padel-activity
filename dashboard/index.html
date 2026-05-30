@@ -2,7 +2,7 @@
 <html lang="it">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>Padel Dashboard</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -11,6 +11,10 @@
       body { margin: 0; padding: 0; overflow-x: hidden; }
       @keyframes spin { from { transform: rotate(0); } to { transform: rotate(360deg); } }
       @keyframes slideUp { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+      /* iOS Safari fa auto-zoom sul focus di qualsiasi campo < 16px: forziamo 16px su mobile */
+      @media (max-width: 768px) {
+        input, select, textarea { font-size: 16px !important; }
+      }
     </style>
   </head>
   <body>

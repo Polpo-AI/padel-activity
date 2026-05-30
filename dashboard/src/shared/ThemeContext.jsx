@@ -5,7 +5,9 @@ const ThemeContext = createContext(null);
 
 // ─── useMobile singleton ─────────────────────────────────────────────────────
 // One module-level listener shared across all consumers — no N-listener problem.
-const BREAKPOINT = 640;
+// 768px è l'unico breakpoint mobile dell'app: shell (sidebar→hamburger), griglie
+// e toggle lo consumano tutti da qui, così non esiste più la zona morta 640–768.
+const BREAKPOINT = 768;
 let _mobile = window.innerWidth < BREAKPOINT;
 const _listeners = new Set();
 

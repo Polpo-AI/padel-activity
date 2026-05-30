@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useTheme } from "../shared/ThemeContext";
+import { useTheme, useMobile } from "../shared/ThemeContext";
 import ThemeToggle from "../shared/ThemeToggle";
 import AdminLoginPage from "./AdminLoginPage";
 import OverviewView from "./views/OverviewView";
@@ -24,18 +24,13 @@ export default function AdminApp() {
   const [tab, setTab] = useState("overview");
   const [clubs, setClubs] = useState([]);
   const dark = mode === "dark";
-  const [isMobile, setIsMobile] = useState(() => window.innerWidth < 768);
+  const isMobile = useMobile();
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
+  // Tornando a desktop, chiudi sempre l'overlay sidebar mobile.
   useEffect(() => {
-    const check = () => {
-      const mobile = window.innerWidth < 768;
-      setIsMobile(mobile);
-      if (!mobile) setSidebarOpen(false);
-    };
-    window.addEventListener("resize", check);
-    return () => window.removeEventListener("resize", check);
-  }, []);
+    if (!isMobile) setSidebarOpen(false);
+  }, [isMobile]);
 
   useEffect(() => {
     if (!token) return;
@@ -83,7 +78,10 @@ export default function AdminApp() {
           aria-label={sidebarOpen ? "Chiudi menu" : "Apri menu"}
           aria-expanded={sidebarOpen}
           style={{
-            position: "fixed", top: 16, left: 16, zIndex: 30,
+            position: "fixed",
+            top: "calc(16px + env(safe-area-inset-top, 0px))",
+            left: "calc(16px + env(safe-area-inset-left, 0px))",
+            zIndex: 30,
             width: 40, height: 40, borderRadius: 10,
             background: C.surface, border: `1px solid ${C.border}`,
             display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
@@ -162,7 +160,9 @@ export default function AdminApp() {
       {/* Content */}
       <div style={{
         marginLeft: isMobile ? 0 : SIDEBAR_W,
-        padding: isMobile ? "72px 16px 32px" : "36px 44px",
+        padding: isMobile
+          ? "calc(72px + env(safe-area-inset-top, 0px)) 16px 32px"
+          : "36px 44px",
         maxWidth: 1400, position: "relative", zIndex: 1,
       }}>
         <div style={{ marginBottom: isMobile ? 24 : 36 }}>
