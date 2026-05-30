@@ -578,6 +578,7 @@ function AddPlayerModal({ token, onClose, onCreated }) {
 
 export default function PlayersView({ token }) {
   const { C, inputSt, btnPrimary, btnGhost, labelSt } = useTheme();
+  const isMobile = useMobile();
   const [players, setPlayers]   = useState([]);
   const [loading, setLoading]   = useState(true);
   // Ordinamento multi-colonna: array ordinato per priorità (indice 0 = primario).
@@ -802,9 +803,9 @@ export default function PlayersView({ token }) {
       ) : (
         <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, overflow: "visible" }}>
 
-          {/* Header */}
+          {/* Header — solo desktop (su mobile le righe diventano card) */}
           <div style={{
-            display: "grid", gridTemplateColumns: COLS,
+            display: isMobile ? "none" : "grid", gridTemplateColumns: COLS,
             padding: "10px 16px", borderBottom: `1px solid ${C.border}`,
             fontSize: 10, color: C.muted, textTransform: "uppercase", letterSpacing: "0.1em",
             position: "relative",
@@ -856,6 +857,36 @@ export default function PlayersView({ token }) {
 
           {filtered.map((p, i) => {
             const rate = p.reliabilityScore || 0.33;
+            if (isMobile) return (
+              <div key={p.id} onClick={() => setSelectedPlayer(p.id)} style={{
+                padding: "12px 14px",
+                borderBottom: i < filtered.length - 1 ? `1px solid ${C.border}` : "none",
+                cursor: "pointer", display: "flex", flexDirection: "column", gap: 6,
+                background: !p.active ? `${C.cancelled}05` : "transparent",
+              }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{ flex: 1, fontSize: 14, fontWeight: 600, color: p.active ? C.text : C.muted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {p.name || <span style={{ color: C.dim }}>— senza nome</span>}
+                  </span>
+                  <span style={{
+                    display: "inline-flex", minWidth: 28, height: 22, padding: "0 6px",
+                    alignItems: "center", justifyContent: "center", borderRadius: 6,
+                    background: p.skillLevel > 0 ? C.accentDim : `${C.warning}20`,
+                    color: p.skillLevel > 0 ? C.accent : C.warning,
+                    fontSize: 11, fontWeight: 700,
+                  }}>
+                    {p.skillLevel > 0 ? p.skillLevel : "—"}
+                  </span>
+                  <span style={{ fontSize: 16, fontWeight: 700, color: genderColor(p.gender, C) }}>{genderIcon(p.gender)}</span>
+                  <span style={{ fontSize: 10, fontWeight: 600, color: p.active ? C.open : C.cancelled }}>{p.active ? "● attivo" : "● off"}</span>
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 12, fontSize: 11, color: C.muted, flexWrap: "wrap" }}>
+                  <span style={{ fontFamily: "monospace" }}>{fmtPhone(p.phoneNumber)}</span>
+                  <span style={{ color: rateColor(C, rate) }}>aff. {(rate * 100).toFixed(0)}%</span>
+                  {p.lastContactedAt && <span>contattato {fmtDate(p.lastContactedAt)}</span>}
+                </div>
+              </div>
+            );
             return (
               <div key={p.id} onClick={() => setSelectedPlayer(p.id)} style={{
                 display: "grid", gridTemplateColumns: COLS,

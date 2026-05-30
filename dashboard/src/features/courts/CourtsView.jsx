@@ -64,7 +64,7 @@ function HoursEditor({ token, club, onUpdated }) {
   return (
     <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: 20 }}>
       <div style={{ fontSize: 13, fontWeight: 600, color: C.text, marginBottom: 16 }}>⏰ Orari apertura circolo</div>
-      <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "1fr 1fr 1fr auto", gap: 12, alignItems: "end" }}>
+      <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr 1fr auto", gap: 12, alignItems: "end" }}>
         <div>
           <label style={labelSt}>Apertura</label>
           <input type="time" value={open} onChange={e => setOpen(e.target.value)} style={inputSt} />
