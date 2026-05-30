@@ -71,6 +71,7 @@ export default function OverviewView({ token }) {
 
       {/* KPI principali */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(190px, 1fr))", gap: 14 }}>
+        <StatCard label="Revenue (30 giorni)" value={`€${Math.round(totals.totalRevenue || 0).toLocaleString("it-IT")}`} sub="Partite confermate × tariffa campo" icon="💰" color={C.emerald} />
         <StatCard label="Circoli attivi" value={totals.totalClubs} icon="🏟" color={C.accent} />
         <StatCard label="Giocatori totali" value={totals.totalPlayers} sub={`${totals.activePlayers} attivi`} icon="👥" color={C.indigo} />
         <StatCard label="Partite oggi" value={period.matchesToday} icon="🎾" color={C.emerald} />

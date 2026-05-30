@@ -107,6 +107,16 @@ app.get('/setup', (req, res) => {
     res.sendFile(path.join(__dirname, 'setup.html'));
 });
 
+// Hub — landing scarna con i link rapidi (dashboard circolo/admin, workflow, setup, health)
+app.get(['/', '/hub'], (_req, res) => {
+    res.sendFile(path.join(__dirname, 'hub.html'));
+});
+
+// Pagina "come funziona il bot"
+app.get('/workflow', (_req, res) => {
+    res.sendFile(path.join(__dirname, '../workflow-bot.html'));
+});
+
 
 // ─────────────────────────────────────────────
 // HEALTH CHECK REALE

@@ -86,11 +86,24 @@ function StatChip({ label, value }) {
 
 const STATUS_LABEL = { OPEN: "Aperta", LOCKED: "Confermata", CANCELLED: "Cancellata", UNFILLED: "Non riempita" };
 
-function ClubDetailView({ club, token, onBack, onEdit }) {
+function ClubDetailView({ club, token, onBack, onEdit, onReset }) {
   const { C, btnGhost } = useTheme();
   const c = club;
   const [matches, setMatches] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [resetting, setResetting] = useState(false);
+
+  const resetRevenue = async () => {
+    if (!window.confirm(`Azzerare i guadagni di "${c.name}"? Il revenue conteggerà solo le partite da adesso in poi (le partite storiche non vengono toccate).`)) return;
+    setResetting(true);
+    try {
+      const r = await fetch(`/api/admin/clubs/${c.id}/reset-revenue`, { method: "POST", headers: { Authorization: `Bearer ${token}` } });
+      const d = await r.json();
+      if (d.error) throw new Error(d.error);
+      onReset?.();
+    } catch (e) { alert(e.message); }
+    finally { setResetting(false); }
+  };
   const waColor = WA_COLOR(c.waStatus, C);
   const fillPct = Math.round((c.fillRate || 0) * 100);
   const fillColor = fillPct >= 70 ? C.open : fillPct >= 40 ? C.warning : C.cancelled;
@@ -117,11 +130,15 @@ function ClubDetailView({ club, token, onBack, onEdit }) {
         <button type="button" onClick={onBack} style={btnGhost}>← Circoli</button>
         <div style={{ fontSize: 18, fontWeight: 700, color: C.text }}>{c.name}</div>
         <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 4, background: `${waColor}22`, color: waColor }}>WA: {WA_LABEL[c.waStatus] || c.waStatus}</span>
-        <button type="button" onClick={() => onEdit(c)} style={{ ...btnGhost, marginLeft: "auto" }}>Modifica config</button>
+        <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
+          <button type="button" onClick={resetRevenue} disabled={resetting} style={{ ...btnGhost, color: C.warning, borderColor: `${C.warning}55` }}>{resetting ? "…" : "Azzera guadagni"}</button>
+          <button type="button" onClick={() => onEdit(c)} style={btnGhost}>Modifica config</button>
+        </div>
       </div>
 
       {/* Config + KPI */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))", gap: 14, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: "18px 20px" }}>
+        <StatChip label="Revenue (30gg)" value={`€${Math.round(c.revenue || 0).toLocaleString("it-IT")}`} />
         <StatChip label="Giocatori" value={c.players} />
         <StatChip label="Campi" value={c.courts} />
         <StatChip label="Partite totali" value={c.totalMatches} />
@@ -199,7 +216,7 @@ export default function ClubsView({ token }) {
   if (detail) return (
     <>
       {editing && <EditModal club={editing} token={token} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); load(); }} />}
-      <ClubDetailView club={detail} token={token} onBack={() => setDetail(null)} onEdit={setEditing} />
+      <ClubDetailView club={detail} token={token} onBack={() => setDetail(null)} onEdit={setEditing} onReset={() => { setDetail(null); load(); }} />
     </>
   );
 
@@ -242,6 +259,7 @@ export default function ClubsView({ token }) {
 
                   {/* Stats */}
                   <div style={{ display: "flex", gap: 24, flexWrap: "wrap", alignItems: "flex-end" }}>
+                    <StatChip label="Revenue (30gg)" value={`€${Math.round(c.revenue || 0).toLocaleString("it-IT")}`} />
                     <StatChip label="Giocatori" value={c.players} />
                     <StatChip label="Campi" value={c.courts} />
                     <StatChip label="Partite totali" value={c.totalMatches} />

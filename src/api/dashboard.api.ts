@@ -830,9 +830,11 @@ router.get('/stats', authMiddleware, async (req: Request, res: Response) => {
         const completed = locked + cancelled + unfilled;
         const fillRate = completed > 0 ? locked / completed : 0;
 
-        // ── Revenue: solo partite LOCKED già concluse ──────────────────
+        // ── Revenue: solo partite LOCKED già concluse, dopo l'eventuale azzeramento guadagni ──
+        const clubRev = await prisma.club.findUnique({ where: { id: clubId }, select: { revenueResetAt: true } });
+        const revenueSince = clubRev?.revenueResetAt && clubRev.revenueResetAt > since ? clubRev.revenueResetAt : since;
         const lockedMatches = await prisma.match.findMany({
-            where: { clubId, startTime: { gte: since, lte: now }, status: 'LOCKED' },
+            where: { clubId, startTime: { gte: revenueSince, lte: now }, status: 'LOCKED' },
             include: { court: { include: { prices: true } } },
         });
         let revenue = 0;

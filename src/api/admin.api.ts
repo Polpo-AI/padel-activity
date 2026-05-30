@@ -19,6 +19,7 @@ import { prisma } from '../services/db';
 import { getAllClubStatuses } from '../services/whatsapp';
 import { checkDbHealth } from '../services/db';
 import { checkRedisHealth, waveQueue, recoveryQueue, reminderQueue, maintenanceQueue } from '../services/queue';
+import { calculateCostFromPrices } from '../services/pricing';
 import * as jwt from 'jsonwebtoken';
 import pino from 'pino';
 import rateLimit from 'express-rate-limit';
@@ -127,6 +128,17 @@ router.get('/overview', adminAuth, async (_req: Request, res: Response) => {
 
         const fillRate = totalInvitations > 0 ? (acceptedInvitations / totalInvitations) : 0;
 
+        // Revenue totale (30gg), rispettando l'azzeramento guadagni per circolo
+        const revMatches = await prisma.match.findMany({
+            where: { status: 'LOCKED', type: 'MATCH', startTime: { gte: thirtyDaysAgo } },
+            select: { startTime: true, court: { select: { prices: true } }, club: { select: { revenueResetAt: true, matchDuration: true } } },
+        });
+        const totalRevenue = revMatches.reduce((sum, m: any) => {
+            if (m.club?.revenueResetAt && m.startTime < m.club.revenueResetAt) return sum;
+            if (!m.court?.prices?.length) return sum;
+            return sum + calculateCostFromPrices(m.startTime, m.court.prices, m.club?.matchDuration || 90);
+        }, 0);
+
         // Per-club summary
         const clubs = await prisma.club.findMany({
             select: {
@@ -144,7 +156,7 @@ router.get('/overview', adminAuth, async (_req: Request, res: Response) => {
         const waStatuses = getAllClubStatuses();
 
         res.json({
-            totals: { totalClubs, totalPlayers, activePlayers, openMatches, lockedMatches },
+            totals: { totalClubs, totalPlayers, activePlayers, openMatches, lockedMatches, totalRevenue },
             period: { matchesToday, matchesThisMonth, recentlyActivePlayers, fillRate },
             clubs: clubs.map(c => ({
                 id: c.id, name: c.name, city: c.city,
@@ -174,6 +186,7 @@ router.get('/clubs', adminAuth, async (_req: Request, res: Response) => {
                 botName: true, botPhoneNumber: true, adminPhone: true,
                 matchLowerRange: true, matchUpperRange: true,
                 maxDailyMessages: true, openTime: true, closeTime: true,
+                matchDuration: true, revenueResetAt: true,
                 _count: {
                     select: {
                         players: true,
@@ -183,7 +196,7 @@ router.get('/clubs', adminAuth, async (_req: Request, res: Response) => {
                 },
                 matches: {
                     where: { startTime: { gte: thirtyDaysAgo }, type: 'MATCH' },
-                    select: { status: true },
+                    select: { status: true, startTime: true, court: { select: { prices: true } } },
                 },
             },
             orderBy: { name: 'asc' },
@@ -192,6 +205,12 @@ router.get('/clubs', adminAuth, async (_req: Request, res: Response) => {
         res.json(clubs.map(c => {
             const total = c.matches.length;
             const locked = c.matches.filter(m => m.status === 'LOCKED').length;
+            // Revenue ultimi 30gg: partite LOCKED dopo l'eventuale azzeramento guadagni
+            const revSince = c.revenueResetAt && c.revenueResetAt > thirtyDaysAgo ? c.revenueResetAt : thirtyDaysAgo;
+            const revenue = c.matches.reduce((sum, m: any) => {
+                if (m.status !== 'LOCKED' || m.startTime < revSince || !m.court?.prices?.length) return sum;
+                return sum + calculateCostFromPrices(m.startTime, m.court.prices, c.matchDuration || 90);
+            }, 0);
             return {
                 id: c.id, name: c.name, city: c.city, address: c.address,
                 botName: c.botName, botPhoneNumber: c.botPhoneNumber, adminPhone: c.adminPhone,
@@ -203,6 +222,8 @@ router.get('/clubs', adminAuth, async (_req: Request, res: Response) => {
                 totalMatches: c._count.matches,
                 matchesThisMonth: total,
                 fillRate: total > 0 ? locked / total : 0,
+                revenue,
+                revenueResetAt: c.revenueResetAt,
                 waStatus: waStatuses[c.id] || 'disconnected',
             };
         }));
@@ -248,6 +269,22 @@ router.patch('/clubs/:id', adminAuth, async (req: Request, res: Response) => {
     } catch (err) {
         logger.error({ err }, 'Admin club update error');
         res.status(500).json({ error: 'Errore nel salvataggio' });
+    }
+});
+
+// Azzera i guadagni: il revenue conteggerà solo le partite da adesso in poi (non distruttivo)
+router.post('/clubs/:id/reset-revenue', adminAuth, async (req: Request, res: Response) => {
+    try {
+        const updated = await prisma.club.update({
+            where: { id: req.params.id },
+            data: { revenueResetAt: new Date() },
+            select: { id: true, revenueResetAt: true },
+        });
+        logger.info({ clubId: req.params.id }, 'Admin: revenue reset');
+        res.json({ ok: true, revenueResetAt: updated.revenueResetAt });
+    } catch (err) {
+        logger.error({ err }, 'Admin reset-revenue error');
+        res.status(500).json({ error: 'Errore nel reset guadagni' });
     }
 });
 

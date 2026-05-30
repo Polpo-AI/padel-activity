@@ -461,6 +461,10 @@ export async function humanSend(
     text: string,
     incomingMsgKey?: proto.IMessageKey
 ): Promise<void> {
+    if (process.env.DRY_RUN === 'true') {
+        logger.info(`[DRY RUN] Would humanSend to ${jid}: ${text.slice(0, 80)}`);
+        return;
+    }
     const clubId = currentClubId();
     const cs = await waitForSocket(clubId);
     const sock = cs.sock!;

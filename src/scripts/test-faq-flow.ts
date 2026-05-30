@@ -11,6 +11,8 @@
  */
 
 import 'dotenv/config';
+// Test dei side effect DB/Redis, non della consegna WhatsApp: DRY_RUN evita di attendere/usare il socket WA
+process.env.DRY_RUN = 'true';
 import { Pool } from 'pg';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '@prisma/client';
@@ -74,8 +76,13 @@ async function teardown(redis: any) {
     await prisma.faq.deleteMany({ where: { clubId: RUN_ID } });
     await prisma.player.deleteMany({ where: { clubId: RUN_ID } });
     await prisma.club.deleteMany({ where: { id: RUN_ID } });
-    await redis.del(`faq:pending_question:${RUN_ID}`);
+    // Pulisci pending FAQ (schema attuale: lista + chiavi per id)
+    const ids = await redis.lrange(`faq:pending_ids:${RUN_ID}`, 0, -1).catch(() => []);
+    for (const id of ids) await redis.del(`faq:pending:${RUN_ID}:${id}`);
+    await redis.del(`faq:pending_ids:${RUN_ID}`);
     await redis.del(`faq:awaiting_save_confirm:${RUN_ID}`);
+    await redis.del(`faq:awaiting_merge_confirm:${RUN_ID}`);
+    await redis.del(`faq:awaiting_conflict_resolve:${RUN_ID}`);
 }
 
 // ─── Main ────────────────────────────────────────────────────────────────────
@@ -91,6 +98,14 @@ async function main() {
     const { runWithContext } = await import('../utils/request-context');
     const redis = getRedis();
 
+    // Schema FAQ pending attuale: lista faq:pending_ids:{clubId} + faq:pending:{clubId}:{id}
+    const readFirstPending = async (): Promise<any | null> => {
+        const ids = await redis.lrange(`faq:pending_ids:${RUN_ID}`, 0, -1);
+        if (!ids.length) return null;
+        const raw = await redis.get(`faq:pending:${RUN_ID}:${ids[0]}`);
+        return raw ? JSON.parse(raw) : null;
+    };
+
     const playerJid = `39000000001@s.whatsapp.net`;
     const adminJid  = `390000000001@s.whatsapp.net`;
     const question  = 'Avete docce e spogliatoi nel circolo?';
@@ -99,98 +114,89 @@ async function main() {
     // ── 1. executeAction FAQ_REQUEST ──────────────────────────────────────────
 
     await test('FAQ_REQUEST: salva pending in Redis con playerJid', async () => {
-        await runWithContext({ clubId: RUN_ID, jid: playerJid }, async () => {
-            await executeAction('FAQ_REQUEST', { question }, player, club, '39000000001', playerJid);
+        await runWithContext({ correlationId: RUN_ID, clubId: RUN_ID, jid: playerJid }, async () => {
+            await executeAction('FAQ_REQUEST', { question }, player, club, '39000000001');
         });
 
-        const raw = await redis.get(`faq:pending_question:${RUN_ID}`);
-        assert(raw !== null, 'faq:pending_question deve essere in Redis');
-
-        const data = JSON.parse(raw!);
+        const data = await readFirstPending();
+        assert(data !== null, 'pending FAQ deve essere in Redis');
         assert(data.question === question, `question: "${data.question}"`);
         assert(data.playerJid === playerJid, `playerJid: "${data.playerJid}"`);
         assert(data.askedBy === 'Utente Test', `askedBy: "${data.askedBy}"`);
     });
 
-    // ── 2. faq:pending_question NON cancellata dopo invio notifica ─────────────
+    // ── 2. pending NON cancellato dopo invio notifica ──────────────────────────
 
-    await test('FAQ_REQUEST: chiave Redis NON cancellata dopo invio notifica', async () => {
-        // La chiave deve sopravvivere per quando l'admin risponde
-        const raw = await redis.get(`faq:pending_question:${RUN_ID}`);
-        assert(raw !== null, 'faq:pending_question deve ancora esistere');
+    await test('FAQ_REQUEST: pending NON cancellato dopo invio notifica', async () => {
+        // Deve sopravvivere per quando l'admin risponde
+        const data = await readFirstPending();
+        assert(data !== null, 'pending FAQ deve ancora esistere');
     });
 
     // ── 3. handleAdminFaqFlow ignora messaggi non-FAQ ─────────────────────────
 
     await test('handleAdminFaqFlow: ignora messaggi non correlati', async () => {
-        await runWithContext({ clubId: RUN_ID, jid: adminJid }, async () => {
+        await runWithContext({ correlationId: RUN_ID, clubId: RUN_ID, jid: adminJid }, async () => {
             const handled = await handleAdminFaqFlow('ok perfetto', club, adminJid);
             assert(!handled, 'Messaggio generico non deve essere gestito dal flusso FAQ');
         });
-        const raw = await redis.get(`faq:pending_question:${RUN_ID}`);
-        assert(raw !== null, 'faq:pending_question intatta dopo messaggio non-FAQ');
+        const data = await readFirstPending();
+        assert(data !== null, 'pending intatto dopo messaggio non-FAQ');
     });
 
     // ── 4. handleAdminFaqFlow con risposta valida ─────────────────────────────
 
-    await test('handleAdminFaqFlow: classifica risposta come isFaqAnswer', async () => {
-        await runWithContext({ clubId: RUN_ID, jid: adminJid }, async () => {
+    await test('handleAdminFaqFlow: la risposta admin avvia il salvataggio', async () => {
+        await runWithContext({ correlationId: RUN_ID, clubId: RUN_ID, jid: adminJid }, async () => {
             const handled = await handleAdminFaqFlow(answer, club, adminJid);
             assert(handled, 'handleAdminFaqFlow deve gestire la risposta dell\'admin');
         });
 
-        // Dopo la risposta, o la FAQ è in DB (high confidence) o in awaiting_save_confirm (low)
-        const faqInDb       = await prisma.faq.findFirst({ where: { clubId: RUN_ID } });
-        const awaitingConfirm = await redis.get(`faq:awaiting_save_confirm:${RUN_ID}`);
-        const savedOrPending = faqInDb !== null || awaitingConfirm !== null;
-        assert(savedOrPending, 'FAQ deve essere in DB o in attesa di conferma admin');
-
-        if (faqInDb) {
-            console.log(`     ℹ️  Auto-salvata (high confidence): "${faqInDb.question}"`);
-        } else {
-            const conf = JSON.parse(awaitingConfirm!);
-            assert(conf.playerJid === playerJid, `playerJid preserved in awaiting_save_confirm: ${conf.playerJid}`);
-            console.log(`     ℹ️  Low confidence → in attesa conferma admin`);
-        }
+        // Esiti possibili: FAQ già in DB, oppure in attesa di un secondo passo admin
+        // (review automatica → awaiting_improvement, o low-confidence → awaiting_save_confirm)
+        const faqInDb           = await prisma.faq.findFirst({ where: { clubId: RUN_ID } });
+        const awaitingImprove   = await redis.get(`faq:awaiting_improvement:${RUN_ID}`);
+        const awaitingConfirm   = await redis.get(`faq:awaiting_save_confirm:${RUN_ID}`);
+        assert(!!(faqInDb || awaitingImprove || awaitingConfirm),
+            'FAQ deve essere in DB o in uno stato di attesa (improvement/save_confirm)');
+        console.log(`     ℹ️  Esito: ${faqInDb ? 'in DB' : awaitingImprove ? 'awaiting_improvement' : 'awaiting_save_confirm'}`);
     });
 
-    // ── 5. Se low-confidence: admin conferma → FAQ salvata ────────────────────
+    // ── 5. Admin completa l'eventuale secondo passo → FAQ nel DB ──────────────
 
-    await test('handleAdminFaqFlow: conferma admin (sì) → FAQ nel DB', async () => {
-        const awaitingConfirm = await redis.get(`faq:awaiting_save_confirm:${RUN_ID}`);
-
-        if (!awaitingConfirm) {
-            // Già salvata al test precedente
-            const faq = await prisma.faq.findFirst({ where: { clubId: RUN_ID } });
-            assert(faq !== null, 'FAQ deve essere nel DB');
-            console.log(`     ℹ️  Già auto-salvata, skip conferma`);
-            return;
+    await test('handleAdminFaqFlow: completamento → FAQ nel DB', async () => {
+        let faq = await prisma.faq.findFirst({ where: { clubId: RUN_ID } });
+        if (!faq) {
+            const awaitingImprove = await redis.get(`faq:awaiting_improvement:${RUN_ID}`);
+            // su improvement "no" = tieni l'originale; su save_confirm "sì" = salva
+            const reply = awaitingImprove ? 'no' : 'sì';
+            await runWithContext({ correlationId: RUN_ID, clubId: RUN_ID, jid: adminJid }, async () => {
+                await handleAdminFaqFlow(reply, club, adminJid);
+            });
+            faq = await prisma.faq.findFirst({ where: { clubId: RUN_ID } });
         }
+        assert(faq !== null, 'FAQ salvata nel DB dopo il completamento');
+        assert(faq!.answer === answer, `answer atteso "${answer}", got "${faq!.answer}"`);
 
-        await runWithContext({ clubId: RUN_ID, jid: adminJid }, async () => {
-            const handled = await handleAdminFaqFlow('sì', club, adminJid);
-            assert(handled, 'Conferma "sì" deve essere gestita');
-        });
-
-        const faq = await prisma.faq.findFirst({ where: { clubId: RUN_ID } });
-        assert(faq !== null, 'FAQ salvata nel DB dopo conferma');
-        assert(faq!.answer === answer, `answer: "${faq!.answer}"`);
-
-        const confirmGone = await redis.get(`faq:awaiting_save_confirm:${RUN_ID}`);
-        assert(confirmGone === null, 'awaiting_save_confirm cancellata dopo conferma');
+        // Nessuno stato di attesa deve restare appeso
+        const pendingStates = await Promise.all([
+            redis.get(`faq:awaiting_improvement:${RUN_ID}`),
+            redis.get(`faq:awaiting_save_confirm:${RUN_ID}`),
+        ]);
+        assert(pendingStates.every(s => s === null), 'stati di attesa cancellati dopo il salvataggio');
     });
 
     // ── 6. faq:pending_question cancellata dopo risposta admin ────────────────
 
-    await test('faq:pending_question cancellata dopo che admin ha risposto', async () => {
-        const raw = await redis.get(`faq:pending_question:${RUN_ID}`);
-        assert(raw === null, `faq:pending_question deve essere null, got: ${raw}`);
+    await test('pending cancellato dopo che admin ha risposto', async () => {
+        const data = await readFirstPending();
+        assert(data === null, `pending deve essere null, got: ${JSON.stringify(data)}`);
     });
 
     // ── 7. buildBrainContext include la FAQ ───────────────────────────────────
 
     await test('buildBrainContext include la FAQ salvata', async () => {
-        await runWithContext({ clubId: RUN_ID, jid: playerJid }, async () => {
+        await runWithContext({ correlationId: RUN_ID, clubId: RUN_ID, jid: playerJid }, async () => {
             const ctx = await buildBrainContext(playerJid, '39000000001');
             const faq = ctx.faqs?.find((f: any) =>
                 f.question?.includes('docce') || f.answer?.includes('docce') ||
