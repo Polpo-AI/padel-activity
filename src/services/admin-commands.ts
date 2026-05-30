@@ -1084,10 +1084,18 @@ async function executeAdminSteps(
             if (utcH >= 24) { utcH -= 24; dayOffset = 1; }
             const newStartTime = new Date(Date.UTC(y, mo - 1, d + dayOffset, utcH, m, 0));
 
+            const durationMin = (club as any)?.matchDuration || 90;
+            const slotMs = durationMin * 60 * 1000;
             if (match.courtId) {
-                const conflict = await prisma.match.findFirst({
-                    where: { courtId: match.courtId, id: { not: match.id }, status: { in: ['OPEN', 'LOCKED'] }, startTime: newStartTime },
+                // Conflitto con overlap (non solo orario esatto): una partita da `durationMin` min si sovrappone
+                const candidates = await prisma.match.findMany({
+                    where: {
+                        courtId: match.courtId, id: { not: match.id }, status: { in: ['OPEN', 'LOCKED'] },
+                        startTime: { gte: new Date(newStartTime.getTime() - slotMs), lte: new Date(newStartTime.getTime() + slotMs) },
+                    },
+                    select: { startTime: true },
                 });
+                const conflict = candidates.some(c => Math.abs(c.startTime.getTime() - newStartTime.getTime()) < slotMs);
                 if (conflict) {
                     await simulateTypingAndSend(jid, `Il campo è già occupato a quell'orario. Scegli un altro orario.`);
                     continue;
@@ -1095,7 +1103,7 @@ async function executeAdminSteps(
             }
 
             const oldStartTime = match.startTime;
-            await prisma.match.update({ where: { id: match.id }, data: { startTime: newStartTime } });
+            await prisma.match.update({ where: { id: match.id }, data: { startTime: newStartTime, endTime: new Date(newStartTime.getTime() + slotMs) } });
 
             const { notifyMatchRescheduled } = await import('./match-notifications');
             await notifyMatchRescheduled(match.id, oldStartTime, newStartTime, club.id)

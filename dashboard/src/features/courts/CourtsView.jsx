@@ -38,14 +38,23 @@ function HoursEditor({ token, club, onUpdated }) {
   const isMobile = useMobile();
   const [open, setOpen] = useState(club?.openTime || "08:00");
   const [close, setClose] = useState(club?.closeTime || "23:30");
-  const [slot, setSlot] = useState(club?.slotDurationMinutes || club?.matchDuration || 90);
+  const [slot, setSlot] = useState(club?.matchDuration || 90);
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState(null);
 
-  const save = async () => {
+  // Salva su PATCH /club (fonte unica: openTime/closeTime/matchDuration). Gestisce la conferma
+  // se la modifica impatta partite esistenti.
+  const save = async (confirm = false) => {
     setSaving(true);
     try {
-      const d = await api("/club/hours", token, { method: "PUT", body: JSON.stringify({ openTime: open, closeTime: close, slotDurationMinutes: slot }) });
+      const url = confirm ? "/club?confirm=true" : "/club";
+      const d = await api(url, token, { method: "PATCH", body: JSON.stringify({ openTime: open, closeTime: close, matchDuration: slot }) });
+      if (d.requiresConfirmation) {
+        const msg = d.message || d.confirmPrompt || "La modifica potrebbe impattare partite già create. Confermi?";
+        if (window.confirm(msg)) return save(true);
+        setSaving(false);
+        return;
+      }
       onUpdated(d);
       setToast({ msg: "Orari salvati ✓", type: "ok" });
     } catch (e) { setToast({ msg: e.message, type: "err" }); }
@@ -65,12 +74,12 @@ function HoursEditor({ token, club, onUpdated }) {
           <input type="time" value={close} onChange={e => setClose(e.target.value)} style={inputSt} />
         </div>
         <div>
-          <label style={labelSt}>Durata slot (min)</label>
+          <label style={labelSt}>Durata partita (min)</label>
           <select value={slot} onChange={e => setSlot(parseInt(e.target.value))} style={inputSt}>
             {[60, 75, 90, 105, 120].map(v => <option key={v} value={v}>{v} min</option>)}
           </select>
         </div>
-        <button type="button" onClick={save} disabled={saving} style={{ ...btnPrimary, whiteSpace: "nowrap" }}>
+        <button type="button" onClick={() => save(false)} disabled={saving} style={{ ...btnPrimary, whiteSpace: "nowrap" }}>
           {saving ? "..." : "Salva"}
         </button>
       </div>

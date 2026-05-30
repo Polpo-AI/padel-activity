@@ -704,7 +704,7 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[], cor
                             });
                             if (match2?.status !== 'OPEN' && match2?.court) {
                                 const { calculateSlotCost } = await import('./pricing');
-                                const totalCost = await calculateSlotCost(match2.court.id, match2.startTime);
+                                const totalCost = await calculateSlotCost(match2.court.id, match2.startTime, (club as any)?.matchDuration || 90);
                                 const pricePerPerson = totalCost > 0 ? (totalCost / 4).toFixed(2) : null;
                                 const racketPrice = (club as any)?.racketPrice != null ? `${(club as any).racketPrice}€` : null;
                                 const timeStr = match2.startTime.toLocaleString('it-IT', {
@@ -828,7 +828,7 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[], cor
                 });
                 if (match?.court) {
                     const { calculateSlotCost } = await import('./pricing');
-                    const totalCost = await calculateSlotCost(match.court.id, match.startTime);
+                    const totalCost = await calculateSlotCost(match.court.id, match.startTime, (club as any)?.matchDuration || 90);
                     const pricePerPerson = totalCost > 0 ? (totalCost / 4).toFixed(2) : null;
                     const racketPrice = (club as any)?.racketPrice != null ? `${(club as any).racketPrice}€` : null;
                     const timeStr = match.startTime.toLocaleString('it-IT', {
@@ -950,7 +950,7 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[], cor
                     });
                     if (secMatch?.court) {
                         const { calculateSlotCost } = await import('./pricing');
-                        const totalCost = await calculateSlotCost(secMatch.court.id, secMatch.startTime);
+                        const totalCost = await calculateSlotCost(secMatch.court.id, secMatch.startTime, (club as any)?.matchDuration || 90);
                         const pricePerPerson = totalCost > 0 ? (totalCost / 4).toFixed(2) : null;
                         const timeStr = secMatch.startTime.toLocaleString('it-IT', { timeZone: 'Europe/Rome', weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' });
                         await simulateTypingAndSend(jid, buildBookingCard({
@@ -1017,7 +1017,7 @@ export async function handleMatchFilled(matchId: string, startTime: Date): Promi
     let confirmationMsg = `*Riepilogo partita*\n${dateStr} alle ${timeStr}\n${match.court?.name || 'Campo'}`;
     try {
         const { calculateSlotCost } = await import('./pricing');
-        const totalCost = await calculateSlotCost(match.court!.id, startTime);
+        const totalCost = await calculateSlotCost(match.court!.id, startTime, (match.club as any)?.matchDuration || 90);
         const pricePerPerson = totalCost > 0 ? (totalCost / 4).toFixed(2) : null;
         const racketPrice = (match.club as any)?.racketPrice != null ? `${(match.club as any).racketPrice}€` : null;
         const clubLocation = [(match.club as any)?.address, (match.club as any)?.city].filter(Boolean).join(' — ');

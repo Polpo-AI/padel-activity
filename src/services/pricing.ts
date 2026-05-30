@@ -7,7 +7,7 @@ const logger = pino({ level: 'info' });
  * Calcola il costo dello slot dai prezzi caricati.
  * Applica la regola: Priorità alle Eccezioni (con startDate/endDate) rispetto agli standard.
  */
-export function calculateCostFromPrices(startTime: Date, prices: any[]): number {
+export function calculateCostFromPrices(startTime: Date, prices: any[], durationMin: number = 90): number {
     if (!prices || prices.length === 0) return 0;
 
     // Confronto fasce in "minuti dalla mezzanotte" nel fuso Europe/Rome: le fasce "HH:MM" sono
@@ -19,7 +19,7 @@ export function calculateCostFromPrices(startTime: Date, prices: any[]): number 
         return h * 60 + m;
     };
     const slotStartMin = romeMinutes(startTime);
-    const slotEndMin = slotStartMin + 90; // partite da 90 min
+    const slotEndMin = slotStartMin + durationMin;
 
     const bandIntersects = (p: any): boolean => {
         const [hStart, mStart] = p.startTime.split(':').map(Number);
@@ -59,17 +59,21 @@ export function calculateCostFromPrices(startTime: Date, prices: any[]): number 
 }
 
 /**
- * Calcola il costo totale di una partita (90 minuti) leggendo il matchId
+ * Calcola il costo totale di una partita leggendo il matchId.
+ * La durata è derivata da endTime se presente, altrimenti dalla durata del circolo (fallback 90).
  */
 export async function calculateMatchCost(matchId: string): Promise<number> {
     try {
         const match = await prisma.match.findUnique({
             where: { id: matchId },
-            include: { court: { include: { prices: true } } },
+            include: { court: { include: { prices: true } }, club: { select: { matchDuration: true } } },
         });
 
         if (!match || !match.court) return 0;
-        return calculateCostFromPrices(match.startTime, match.court.prices);
+        const durationMin = match.endTime
+            ? Math.round((match.endTime.getTime() - match.startTime.getTime()) / 60000)
+            : (match.club?.matchDuration || 90);
+        return calculateCostFromPrices(match.startTime, match.court.prices, durationMin);
     } catch (err) {
         logger.error({ err, matchId }, 'Error calculating match cost');
         return 0;
@@ -77,9 +81,9 @@ export async function calculateMatchCost(matchId: string): Promise<number> {
 }
 
 /**
- * Calcola il costo prima che la partita esista
+ * Calcola il costo prima che la partita esista. durationMin va passata dal chiamante (club.matchDuration).
  */
-export async function calculateSlotCost(courtId: string, startTime: Date): Promise<number> {
+export async function calculateSlotCost(courtId: string, startTime: Date, durationMin: number = 90): Promise<number> {
     try {
         const court = await prisma.court.findUnique({
             where: { id: courtId },
@@ -87,7 +91,7 @@ export async function calculateSlotCost(courtId: string, startTime: Date): Promi
         });
 
         if (!court) return 0;
-        return calculateCostFromPrices(startTime, court.prices);
+        return calculateCostFromPrices(startTime, court.prices, durationMin);
     } catch (err) {
         logger.error({ err, courtId }, 'Error calculating slot cost');
         return 0;

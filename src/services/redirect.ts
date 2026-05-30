@@ -232,6 +232,10 @@ async function _bookFieldSearch(
     // Non proporre mai slot già passati (o che inizierebbero tra pochissimo): floor su now + 10 min
     const nowFloorMs = Date.now() + 10 * 60 * 1000;
 
+    // Durata partita del circolo (default 90) — determina la "footprint" degli slot proposti
+    const clubCfg = await prisma.club.findUnique({ where: { id: clubId }, select: { matchDuration: true } });
+    const matchDurationMin = clubCfg?.matchDuration || 90;
+
     const courts = await prisma.court.findMany({
         where: { clubId, active: true, ...(isCoveredFilter !== null ? { isCovered: isCoveredFilter } : {}) },
         select: { id: true, name: true, isCovered: true },
@@ -262,7 +266,7 @@ async function _bookFieldSearch(
     // Costruisci mappa di intervalli occupati per campo (courtId → [{start, end}]).
     // Usa interval overlap per bloccare slot che si sovrappongono con partite esistenti,
     // non solo lo slot di inizio esatto — es. una partita alle 10:00 da 90min blocca anche le 9:30 e le 11:00.
-    const DEFAULT_MATCH_DURATION_MS = 90 * 60 * 1000;
+    const DEFAULT_MATCH_DURATION_MS = matchDurationMin * 60 * 1000;
     const occupiedIntervals = new Map<string, { start: number; end: number }[]>();
 
     for (const m of allOccupied as any[]) {
@@ -805,10 +809,14 @@ async function createMatchForGroup(option: RedirectOption, group: RedirectGroup)
         ? group.originalSkillLevel
         : referent?.skillLevel && referent.skillLevel > 0 ? referent.skillLevel : 3.5;
 
+    // Durata partita del circolo (default 90) per re-check occupazione + endTime del nuovo match
+    const clubCfg = await prisma.club.findUnique({ where: { id: group.clubId }, select: { matchDuration: true } });
+    const durationMin = clubCfg?.matchDuration || 90;
+
     // Re-check occupazione campo: tra l'invio delle opzioni e la scelta dell'utente (TTL 600s)
     // il campo può essere stato preso da qualcun altro → evita la doppia prenotazione.
     if (isBookField && option.courtId) {
-        const SLOT_MS = 90 * 60 * 1000;
+        const SLOT_MS = durationMin * 60 * 1000;
         const candidates = await prisma.match.findMany({
             where: {
                 clubId: group.clubId,
@@ -835,6 +843,7 @@ async function createMatchForGroup(option: RedirectOption, group: RedirectGroup)
             clubId: group.clubId,
             courtId: option.courtId || null,
             startTime: option.startTime,
+            endTime: new Date(option.startTime.getTime() + durationMin * 60000),
             skillLevel,
             playersNeeded: 4,
             status: isBookField ? 'LOCKED' : 'OPEN',

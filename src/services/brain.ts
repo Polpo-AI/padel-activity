@@ -215,6 +215,7 @@ export async function buildBrainContext(jid: string, phoneNumber: string): Promi
         7,
         10,
         occupiedScopertoMap,
+        (club as any)?.matchDuration || 90,
     );
 
     // Carica bozza prenotazione in sospeso (salvata da messageHandler quando brain produce BOOK_FIELD)
@@ -260,6 +261,7 @@ async function computeFreeScopertoSlots(
     days: number = 7,
     maxSlots: number = 10,
     precomputedOccupied?: Map<number, Set<string>>,
+    matchDuration: number = 90,
 ): Promise<string[]> {
     if (scopertoCourtIds.length === 0) return [];
 
@@ -282,7 +284,7 @@ async function computeFreeScopertoSlots(
 
     const [openH, openM] = (openTime || '08:00').split(':').map(Number);
     const [closeH, closeM] = (closeTime || '23:30').split(':').map(Number);
-    const lastSlotMinutes = closeH * 60 + closeM - 90; // last valid start
+    const lastSlotMinutes = closeH * 60 + closeM - matchDuration; // last valid start
     const freeSlots: string[] = [];
 
     for (let d = 0; d < days && freeSlots.length < maxSlots; d++) {
@@ -302,7 +304,7 @@ async function computeFreeScopertoSlots(
                     }));
                 }
             }
-            const totalM = slotH * 60 + slotM + 90;
+            const totalM = slotH * 60 + slotM + matchDuration;
             slotH = Math.floor(totalM / 60);
             slotM = totalM % 60;
         }
@@ -1431,6 +1433,7 @@ export async function executeAction(
                     clubId: oldMatch.clubId,
                     courtId: oldMatch.courtId,
                     startTime: oldMatch.startTime,
+                    endTime: oldMatch.endTime ?? new Date(oldMatch.startTime.getTime() + ((club as any)?.matchDuration || 90) * 60000),
                     skillLevel: player.skillLevel > 0 ? player.skillLevel : 1.0,
                     isMixed: oldMatch.isMixed,
                     playersNeeded: oldMatch.playersNeeded,
@@ -1709,6 +1712,7 @@ async function bookSlotForPlayer(
         const closeMinutes = closeH * 60 + closeM;
         const openTime = club.openTime || '08:00';
         const closeTime = club.closeTime || '23:30';
+        const durationMin = club.matchDuration || 90;
         if (startMinutes < openMinutes) {
             const _openMsgs = [
                 `Il circolo apre alle ${openTime}.`,
@@ -1719,14 +1723,14 @@ async function bookSlotForPlayer(
             ];
             return { success: false, errorMessage: _openMsgs[Math.floor(Math.random() * _openMsgs.length)] };
         }
-        if (startMinutes + 90 > closeMinutes) {
-            const lastValid = `${String(Math.floor((closeMinutes - 90) / 60)).padStart(2, '0')}:${String((closeMinutes - 90) % 60).padStart(2, '0')}`;
+        if (startMinutes + durationMin > closeMinutes) {
+            const lastValid = `${String(Math.floor((closeMinutes - durationMin) / 60)).padStart(2, '0')}:${String((closeMinutes - durationMin) % 60).padStart(2, '0')}`;
             const _closeMsgs = [
-                `L'ultima disponibilità è alle ${lastValid} (servono 90 minuti prima della chiusura alle ${closeTime}).`,
+                `L'ultima disponibilità è alle ${lastValid} (servono ${durationMin} minuti prima della chiusura alle ${closeTime}).`,
                 `Troppo tardi, l'ultima disponibilità è alle ${lastValid} (chiusura alle ${closeTime}).`,
                 `Posso prenotare al massimo alle ${lastValid} per finire prima della chiusura alle ${closeTime}.`,
                 `L'ultimo orario utile è alle ${lastValid}, il circolo chiude alle ${closeTime}.`,
-                `Oltre le ${lastValid} non riesco: il circolo chiude alle ${closeTime} (servono 90 min).`,
+                `Oltre le ${lastValid} non riesco: il circolo chiude alle ${closeTime} (servono ${durationMin} min).`,
             ];
             return { success: false, errorMessage: _closeMsgs[Math.floor(Math.random() * _closeMsgs.length)] };
         }
@@ -1838,10 +1842,11 @@ async function createNewMatchAction(
     privateBooking: boolean | null = null,
     committedPlayers: number | null = null,
 ): Promise<{ success: boolean; errorMessage?: string; matchId?: string; requestedTime?: Date }> {
-    // Carica i match che potrebbero occupare lo slot richiesto. Le partite durano ~90 min, quindi
-    // un match alle 20:00 occupa il campo anche per una richiesta alle 21:00 (overlap) e viceversa.
-    // Query su finestra ±90min, poi filtro sugli overlap reali (|Δstart| < 90min).
-    const SLOT_DURATION_MIN = 90;
+    // Carica i match che potrebbero occupare lo slot richiesto. Le partite durano `durationMin`,
+    // quindi un match precedente occupa il campo anche per una richiesta che si sovrappone (e viceversa).
+    // Query su finestra ±durata, poi filtro sugli overlap reali (|Δstart| < durata).
+    const durationMin = club?.matchDuration || 90;
+    const SLOT_DURATION_MIN = durationMin;
     const winFrom = new Date(startTime.getTime() - SLOT_DURATION_MIN * 60 * 1000);
     const winTo = new Date(startTime.getTime() + SLOT_DURATION_MIN * 60 * 1000);
     const candidateMatches = await prisma.match.findMany({
@@ -2004,6 +2009,7 @@ async function createNewMatchAction(
             clubId: player.clubId,
             courtId: effectiveCourt.id,
             startTime,
+            endTime: new Date(startTime.getTime() + durationMin * 60000),
             skillLevel,
             isMixed: preferMixed === true,
             targetGender: matchTargetGender,
