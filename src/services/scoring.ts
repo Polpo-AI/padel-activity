@@ -395,11 +395,13 @@ export function msUntil8amRome(from: Date): number {
     const romeHour = parseInt(timeStr.split(':')[0], 10);
 
     // Se siamo dopo le 22, target = domani 08:00; se siamo prima delle 08, target = oggi 08:00
-    let [y, mo, dd] = dateStr.split('-').map(Number);
-    if (romeHour >= 22) dd += 1;
+    const [y, mo, dd] = dateStr.split('-').map(Number);
+    const targetDay = romeHour >= 22 ? dd + 1 : dd;
 
-    // Costruisci "YYYY-MM-DDT08:00:00" come wall-clock Rome e converti in UTC
-    const wallClock = new Date(`${y}-${String(mo).padStart(2,'0')}-${String(dd).padStart(2,'0')}T08:00:00`);
+    // Costruisci le 08:00 (wall-clock) del giorno target. Date.UTC normalizza l'overflow di
+    // giorno/mese (es. 32 maggio → 1 giugno), evitando il NaN che dava la stringa "2026-05-32T..."
+    // a fine mese — bug che faceva fallire la riprogrammazione notturna delle wave.
+    const wallClock = new Date(Date.UTC(y, mo - 1, targetDay, 8, 0, 0));
     // Stima dell'offset Rome→UTC al momento del target (iterazione singola per DST)
     const approxOffset = new Date(from.toLocaleString('en-US', { timeZone: 'Europe/Rome' })).getTime() - from.getTime();
     const targetUtc = new Date(wallClock.getTime() - approxOffset);
