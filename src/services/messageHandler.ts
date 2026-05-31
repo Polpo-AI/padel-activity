@@ -345,7 +345,9 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[], cor
         // L'admin bypassa sempre il gate — può onboardarsi senza approvazione
         const redis = getRedis();
         const approved = isFromAdmin || await redis.get(`approval:approved:${phoneNumber}`);
-        if (!approved) {
+        // Gate approvazione numeri sconosciuti (feature dev): attivo SOLO con APPROVAL_GATE=true
+        // (staging). In produzione il flag è assente → i numeri nuovi vanno dritti al brain → REGISTER_PLAYER.
+        if (process.env.APPROVAL_GATE === 'true' && !approved) {
             const alreadyPending = await redis.get(`approval:pending:${phoneNumber}`);
             if (!alreadyPending && adminPhone) {
                 // Prima volta che scrive: notifica admin e metti in attesa
