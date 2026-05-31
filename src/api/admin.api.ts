@@ -337,6 +337,43 @@ router.get('/audit', adminAuth, async (req: Request, res: Response) => {
     }
 });
 
+// Costi API Claude per circolo (Punto B): attribuzione spesa su chiave unica.
+router.get('/usage', adminAuth, async (req: Request, res: Response) => {
+    try {
+        const days = Math.max(1, Math.min(365, parseInt(req.query.days as string) || 30));
+        const sinceDay = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Rome', year: 'numeric', month: '2-digit', day: '2-digit' })
+            .format(new Date(Date.now() - days * 24 * 60 * 60 * 1000));
+        const rows = await prisma.apiUsage.findMany({ where: { day: { gte: sinceDay } } });
+        const { costUsd } = await import('../services/usage-tracker');
+
+        const byClub: Record<string, any> = {};
+        for (const r of rows) {
+            const c = byClub[r.clubId] || (byClub[r.clubId] = { clubId: r.clubId, calls: 0, inputTokens: 0, outputTokens: 0, costUsd: 0 });
+            c.calls += r.calls;
+            c.inputTokens += r.inputTokens;
+            c.outputTokens += r.outputTokens;
+            c.costUsd += costUsd({ model: r.model, inputTokens: r.inputTokens, outputTokens: r.outputTokens, cacheReadTokens: r.cacheReadTokens, cacheWriteTokens: r.cacheWriteTokens });
+        }
+        const list: any[] = Object.values(byClub);
+        const realIds = list.map(c => c.clubId).filter((id: string) => id !== 'system');
+        const clubs = realIds.length ? await prisma.club.findMany({ where: { id: { in: realIds } }, select: { id: true, name: true } }) : [];
+        const nameMap: Record<string, string> = {};
+        for (const c of clubs) nameMap[c.id] = c.name;
+        for (const c of list) c.clubName = c.clubId === 'system' ? 'Sistema (senza circolo)' : (nameMap[c.clubId] || c.clubId);
+        list.sort((a, b) => b.costUsd - a.costUsd);
+
+        res.json({
+            days,
+            clubs: list,
+            totalCalls: list.reduce((s, c) => s + c.calls, 0),
+            totalCostUsd: list.reduce((s, c) => s + c.costUsd, 0),
+        });
+    } catch (err) {
+        logger.error({ err }, 'Admin usage fetch error');
+        res.status(500).json({ error: 'Errore nel recupero costi API' });
+    }
+});
+
 // ─────────────────────────────────────────────
 // MATCHES CROSS-CLUB
 // ─────────────────────────────────────────────

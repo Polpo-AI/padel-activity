@@ -18,10 +18,39 @@ import pino from 'pino';
 
 const logger = pino({ level: 'info' });
 
-export const anthropic = new Anthropic({
+const _anthropic = new Anthropic({
     apiKey: process.env.ANTHROPIC_API_KEY,
     timeout: 30000,
     maxRetries: 2, // SDK riprova su 429 e 5xx (incluso 529 Overloaded) con backoff esponenziale
+});
+
+// Proxy (Punto B): intercetta messages.create per registrare il consumo token per circolo
+// (clubId dal request-context). Zero modifiche ai call site — usano sempre anthropic.messages.create.
+export const anthropic = new Proxy(_anthropic, {
+    get(target, prop, receiver) {
+        if (prop === 'messages') {
+            const messages = Reflect.get(target, prop, receiver);
+            return new Proxy(messages, {
+                get(mTarget, mProp, mRec) {
+                    if (mProp === 'create') {
+                        return async (...args: any[]) => {
+                            const res: any = await (mTarget as any).create(...args);
+                            try {
+                                const { getClubId } = require('../utils/request-context');
+                                const { recordUsage } = require('./usage-tracker');
+                                recordUsage(getClubId(), args[0]?.model, res?.usage);
+                            } catch { /* tracking non bloccante */ }
+                            return res;
+                        };
+                    }
+                    const v = Reflect.get(mTarget, mProp, mRec);
+                    return typeof v === 'function' ? v.bind(mTarget) : v;
+                },
+            });
+        }
+        const v = Reflect.get(target, prop, receiver);
+        return typeof v === 'function' ? v.bind(target) : v;
+    },
 });
 
 export const openai = new OpenAI({
