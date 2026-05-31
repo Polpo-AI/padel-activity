@@ -1013,8 +1013,16 @@ export async function handleMatchFilled(matchId: string, startTime: Date): Promi
     const courtShort = match.court?.name || 'Campo';
     const groupName = `Padel · ${shortDay} ${timeStr} · ${courtShort}`;
 
-    // Scheda riepilogativa — unico messaggio inviato nel gruppo alla creazione
-    let confirmationMsg = `*Riepilogo partita*\n${dateStr} alle ${timeStr}\n${match.court?.name || 'Campo'}`;
+    // Scheda riepilogativa — unico messaggio (bolla unica via sock.sendMessage) alla creazione gruppo (Punto 4).
+    // Card schematica con emoji + avviso "Importante": qui il tipo campo è ammesso (è una card, vedi Punto 5).
+    const courtLabel = match.court
+        ? `🎾 ${match.court.name || 'Campo'} (${match.court.isCovered ? '🏟️ coperto' : '☀️ scoperto'})`
+        : '🎾 Campo';
+    const GROUP_NOTICE =
+        `⚠️ *Importante*\n` +
+        `Questo gruppo serve solo a voi giocatori per coordinarvi.\n` +
+        `Per qualsiasi cosa su campo o partita (disdette, cambi, problemi) scrivete a me in chat privata: qui nessuno del circolo legge.`;
+    let confirmationMsg = `📋 *Riepilogo partita*\n📅 ${dateStr} alle ${timeStr}\n${courtLabel}\n\n${GROUP_NOTICE}`;
     try {
         const { calculateSlotCost } = await import('./pricing');
         const totalCost = await calculateSlotCost(match.court!.id, startTime, (match.club as any)?.matchDuration || 90);
@@ -1022,15 +1030,15 @@ export async function handleMatchFilled(matchId: string, startTime: Date): Promi
         const racketPrice = (match.club as any)?.racketPrice != null ? `${(match.club as any).racketPrice}€` : null;
         const clubLocation = [(match.club as any)?.address, (match.club as any)?.city].filter(Boolean).join(' — ');
         const lines = [
-            `*Riepilogo partita*`,
-            `${dateStr} alle ${timeStr}`,
-            match.court?.name || 'Campo',
-            pricePerPerson ? `${pricePerPerson}€ a persona` : null,
-            racketPrice ? `Noleggio racchetta ${racketPrice}/persona` : null,
-            clubLocation || null,
+            `📋 *Riepilogo partita*`,
+            `📅 ${dateStr} alle ${timeStr}`,
+            courtLabel,
+            pricePerPerson ? `💶 ${pricePerPerson}€ a persona` : null,
+            racketPrice ? `🎾 Noleggio racchetta: ${racketPrice}/persona` : null,
+            clubLocation ? `📍 ${clubLocation}` : null,
         ].filter(Boolean);
-        confirmationMsg = lines.join('\n');
-    } catch { /* usa il fallback sopra */ }
+        confirmationMsg = lines.join('\n') + `\n\n${GROUP_NOTICE}`;
+    } catch { /* usa il fallback sopra (già con avviso) */ }
 
     // Filter players that have a valid JID/Phone for the WhatsApp group
     // Guests or placeholder players (with fake identifiers) won't be added to the physical group
