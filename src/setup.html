@@ -4,24 +4,28 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Configura Circolo — Padel Bot</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
+    /* Allineato al design system della dashboard (DESIGN.md): navy + ciano + Inter, dark. */
     :root {
-      --bg:          #07070d;
-      --surface:     #0f0f18;
-      --surface2:    #13131f;
-      --border:      #1c1c2e;
-      --border-l:    #252538;
-      --accent:      #00e5a0;
-      --accent-dim:  #00e5a012;
-      --accent-soft: #00e5a030;
-      --text:        #e2e2f0;
-      --muted:       #5a5a7a;
-      --dim:         #2a2a42;
-      --error:       #ff4a6e;
-      --warn:        #ffcc00;
-      --font:        'DM Mono', 'Fira Code', 'Courier New', monospace;
+      --bg:          #0B1228;
+      --surface:     #0F1730;
+      --surface2:    #1A234A;
+      --border:      #232f57;
+      --border-l:    #2e3c6b;
+      --accent:      #22d3ee;
+      --accent-dim:  #22d3ee1a;
+      --accent-soft: #22d3ee4d;
+      --text:        #f8fafc;
+      --muted:       #94a3b8;
+      --dim:         #2a3768;
+      --error:       #ef4444;
+      --warn:        #f59e0b;
+      --font:        'Inter', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
     }
 
     body {
@@ -401,7 +405,7 @@
   <!-- STEP 1: Info base -->
   <div class="step-panel active" id="step-1">
     <div class="step-title">Informazioni base</div>
-    <div class="step-desc">Dati principali del circolo. Il numero admin riceve notifiche critiche via WhatsApp.</div>
+    <div class="step-desc">Dati principali del circolo. Il numero admin (opzionale) riceve avvisi e comandi via WhatsApp; se assente, si usa la chat del bot con se stesso.</div>
 
     <div class="field">
       <label>Nome del circolo *</label>
@@ -421,8 +425,9 @@
 
     <div class="field-row">
       <div>
-        <label>Telefono admin WhatsApp *<span class="label-hint">+39...</span></label>
+        <label>Telefono admin WhatsApp<span class="label-hint">opzionale</span></label>
         <input type="tel" id="adminPhone" placeholder="+393471234567" />
+        <div class="label-hint" style="margin-top:6px; margin-left:0;">Se lo lasci vuoto, avvisi e comandi admin passano dalla chat del bot con se stesso (chat con il proprio numero).</div>
       </div>
       <div>
         <label>Telefono alternativo<span class="label-hint">skill test, contatti</span></label>
@@ -648,9 +653,9 @@ function goTo(step) {
 // ─── Validation ───────────────────────────────
 function validateStep(step) {
   if (step === 1) {
-    const name = v('name'), phone = v('adminPhone');
+    const name = v('name');
     if (!name) return err('name', 'Il nome del circolo è obbligatorio');
-    if (!phone) return err('adminPhone', 'Il numero admin è obbligatorio');
+    // Numero admin opzionale (Punto 8): se assente, l'admin opera via self-chat del bot.
     return true;
   }
   if (step === 2) {
@@ -772,7 +777,7 @@ function checkPwd() {
   if (/[A-Z]/.test(p)) score++;
   if (/[0-9]/.test(p)) score++;
   if (/[^A-Za-z0-9]/.test(p)) score++;
-  const colors = ['', '#ff4a6e', '#ffcc00', '#ffcc00', '#00e5a0', '#00e5a0'];
+  const colors = ['', '#ef4444', '#f59e0b', '#f59e0b', '#22d3ee', '#22d3ee'];
   const widths  = ['0%', '20%', '40%', '60%', '85%', '100%'];
   bar.style.width = widths[score] || '0%';
   bar.style.background = colors[score] || 'transparent';
