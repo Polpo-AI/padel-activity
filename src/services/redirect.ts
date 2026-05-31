@@ -26,20 +26,10 @@
 import { prisma } from './db';
 import { getRedis } from './queue';
 import { simulateTypingAndSend, sendMessage } from './whatsapp';
+import { formatMatchSlot } from '../utils/format-match';
 import pino from 'pino';
 
 const logger = pino({ level: 'info' });
-
-// Helper: produce "Mercoledì 15 Aprile alle 10:00" — weekday e mese capitalizzati
-function formatMatchSlot(d: Date): string {
-    const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
-    const tz = { timeZone: 'Europe/Rome' } as const;
-    const weekday = cap(d.toLocaleString('it-IT', { ...tz, weekday: 'long' }));
-    const day = d.toLocaleString('it-IT', { ...tz, day: 'numeric' });
-    const month = cap(d.toLocaleString('it-IT', { ...tz, month: 'long' }));
-    const time = d.toLocaleString('it-IT', { ...tz, hour: '2-digit', minute: '2-digit' });
-    return `${weekday} ${day} ${month} alle ${time}`;
-}
 
 const FREE_SLOT_WINDOW_DAYS  = 7;    // cerca slot liberi entro 7 giorni in avanti
 const TARGET_OPTIONS = 5;
@@ -564,31 +554,29 @@ export async function notifyDisplacedPlayers(
 
     // Notifica i confirmed players + redirect MATCHMAKING
     if (confirmedPlayers.length > 0) {
-        // Recupera nome campo per messaggio specifico
-        let courtLabel = '';
+        // Slot della partita saltata — giorno+ora in priorità, MAI nome campo nei messaggi (Punto 5)
+        let slotLabel = '';
         try {
             const { prisma } = await import('./db');
-            const dm = await prisma.match.findUnique({ where: { id: displacedMatchId }, include: { court: true } });
-            if (dm?.court) {
-                courtLabel = `${dm.court.name} — ${formatMatchSlot(dm.startTime)}`;
-            }
+            const dm = await prisma.match.findUnique({ where: { id: displacedMatchId }, select: { startTime: true } });
+            if (dm) slotLabel = formatMatchSlot(dm.startTime);
         } catch { /* ignore */ }
 
         // Invia prima la notifica a ogni confermato
         for (const p of confirmedPlayers) {
             const jid = `${p.phoneNumber}@s.whatsapp.net`;
             try {
-                const slotTakenVariants = courtLabel ? [
-                    `Il posto al ${courtLabel} è stato preso da qualcun altro 😕 Cerco subito un'alternativa!`,
-                    `Purtroppo il ${courtLabel} è stato occupato 😔 Ti trovo qualcosa di simile!`,
-                    `${courtLabel} — qualcuno ti ha soffiato il posto 😅 Cerco subito un'alternativa!`,
-                    `Il tuo posto al ${courtLabel} è andato 😕 Mi metto subito a cercare!`,
-                    `${courtLabel} non è più tuo 😔 Dammi un secondo che trovo qualcos'altro!`,
-                    `Qualcuno ha appena preso il posto al ${courtLabel} — cerco subito un'alternativa 🎾`,
-                    `${courtLabel} occupato da qualcun altro 😕 Ti buco subito qualcosa di disponibile!`,
-                    `Il posto che avevi al ${courtLabel} è stato preso 😔 Sto cercando un'alternativa!`,
-                    `${courtLabel} è volato via 😅 Vediamo cos'altro c'è disponibile per te!`,
-                    `Mannaggia, il ${courtLabel} è stato soffiato 😔 Cerco subito!`,
+                const slotTakenVariants = slotLabel ? [
+                    `Il posto di ${slotLabel} è stato preso da qualcun altro 😕 Cerco subito un'alternativa!`,
+                    `Purtroppo il posto di ${slotLabel} è stato occupato 😔 Ti trovo qualcosa di simile!`,
+                    `Qualcuno ti ha soffiato il posto di ${slotLabel} 😅 Cerco subito un'alternativa!`,
+                    `Il tuo posto di ${slotLabel} è andato 😕 Mi metto subito a cercare!`,
+                    `Il posto di ${slotLabel} non è più libero 😔 Dammi un secondo che trovo qualcos'altro!`,
+                    `Qualcuno ha appena preso il posto di ${slotLabel} — cerco subito un'alternativa 🎾`,
+                    `Il posto di ${slotLabel} è stato occupato 😕 Ti buco subito qualcosa di disponibile!`,
+                    `Il posto che avevi di ${slotLabel} è stato preso 😔 Sto cercando un'alternativa!`,
+                    `Il posto di ${slotLabel} è volato via 😅 Vediamo cos'altro c'è disponibile per te!`,
+                    `Mannaggia, il posto di ${slotLabel} è stato soffiato 😔 Cerco subito!`,
                 ] : [
                     `Il tuo posto è stato preso da qualcun altro 😕 Cerco subito un'alternativa!`,
                     `Purtroppo il tuo slot è stato occupato 😔 Ti trovo qualcosa di simile!`,

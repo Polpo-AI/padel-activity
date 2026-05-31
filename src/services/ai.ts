@@ -13,6 +13,7 @@ import OpenAI from 'openai';
 import { withRetry, isTransientNetworkError } from '../utils/retry';
 import { loadPrompt } from '../utils/prompts';
 import { claudeCircuitBreaker } from '../utils/circuit-breaker';
+import { buildInvitation } from './invitation-templates';
 import pino from 'pino';
 
 const logger = pino({ level: 'info' });
@@ -171,114 +172,20 @@ export async function generateInvitation(
     socialContext?: import('./matchmaker').MatchSocialContext,
     matchType?: { isMixed: boolean; targetGender: string | null }
 ): Promise<string> {
-    const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+    // Giorno+ora in priorità (Punto 5). weekday it-IT è già minuscolo → ok a metà frase.
+    const weekday = matchTime.toLocaleDateString('it-IT', { timeZone: 'Europe/Rome', weekday: 'long' });
     const timeStr = matchTime.toLocaleTimeString('it-IT', { timeZone: 'Europe/Rome', hour: '2-digit', minute: '2-digit' });
-    const weekdayStr = cap(matchTime.toLocaleDateString('it-IT', { timeZone: 'Europe/Rome', weekday: 'long' })); // fonte autorevole — mai lasciare a Claude
-    const rawDateStr = matchTime.toLocaleDateString('it-IT', { timeZone: 'Europe/Rome', day: 'numeric', month: 'long' });
-    const dateStr = rawDateStr.replace(/([a-zàèéìòù]+)$/i, m => cap(m)); // capitalizza il mese in fondo
+    const quando = `${weekday} alle ${timeStr}`;
 
-    let courtName = 'il campo';
-    let courtCovered = false;
-    let pricePerPerson = 0;
-
-    if (courtId) {
-        const { prisma } = await import('./db');
-        const court = await prisma.court.findUnique({
-            where: { id: courtId },
-            include: { prices: true }
-        });
-        if (court) {
-            courtName = court.name;
-            courtCovered = court.isCovered;
-
-            const matchTimeStr = `${matchTime.getHours().toString().padStart(2, '0')}:${matchTime.getMinutes().toString().padStart(2, '0')}`;
-            let matchedPrice = court.prices.find(p => p.startTime <= matchTimeStr && p.endTime > matchTimeStr);
-            if (!matchedPrice && court.prices.length > 0) matchedPrice = court.prices[0];
-            if (matchedPrice) pricePerPerson = matchedPrice.price / 4;
-        }
-    }
-
-    const courtInfo = courtCovered ? 'coperto' : 'scoperto';
-
-    // Fascia oraria leggibile dal timestamp (fonte autorevole, non da Claude)
-    const hour = matchTime.toLocaleString('it-IT', { timeZone: 'Europe/Rome', hour: 'numeric', hour12: false });
-    const hourNum = parseInt(hour, 10);
-    const timeOfDay = hourNum < 13 ? 'mattina' : hourNum < 18 ? 'pomeriggio' : 'sera';
-
-    // Tipo partita leggibile
+    // Tipo partita (Punto 6): mai nome/tipo campo nell'invito, solo on-demand dal brain.
     const tg = matchType?.targetGender;
-    const matchTypeLabel = tg === 'MALE' ? 'maschile' : tg === 'FEMALE' ? 'femminile' : matchType?.isMixed ? 'mista' : '';
+    const tipo = tg === 'MALE' ? 'maschile' : tg === 'FEMALE' ? 'femminile' : matchType?.isMixed ? 'mista' : '';
 
-    // Stato gruppo
     const confirmedCount = socialContext?.players.length ?? 0;
-    const spotsLeft = socialContext?.spotsLeft ?? 3;
-    const totalNeeded = confirmedCount + spotsLeft;
 
-    // Segnali sui giocatori confermati — solo fatti veri, mai nomi, mai inventati
-    let playersInsight = '';
-    if (socialContext && socialContext.players.length > 0) {
-        const n = socialContext.players.length;
-        const avgSkill = socialContext.players.filter(p => p.skillLevel > 0).map(p => p.skillLevel);
-        const skillHint = avgSkill.length > 0
-            ? ` di livello ${Math.min(...avgSkill).toFixed(1)}–${Math.max(...avgSkill).toFixed(1)}`
-            : '';
-        const signals: string[] = [`Ci sono già ${n} ${n === 1 ? 'persona confermata' : 'persone confermate'}${skillHint}.`];
-        if (socialContext.hasPlayedWithBefore) signals.push(`Ha già giocato con loro in passato.`);
-        playersInsight = signals.join(' ');
-    }
-
-    const matchTypeStr = matchTypeLabel ? ` ${matchTypeLabel}` : '';
-    const fallback = isFriend
-        ? `Ciao ${playerName}, come va? Un amico ti ha invitato a padel ${weekdayStr} ${timeOfDay} alle ${timeStr}. Sei disponibile?`
-        : `Ciao ${playerName}, come va? ${weekdayStr} ${timeOfDay} c'è una partita di padel${matchTypeStr} alle ${timeStr}. Ti può interessare?`;
-
-    let aiTone = '';
-    if (clubId) {
-        const { prisma } = await import('./db');
-        const club = await prisma.club.findUnique({ where: { id: clubId }, select: { aiTone: true } });
-        aiTone = club?.aiTone || '';
-    }
-
-    return claudeCircuitBreaker.call(
-        async () => {
-            const result = await withRetry(
-                () => anthropic.messages.create({
-                    model: 'claude-haiku-4-5-20251001',
-                    max_tokens: 180,
-                    temperature: 0.8,
-                    system: aiTone || 'Sei il bot di un circolo padel. Scrivi messaggi brevi e colloquiali in italiano, come un amico che scrive su WhatsApp.',
-                    messages: [{
-                        role: 'user',
-                        content: loadPrompt('generate_invitation', {
-                            playerName,
-                            weekdayStr,
-                            timeOfDay,
-                            timeStr,
-                            courtInfo,
-                            matchTypeLabel: matchTypeLabel || '',
-                            isFriend: isFriend ? 'true' : 'false',
-                            confirmedCount: String(confirmedCount),
-                            spotsLeft: String(spotsLeft),
-                            playersInsight: playersInsight || '',
-                        })
-                    }],
-                }),
-                {
-                    maxAttempts: 3,
-                    baseDelayMs: 1000,
-                    shouldRetry: isTransientNetworkError,
-                    context: 'generateInvitation',
-                }
-            );
-            const content = result.content[0];
-            if (content.type === 'text') return content.text.trim();
-            return fallback;
-        },
-        () => {
-            logger.warn({ playerName }, 'generateInvitation: circuit open — fallback text');
-            return fallback;
-        }
-    );
+    // Template random (no AI): l'invito è il messaggio a volume più alto → costo API zero.
+    // I candidati sono già nella banda di livello della partita (scoring.ts) → "del tuo livello" è vero.
+    return buildInvitation({ playerName, quando, tipo, confirmedCount, isFriend });
 }
 
 // ─────────────────────────────────────────────

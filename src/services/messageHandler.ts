@@ -1011,7 +1011,7 @@ export async function handleMatchFilled(matchId: string, startTime: Date): Promi
     const dateStr = startTime.toLocaleDateString('it-IT', { timeZone: 'Europe/Rome', weekday: 'long', day: 'numeric', month: 'long' });
     const shortDay = startTime.toLocaleDateString('it-IT', { timeZone: 'Europe/Rome', weekday: 'short', day: '2-digit', month: '2-digit' });
     const courtShort = match.court?.name || 'Campo';
-    const groupName = `Padel · ${courtShort} · ${shortDay} · ${timeStr}`;
+    const groupName = `Padel · ${shortDay} ${timeStr} · ${courtShort}`;
 
     // Scheda riepilogativa — unico messaggio inviato nel gruppo alla creazione
     let confirmationMsg = `*Riepilogo partita*\n${dateStr} alle ${timeStr}\n${match.court?.name || 'Campo'}`;
