@@ -373,7 +373,7 @@ export default function RevenueView({ token }) {
 
       {/* Nota trasparenza: cosa è incluso nel calcolo */}
       <div style={{ fontSize: 11, color: C.muted, lineHeight: 1.5, borderTop: `1px solid ${C.dim}`, paddingTop: 14 }}>
-        Conteggia il <strong style={{ color: C.text }}>noleggio campo</strong> delle partite effettivamente giocate, applicando le tariffe per fascia oraria, le differenze tra campi e le eventuali eccezioni di calendario. Non include il noleggio racchette (non viene tracciato chi lo richiede).
+        Il totale è il <strong style={{ color: C.text }}>noleggio campo</strong> delle partite effettivamente giocate, applicando le tariffe per fascia oraria, le differenze tra campi e le eventuali eccezioni di calendario. Il <strong style={{ color: C.text }}>noleggio racchette</strong> è mostrato a parte come <em>stima</em>: conta solo chi conferma di averne bisogno al momento della prenotazione (molti non rispondono, quindi è un dato prudenziale e compare solo se ci sono noleggi registrati).
       </div>
     </div>
   );
