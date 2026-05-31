@@ -57,7 +57,21 @@ export async function notifyAdmin(
     }
 
     if (!phone) {
-        logger.warn('No admin phone configured');
+        // Fallback (Punto 8): nessun numero admin configurato → manda nella chat del bot
+        // con se stesso, così il segretario che gestisce il numero riceve comunque l'avviso.
+        try {
+            const { getBotJid, sendMessage: send } = await import('../services/whatsapp');
+            const selfJid = await getBotJid();
+            if (selfJid) {
+                await send(selfJid, `🔔 *${name ?? 'Padel Bot'} — Admin*\n\n${message}`);
+                notificationCooldowns.set(key, Date.now());
+                logger.info({ key }, 'Admin notification sent to self-chat (no adminPhone)');
+                return true;
+            }
+        } catch (err) {
+            logger.warn({ err }, 'Self-chat admin notification fallback failed');
+        }
+        logger.warn('No admin phone configured and no self-chat available');
         return false;
     }
 
@@ -88,8 +102,11 @@ export async function notifyAdminByClubId(
             where: { id: clubId },
             select: { adminPhone: true, name: true },
         });
-        if (!club?.adminPhone) return;
-        await notifyAdmin(message, key, club.adminPhone, club.name);
+        // In contesto del club: se manca adminPhone, notifyAdmin ripiega sulla self-chat (Punto 8).
+        const { runWithContext } = await import('../utils/request-context');
+        await runWithContext({ clubId } as any, async () => {
+            await notifyAdmin(message, key, club?.adminPhone ?? undefined, club?.name ?? undefined);
+        });
     } catch (err) {
         logger.error({ err, clubId }, 'notifyAdminByClubId failed');
     }

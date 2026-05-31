@@ -352,6 +352,17 @@ async function _doConnect(key: string, state: ClubSocketState): Promise<void> {
         // Messaggi `notify` = messaggi in tempo reale — processati sempre,
         // anche durante resync (non li blocchiamo più).
         for (const msg of m.messages) {
+            // Punto 8: "chat con se stessi" come canale admin. Un messaggio fromMe verso
+            // il PROPRIO numero (note to self) inviato dal segretario → comandi admin.
+            const remoteJid = msg.key.remoteJid || '';
+            const botId = sock.user?.id || '';
+            const normUser = (j: string) => j.split('@')[0].split(':')[0].replace(/\D/g, '');
+            const isSelfChat = !!msg.key.fromMe && !!remoteJid && !remoteJid.endsWith('@g.us')
+                && !!botId && normUser(remoteJid) === normUser(botId);
+            if (isSelfChat && msg.message) {
+                handleSelfChatAdmin(msg, key).catch(err => logger.warn({ err }, 'handleSelfChatAdmin error'));
+                continue;
+            }
             if (!msg.key.fromMe && msg.message) {
                 wahEvents.emit('message', msg, key === DEFAULT_CLUB_KEY ? undefined : key);
             }
@@ -498,6 +509,60 @@ export async function isOnWhatsApp(jid: string, clubId?: string | null): Promise
         return res[0]?.exists ?? null;
     } catch {
         return null;
+    }
+}
+
+/** JID "self" del bot (numero proprio) per il club indicato — per notifiche/comandi via self-chat. */
+export async function getBotJid(clubId?: string | null): Promise<string | null> {
+    try {
+        const cs = await waitForSocket(clubId ?? undefined);
+        const id = cs.sock?.user?.id;
+        if (!id) return null;
+        const phone = id.split('@')[0].split(':')[0].replace(/\D/g, '');
+        return `${phone}@s.whatsapp.net`;
+    } catch {
+        return null;
+    }
+}
+
+/**
+ * Gestisce un messaggio della "chat con se stessi" come comando admin (Punto 8).
+ * Loop guard: ignora i messaggi che ha inviato il bot stesso (nostre risposte).
+ */
+async function handleSelfChatAdmin(msg: proto.IWebMessageInfo, clubKey: string): Promise<void> {
+    try {
+        const text = msg.message?.conversation || msg.message?.extendedTextMessage?.text || '';
+        if (!text.trim()) return;
+        const keyId = msg.key?.id || undefined;
+        const selfJid = msg.key?.remoteJid || undefined;
+        if (!selfJid) return;
+
+        const { prisma } = await import('./db');
+
+        // Loop guard: se questo id è una nostra risposta BOT già salvata → ignora.
+        if (keyId) {
+            const own = await prisma.whatsAppMessage.findFirst({ where: { messageId: keyId, role: 'BOT' }, select: { id: true } });
+            if (own) return;
+        }
+
+        const club = clubKey && clubKey !== DEFAULT_CLUB_KEY
+            ? await prisma.club.findUnique({ where: { id: clubKey } })
+            : await prisma.club.findFirst();
+        if (!club) return;
+        const { runWithContext } = require('../utils/request-context');
+        const { handleAdminCommand, handleAdminFaqFlow, handleAdminPendingAction } = await import('./admin-commands');
+
+        await runWithContext({ clubId: club.id }, async () => {
+            const handled =
+                await handleAdminPendingAction(text, club, selfJid) ||
+                await handleAdminFaqFlow(text, club, selfJid) ||
+                await handleAdminCommand(text, club, selfJid);
+            if (!handled) {
+                await sendMessage(selfJid, 'Comando non riconosciuto. Questa è la tua chat di gestione: scrivi qui i comandi admin del circolo.');
+            }
+        });
+    } catch (err) {
+        logger.warn({ err }, 'handleSelfChatAdmin failed');
     }
 }
 
