@@ -171,6 +171,11 @@ function RevenueBox({ title, icon, color, data, prevTotal, prevLabel }) {
         <span style={{ fontSize: 22 }}>{icon}</span>
       </div>
       <RevenueChart seriesList={[{ values, color }]} labels={labels} />
+      {data.racketTotal > 0 && (
+        <div style={{ fontSize: 12, color: C.muted }}>
+          + Racchette <strong style={{ color: C.text }}>{fmtEuro(data.racketTotal)}</strong> <span style={{ opacity: 0.7 }}>(stimato)</span>
+        </div>
+      )}
       <div style={{ fontSize: 11, color: C.muted }}>
         {data.matchCount > 0
           ? `${data.matchCount} partit${data.matchCount === 1 ? "a giocata" : "e giocate"} nel periodo`

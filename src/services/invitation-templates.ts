@@ -135,3 +135,35 @@ export function buildInvitation({ playerName, quando, tipo, confirmedCount, isFr
   // N=0
   return clean([fill(pick(openers)), pick(closersSolo)].join(" "));
 }
+
+// ─── Domanda racchetta (Punto 1) — inviata DOPO la card di conferma ──────────────
+
+// Matchmaking: sì/no per il singolo giocatore.
+export function racketQuestionSingle(): string {
+  return pick([
+    "Hai bisogno della racchetta o porti la tua?",
+    "Ti serve il noleggio racchetta o usi la tua?",
+    "Porti la racchetta o te ne serve una a noleggio?",
+    "Una cosa veloce: racchetta tua o te ne serve una?",
+    "Ti serve una racchetta a noleggio o ne hai una?",
+    "Per la racchetta: la porti o ti serve il noleggio?",
+    "Ah, ti serve una racchetta o sei a posto?",
+    "Hai la tua racchetta o te ne procuro una?",
+    "Giochi con la tua racchetta o ti serve a noleggio?",
+    "Ultima cosa: racchetta tua o noleggio?",
+  ]);
+}
+
+// Prenotazione privata: quante racchette per il gruppo.
+export function racketQuestionCount(): string {
+  return pick([
+    "Quante racchette vi servono a noleggio? Se le portate, nessun problema.",
+    "Per il noleggio: quante racchette servono al gruppo?",
+    "Avete bisogno di racchette a noleggio? Se sì, quante?",
+    "Quante racchette devo preparare per voi? (0 se le portate)",
+    "Vi serve qualche racchetta a noleggio? Dimmi quante!",
+    "Racchette: ne portate di vostre o ve ne servono? In caso, quante?",
+    "Quante racchette a noleggio vi servono per la partita?",
+    "Dovete noleggiare racchette? Fammi sapere quante!",
+  ]);
+}

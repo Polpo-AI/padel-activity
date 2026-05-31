@@ -958,16 +958,21 @@ router.get('/revenue', authMiddleware, async (req: Request, res: Response) => {
         const since = new Date(winStart);
         const until = new Date(Math.min(winEnd, now.getTime()));
 
-        const club = await prisma.club.findUnique({ where: { id: clubId }, select: { matchDuration: true } });
+        const club = await prisma.club.findUnique({ where: { id: clubId }, select: { matchDuration: true, racketPrice: true } });
         const clubDuration = club?.matchDuration || 90;
+        const racketPrice = club?.racketPrice ?? 0;
 
         const lockedMatches = await prisma.match.findMany({
             where: { clubId, startTime: { gte: since, lte: until }, status: 'LOCKED' },
-            include: { court: { include: { prices: true } } },
+            include: {
+                court: { include: { prices: true } },
+                MatchPlayer: { where: { racketRented: true, leftAt: null }, select: { id: true } },
+            },
         });
 
         const series = new Array(buckets).fill(0);
         let matchCount = 0;
+        let racketCount = 0;   // racchette noleggiate nel periodo (giocatori registrati + ospiti)
         for (const match of lockedMatches) {
             const rp = romeParts(new Date(match.startTime));
             let idx: number;
@@ -979,12 +984,14 @@ router.get('/revenue', authMiddleware, async (req: Request, res: Response) => {
                 idx = rp.mo - 1;
             }
             matchCount++;                                               // partita giocata nel periodo
+            racketCount += (match.MatchPlayer?.length || 0) + ((match as any).guestRacketsRented || 0);
             if (!match.court?.prices?.length) continue;                 // nessun prezzo configurato → 0
             // Stesso calcolo del billing: precedenza eccezioni + somma per durata slot.
             series[idx] += calculateCostFromPrices(match.startTime, match.court.prices, matchDurationMin(match, clubDuration));
         }
 
         const total = series.reduce((a, b) => a + b, 0);
+        const racketTotal = racketCount * racketPrice;   // stima: solo chi ha risposto alla domanda racchetta
 
         // Quanti bucket sono "trascorsi" (per troncare il grafico del periodo corrente a oggi)
         let elapsed = buckets;
@@ -995,7 +1002,7 @@ router.get('/revenue', authMiddleware, async (req: Request, res: Response) => {
             ? Array.from({ length: buckets }, (_, i) => String(i + 1))
             : MONTH_NAMES_IT;
 
-        res.json({ period, year, month, total, matchCount, elapsed, series, labels });
+        res.json({ period, year, month, total, racketTotal, racketCount, matchCount, elapsed, series, labels });
     } catch (err) {
         logger.error({ err }, 'Error fetching revenue series');
         res.status(500).json({ error: 'Errore nel recupero dei guadagni' });

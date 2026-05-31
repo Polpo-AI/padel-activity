@@ -801,6 +801,13 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[], cor
             } catch (err) {
                 logger.error({ err, matchId: result.matchId }, 'handleMatchFilled after ACCEPT_INVITATION failed');
             }
+            // Punto 1: dopo la conferma, chiedi del noleggio racchetta (matchmaking → sì/no).
+            if ((club as any)?.racketPrice != null) {
+                try {
+                    const { racketQuestionSingle } = await import('./invitation-templates');
+                    await simulateTypingAndSend(jid, racketQuestionSingle());
+                } catch { /* non bloccante */ }
+            }
         }
 
         // Booking riuscito: cancella la bozza prenotazione in sospeso
@@ -854,6 +861,15 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[], cor
                         location:     [club?.address, club?.city].filter(Boolean).join(' — ') || null,
                         waveWillStart,
                     }));
+
+                    // Punto 1: dopo la card, chiedi del noleggio racchetta (se il circolo lo offre).
+                    // Privata → quante racchette per il gruppo; matchmaking → sì/no per il giocatore.
+                    if ((club as any)?.racketPrice != null) {
+                        try {
+                            const { racketQuestionSingle, racketQuestionCount } = await import('./invitation-templates');
+                            await simulateTypingAndSend(jid, match.isPrivateBooking ? racketQuestionCount() : racketQuestionSingle());
+                        } catch { /* non bloccante */ }
+                    }
                 }
 
                 // Se il giocatore preferito non è stato trovato nel circolo, avvisa l'utente

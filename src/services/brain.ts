@@ -39,7 +39,8 @@ export type BrainAction =
     | 'FAQ_REQUEST'
     | 'REGISTER_PLAYER'
     | 'OPEN_TO_MATCHMAKING'
-    | 'SAVE_GENDER';
+    | 'SAVE_GENDER'
+    | 'SET_RACKET_RENTAL';
 
 export interface BrainResponse {
     message: string;
@@ -62,6 +63,7 @@ export interface BrainContext {
     faqs: any[];
     slotsAvailability: { fullSlots: string[]; onlyCoveredSlots: string[]; freeScopertoSlots: string[] };
     pendingBookingIntent?: { day: string; time: string; preferMixed?: boolean | null; preferCovered?: boolean | null } | null;
+    pendingRacket?: { matchId: string; mode: 'single' | 'count' } | null;
 }
 
 // ─────────────────────────────────────────────
@@ -226,6 +228,27 @@ export async function buildBrainContext(jid: string, phoneNumber: string): Promi
         if (raw) pendingBookingIntent = JSON.parse(raw);
     } catch { /* non bloccare il contesto se Redis non risponde */ }
 
+    // Pending racket (Punto 1): rileva (stateless, da DB) una domanda racchetta in sospeso
+    // dopo una conferma recente (ultimi 30 min). Aiuta il brain a interpretare la risposta.
+    let pendingRacket: { matchId: string; mode: 'single' | 'count' } | null = null;
+    if (player?.id && club?.racketPrice != null) {
+        try {
+            const since = new Date(Date.now() - 30 * 60 * 1000);
+            const mp = await prisma.matchPlayer.findFirst({
+                where: { playerId: player.id, leftAt: null, joinedAt: { gte: since }, match: { startTime: { gt: new Date() } } },
+                orderBy: { joinedAt: 'desc' },
+                include: { match: { select: { id: true, isPrivateBooking: true, guestRacketsRented: true } } },
+            });
+            if (mp?.match) {
+                if (mp.match.isPrivateBooking && mp.match.guestRacketsRented === 0) {
+                    pendingRacket = { matchId: mp.match.id, mode: 'count' };
+                } else if (!mp.match.isPrivateBooking && !(mp as any).racketRented) {
+                    pendingRacket = { matchId: mp.match.id, mode: 'single' };
+                }
+            }
+        } catch { /* non bloccante */ }
+    }
+
     return {
         club,
         player,
@@ -239,6 +262,7 @@ export async function buildBrainContext(jid: string, phoneNumber: string): Promi
         faqs,
         slotsAvailability: { fullSlots, onlyCoveredSlots, freeScopertoSlots },
         pendingBookingIntent,
+        pendingRacket,
     };
 }
 
@@ -328,7 +352,7 @@ export async function callBrain(
     userMessage: string,
     contactCards?: { phone?: string; name?: string }[],
 ): Promise<BrainResponse> {
-    const { club, player, isAdmin, recentMessages, pendingInvitations, confirmedMatches, availableMatches, courts, faqs, slotsAvailability, pendingBookingIntent } = context;
+    const { club, player, isAdmin, recentMessages, pendingInvitations, confirmedMatches, availableMatches, courts, faqs, slotsAvailability, pendingBookingIntent, pendingRacket } = context;
 
     const now = new Date().toLocaleString('it-IT', {
         timeZone: 'Europe/Rome', weekday: 'long', day: 'numeric',
@@ -622,6 +646,14 @@ ${pendingBookingIntent.preferMixed != null ? `• Formato: ${pendingBookingInten
 ${pendingBookingIntent.preferCovered != null ? `• Campo: ${pendingBookingIntent.preferCovered ? 'coperto' : 'scoperto (se non disponibile usa coperto)'}` : ''}
 Se l'utente sta confermando o chiedendo di procedere, completa la prenotazione usando questi dati senza re-chiederli.
 ╚════════════════════════════╝` : ''}
+${pendingRacket ? `
+╔══ DOMANDA RACCHETTA IN SOSPESO ══╗
+Hai appena chiesto all'utente se gli serve la racchetta a noleggio (partita ${pendingRacket.matchId}).
+${pendingRacket.mode === 'count'
+    ? `Se risponde indicando QUANTE racchette servono (es. "2", "due", "nessuna", "le portiamo noi") → usa SET_RACKET_RENTAL con params { "matchId": "${pendingRacket.matchId}", "rackets": <numero 0-4> }.`
+    : `Se risponde se gli serve o no (es. "sì mi serve", "no porto la mia", "ne ho una") → usa SET_RACKET_RENTAL con params { "matchId": "${pendingRacket.matchId}", "rackets": <1 se serve, 0 se no> }.`}
+Conferma brevemente ("Perfetto, segnato!" o simile). Se l'utente NON parla di racchetta, ignora questa sezione e gestisci normalmente il suo messaggio.
+╚════════════════════════════════╝` : ''}
 
 ${!player ? `═══ AZIONI DISPONIBILI ═══
 Rispondi SEMPRE con JSON valido: { "message": "...", "action": "NOME", "params": {...} }
@@ -692,7 +724,9 @@ Rispondi SEMPRE con JSON valido: { "message": "...", "action": "NOME", "params":
   ✅ Usa quando il giocatore ha GIÀ una partita confermata e dice: "mi manca qualcuno", "puoi cercarmi dei giocatori?", "trovami altri giocatori per questa partita", "apri al matchmaking".
   ⛔ MAI usare BOOK_FIELD in questi casi: il campo è già prenotato. OPEN_TO_MATCHMAKING converte la prenotazione esistente.
   ⛔ Se l'utente dice "siamo già in 2/3, cercane altri N" — la risposta corretta è OPEN_TO_MATCHMAKING MA spiegando che il matchmaking cerca tra i soci con Skill Test completato: non si può "contare" un amico non iscritto come già confermato. Il sistema cercherà i giocatori mancanti (playersNeeded - 1, dove 1 è il player registrato).
-  Messaggio: usa una frase che chiarisca che si cerca tra i soci del circolo. Es. "Perfetto, apro la partita al matchmaking — cercherò tra i soci con Skill Test completato 🎾".`}
+  Messaggio: usa una frase che chiarisca che si cerca tra i soci del circolo. Es. "Perfetto, apro la partita al matchmaking — cercherò tra i soci con Skill Test completato 🎾".
+
+- SET_RACKET_RENTAL — params: { "matchId": "...", "rackets": <0-4> } — USA SOLO se c'è una "DOMANDA RACCHETTA IN SOSPESO" qui sopra e l'utente sta rispondendo a quella. matchId = quello della sezione. rackets = 1 o 0 (matchmaking: serve/non serve) oppure il numero indicato (prenotazione privata). Conferma breve, nessun dettaglio campo.`}
 
 ═══ INTENTI MULTIPLI (facoltativo) ═══
 Se il messaggio contiene chiaramente DUE intenti separati e autonomi (es. "accetto E poi prenota venerdì alle 18"), puoi aggiungere al JSON i campi opzionali "secondaryAction" e "secondaryParams".
@@ -899,6 +933,30 @@ export async function executeAction(
             }
             logger.error({ regErr, phoneNumber }, 'REGISTER_PLAYER failed');
             return { success: false, errorMessage: 'Registrazione non riuscita. Riprova tra poco.' };
+        }
+    }
+
+    // SET_RACKET_RENTAL (Punto 1): registra il noleggio racchetta in risposta alla domanda
+    // post-conferma. Matchmaking → flag sul MatchPlayer; prenotazione privata → conteggio sul Match.
+    if (action === 'SET_RACKET_RENTAL') {
+        const matchId = params.matchId as string | undefined;
+        const rackets = Math.max(0, Math.min(4, parseInt(String(params.rackets ?? params.count ?? 0), 10) || 0));
+        if (!matchId || !player?.id) return { success: true };
+        try {
+            const match = await prisma.match.findUnique({ where: { id: matchId }, select: { isPrivateBooking: true } });
+            if (!match) return { success: true };
+            if (match.isPrivateBooking) {
+                await prisma.match.update({ where: { id: matchId }, data: { guestRacketsRented: rackets } });
+            } else {
+                await prisma.matchPlayer.updateMany({
+                    where: { matchId, playerId: player.id, leftAt: null },
+                    data: { racketRented: rackets >= 1 },
+                });
+            }
+            return { success: true, matchId };
+        } catch (err) {
+            logger.error({ err, matchId }, 'SET_RACKET_RENTAL failed');
+            return { success: true };
         }
     }
 
