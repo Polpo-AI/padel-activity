@@ -311,6 +311,32 @@ router.post('/clubs/:id/impersonate', adminAuth, async (req: Request, res: Respo
     }
 });
 
+// Audit log dei superpoteri admin (Punto 7): ingressi impersonation + modifiche.
+router.get('/audit', adminAuth, async (req: Request, res: Response) => {
+    try {
+        const clubId = req.query.clubId as string | undefined;
+        const logs = await prisma.adminAuditLog.findMany({
+            where: clubId ? { clubId } : {},
+            orderBy: { createdAt: 'desc' },
+            take: 200,
+        });
+        const clubIds = [...new Set(logs.map(l => l.clubId).filter(Boolean))] as string[];
+        const clubs = clubIds.length
+            ? await prisma.club.findMany({ where: { id: { in: clubIds } }, select: { id: true, name: true } })
+            : [];
+        const nameMap: Record<string, string> = {};
+        for (const c of clubs) nameMap[c.id] = c.name;
+        res.json(logs.map(l => ({
+            id: l.id, actor: l.actor, action: l.action, detail: l.detail,
+            createdAt: l.createdAt, clubId: l.clubId,
+            clubName: l.clubId ? (nameMap[l.clubId] || l.clubId) : null,
+        })));
+    } catch (err) {
+        logger.error({ err }, 'Admin audit fetch error');
+        res.status(500).json({ error: 'Errore nel recupero audit log' });
+    }
+});
+
 // ─────────────────────────────────────────────
 // MATCHES CROSS-CLUB
 // ─────────────────────────────────────────────

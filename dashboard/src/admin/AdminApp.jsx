@@ -7,6 +7,7 @@ import ClubsView from "./views/ClubsView";
 import MatchesView from "./views/MatchesView";
 import PlayersAdminView from "./views/PlayersView";
 import SystemView from "./views/SystemView";
+import AuditView from "./views/AuditView";
 
 const NAV = [
   { id: "overview",  label: "Overview",    icon: "📊", desc: "KPI aggregati su tutti i circoli." },
@@ -14,6 +15,7 @@ const NAV = [
   { id: "matches",   label: "Partite",     icon: "🎾", desc: "Tutte le partite cross-club con filtri." },
   { id: "players",   label: "Giocatori",   icon: "👥", desc: "Tutti i giocatori cross-club, ricerca e filtri." },
   { id: "system",    label: "Sistema",     icon: "⚙️", desc: "Stato WhatsApp per circolo, DB e Redis." },
+  { id: "audit",     label: "Audit",       icon: "🛡️", desc: "Ingressi admin nei circoli e modifiche tracciate." },
 ];
 
 const SIDEBAR_W = 224;
@@ -175,6 +177,7 @@ export default function AdminApp() {
         {tab === "matches"  && <MatchesView  token={token} clubs={clubs} />}
         {tab === "players"  && <PlayersAdminView token={token} clubs={clubs} />}
         {tab === "system"   && <SystemView   token={token} />}
+        {tab === "audit"    && <AuditView    token={token} clubs={clubs} />}
       </div>
     </div>
   );
