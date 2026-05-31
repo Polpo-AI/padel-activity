@@ -30,7 +30,25 @@ export default function PadelDashboard() {
   const [token, setToken] = useState(null);
   const [club, setClub] = useState(null);
   const [tab, setTab] = useState("courts");
+  const [impersonation, setImpersonation] = useState(null); // nome circolo se admin sta impersonando
   const isMobile = useMobile();
+
+  // Impersonation admin (Punto 7): token passato via #imp=<token>&club=<nome>.
+  useEffect(() => {
+    const h = window.location.hash || "";
+    if (h.startsWith("#imp=")) {
+      const params = new URLSearchParams(h.slice(1));
+      const impToken = params.get("imp");
+      const clubName = params.get("club");
+      if (impToken) {
+        setToken(impToken);
+        setClub(clubName ? { name: clubName } : null);
+        setImpersonation(clubName || "circolo");
+        // Pulisci l'URL (non lasciare il token nella barra)
+        window.history.replaceState(null, "", window.location.pathname);
+      }
+    }
+  }, []);
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   // Tornando a desktop, chiudi sempre l'overlay sidebar mobile.
@@ -86,6 +104,25 @@ export default function PadelDashboard() {
 
       {/* Theme toggle pill — top-right fixed */}
       <ThemeToggle />
+
+      {/* Banner impersonation admin (Punto 7) */}
+      {impersonation && (
+        <div style={{
+          position: "fixed", left: 0, right: 0, bottom: 0, zIndex: 400,
+          background: C.warning, color: "#1a1200",
+          padding: "10px 16px", display: "flex", alignItems: "center", justifyContent: "center",
+          gap: 14, flexWrap: "wrap", fontSize: 13, fontWeight: 600,
+          boxShadow: "0 -4px 18px rgba(0,0,0,0.28)",
+          paddingBottom: "calc(10px + env(safe-area-inset-bottom, 0px))",
+        }}>
+          <span>⚠️ Modalità admin — stai operando come <strong>{impersonation}</strong>. Ogni modifica è tracciata.</span>
+          <button type="button"
+            onClick={() => { try { window.close(); } catch {} window.location.href = "/admin"; }}
+            style={{ background: "#1a1200", color: C.warning, border: "none", borderRadius: 8, padding: "6px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+            Torna all'admin
+          </button>
+        </div>
+      )}
 
       {/* Hamburger — solo mobile */}
       {isMobile && (

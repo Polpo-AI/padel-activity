@@ -124,6 +124,24 @@ function ClubDetailView({ club, token, onBack, onEdit, onReset }) {
 
   const fmtDt = (s) => new Date(s).toLocaleString("it-IT", { timeZone: "Europe/Rome", weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
 
+  const [entering, setEntering] = useState(false);
+  const impersonate = async () => {
+    if (!window.confirm(`Entrare nella dashboard di "${c.name}" come gestore?\nOgni modifica che farai verrà registrata nell'audit log.`)) return;
+    setEntering(true);
+    try {
+      const r = await fetch(`/api/admin/clubs/${c.id}/impersonate`, { method: "POST", headers: { Authorization: `Bearer ${token}` } });
+      const d = await r.json();
+      if (d.token) {
+        const url = `/dashboard#imp=${encodeURIComponent(d.token)}&club=${encodeURIComponent(d.clubName || c.name)}`;
+        window.open(url, "_blank", "noopener");
+      } else {
+        alert(d.error || "Impossibile entrare nel circolo");
+      }
+    } catch {
+      alert("Errore di rete");
+    } finally { setEntering(false); }
+  };
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
@@ -131,6 +149,7 @@ function ClubDetailView({ club, token, onBack, onEdit, onReset }) {
         <div style={{ fontSize: 18, fontWeight: 700, color: C.text }}>{c.name}</div>
         <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 4, background: `${waColor}22`, color: waColor }}>WA: {WA_LABEL[c.waStatus] || c.waStatus}</span>
         <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
+          <button type="button" onClick={impersonate} disabled={entering} style={{ ...btnGhost, color: C.accent, borderColor: `${C.accent}55` }}>{entering ? "…" : "↪ Entra come gestore"}</button>
           <button type="button" onClick={resetRevenue} disabled={resetting} style={{ ...btnGhost, color: C.warning, borderColor: `${C.warning}55` }}>{resetting ? "…" : "Azzera guadagni"}</button>
           <button type="button" onClick={() => onEdit(c)} style={btnGhost}>Modifica config</button>
         </div>

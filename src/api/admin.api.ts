@@ -67,6 +67,7 @@ function adminAuth(req: Request, res: Response, next: NextFunction) {
     try {
         const payload = jwt.verify(token, ADMIN_JWT_SECRET) as any;
         if (payload.role !== 'superadmin') return res.status(403).json({ error: 'Accesso negato' });
+        (req as any).adminUser = payload.username || 'admin';
         next();
     } catch {
         return res.status(401).json({ error: 'Token non valido' });
@@ -285,6 +286,28 @@ router.post('/clubs/:id/reset-revenue', adminAuth, async (req: Request, res: Res
     } catch (err) {
         logger.error({ err }, 'Admin reset-revenue error');
         res.status(500).json({ error: 'Errore nel reset guadagni' });
+    }
+});
+
+// Impersonation (Punto 7): conia un token dashboard per il circolo → l'admin entra
+// nella dashboard reale di quel circolo con poteri pieni. Firmato col JWT_SECRET dashboard.
+router.post('/clubs/:id/impersonate', adminAuth, async (req: Request, res: Response) => {
+    const clubId = req.params.id as string;
+    const actor = (req as any).adminUser || 'admin';
+    try {
+        const club = await prisma.club.findUnique({ where: { id: clubId }, select: { id: true, name: true } });
+        if (!club) return res.status(404).json({ error: 'Circolo non trovato' });
+        const secret = process.env.JWT_SECRET;
+        if (!secret) return res.status(500).json({ error: 'JWT_SECRET non configurato' });
+        const token = jwt.sign({ clubId: club.id, clubName: club.name, impersonatedBy: actor }, secret, { expiresIn: '2h' });
+        await prisma.adminAuditLog.create({
+            data: { actor, clubId: club.id, action: 'IMPERSONATE_ENTER', detail: club.name },
+        }).catch(() => {});
+        logger.info({ clubId, actor }, 'Admin impersonation token issued');
+        res.json({ token, clubName: club.name });
+    } catch (err) {
+        logger.error({ err, clubId }, 'Admin impersonate error');
+        res.status(500).json({ error: 'Errore impersonation' });
     }
 });
 

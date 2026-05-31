@@ -61,6 +61,17 @@ function authMiddleware(req: Request, res: Response, next: NextFunction) {
     try {
         const payload = jwt.verify(token, JWT_SECRET) as any;
         (req as any).clubId = payload.clubId;
+        // Audit (Punto 7): se è un token di impersonation admin, registra le modifiche.
+        if (payload.impersonatedBy && req.method !== 'GET') {
+            prisma.adminAuditLog.create({
+                data: {
+                    actor: String(payload.impersonatedBy),
+                    clubId: payload.clubId || null,
+                    action: `${req.method} ${req.path}`,
+                    detail: 'impersonation',
+                },
+            }).catch(() => { /* fire-and-forget */ });
+        }
         next();
     } catch {
         return res.status(401).json({ error: 'Token non valido' });
