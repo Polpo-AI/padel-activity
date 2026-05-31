@@ -7,28 +7,33 @@ datasource db {
 }
 
 model Player {
-  id                 String              @id @default(uuid())
-  phoneNumber        String
-  name               String?
-  gender             Gender              @default(UNKNOWN)
-  skillLevel         Float               @default(0)
-  reliabilityScore   Float               @default(0.33)
-  lastContactedAt    DateTime?
+  id                     String              @id @default(uuid())
+  phoneNumber            String
+  name                   String?
+  gender                 Gender              @default(UNKNOWN)
+  skillLevel             Float               @default(0)
+  reliabilityScore       Float               @default(0.33)
+  lastContactedAt        DateTime?
   dailyMessagesCount     Int                 @default(0)
   morningContactsToday   Int                 @default(0)
   afternoonContactsToday Int                 @default(0)
   avoidMorning           Boolean             @default(false)
   avoidAfternoon         Boolean             @default(false)
-  active             Boolean             @default(true)
-  groupIds           String[]            @default([])
-  notes              String?
-  createdAt          DateTime            @default(now())
-  clubId             String?
-  invitations        Invitation[]
-  MatchPlayer        MatchPlayer[]
-  feedbacks          MatchFeedback[]
-  pendingOnboardings PendingOnboarding[] @relation("InvitedBy")
-  club               Club?               @relation(fields: [clubId], references: [id])
+  active                 Boolean             @default(true)
+  groupIds               String[]            @default([])
+  notes                  String?
+  createdAt              DateTime            @default(now())
+  // ── Recapito / dormienza (Punto 3) ──
+  lastDeliveredAt        DateTime? // ultimo messaggio nostro consegnato (2 spunte)
+  lastInboundAt          DateTime? // ultimo messaggio ricevuto da lui (azzera la dormienza)
+  consecutiveUndelivered Int                 @default(0) // messaggi importanti consecutivi mai consegnati
+  dormantSince           DateTime? // marcato dormiente: stop generazione+invio finché non scrive
+  clubId                 String?
+  invitations            Invitation[]
+  MatchPlayer            MatchPlayer[]
+  feedbacks              MatchFeedback[]
+  pendingOnboardings     PendingOnboarding[] @relation("InvitedBy")
+  club                   Club?               @relation(fields: [clubId], references: [id])
 
   @@unique([phoneNumber, clubId])
   @@index([clubId, active, skillLevel, dailyMessagesCount])
@@ -36,43 +41,44 @@ model Player {
 }
 
 model Court {
-  id      String  @id @default(uuid())
-  clubId  String
-  name    String
-  active  Boolean @default(true)
-  isCovered Boolean @default(false)
+  id        String          @id @default(uuid())
+  clubId    String
+  name      String
+  active    Boolean         @default(true)
+  isCovered Boolean         @default(false)
   notes     String? // Note (es. superficie, illuminazione)
-  club    Club    @relation(fields: [clubId], references: [id])
-  matches Match[]
+  club      Club            @relation(fields: [clubId], references: [id])
+  matches   Match[]
   feedbacks MatchFeedback[]
   prices    CourtPrice[]
 }
 
 model Match {
-  id                String        @id @default(uuid())
-  type              MatchType     @default(MATCH)
-  title             String?
-  clubId            String?
-  courtId           String?
-  startTime         DateTime
-  endTime           DateTime?
-  skillLevel        Float
-  isMixed           Boolean       @default(false)
-  targetGender      String?       // null=inferisci dai partecipanti, 'MALE'=solo uomini, 'FEMALE'=solo donne, 'ANY'=misto esplicito
-  playersNeeded     Int           @default(4)
-  status            MatchStatus   @default(OPEN)
-  preferredPlayerIds String[]     @default([])
-  groupId           String?
-  cancelledAt       DateTime?
-  cancelledReason   String?
-  recoveryWaveCount Int           @default(0)
-  isPrivateBooking  Boolean       @default(false) // true quando skill<=0: prenotazione campo privata, senza matchmaking
-  committedPlayers  Int           @default(0)     // giocatori fisici già confermati ma non nel sistema (es. "siamo in 3")
-  invitations       Invitation[]
-  club              Club?         @relation(fields: [clubId], references: [id])
-  court             Court?        @relation(fields: [courtId], references: [id])
-  MatchPlayer       MatchPlayer[]
-  feedbacks         MatchFeedback[]
+  id                 String          @id @default(uuid())
+  type               MatchType       @default(MATCH)
+  title              String?
+  clubId             String?
+  courtId            String?
+  startTime          DateTime
+  endTime            DateTime?
+  skillLevel         Float
+  isMixed            Boolean         @default(false)
+  targetGender       String? // null=inferisci dai partecipanti, 'MALE'=solo uomini, 'FEMALE'=solo donne, 'ANY'=misto esplicito
+  playersNeeded      Int             @default(4)
+  status             MatchStatus     @default(OPEN)
+  preferredPlayerIds String[]        @default([])
+  groupId            String?
+  cancelledAt        DateTime?
+  cancelledReason    String?
+  recoveryWaveCount  Int             @default(0)
+  isPrivateBooking   Boolean         @default(false) // true quando skill<=0: prenotazione campo privata, senza matchmaking
+  committedPlayers   Int             @default(0) // giocatori fisici già confermati ma non nel sistema (es. "siamo in 3")
+  guestRacketsRented Int             @default(0) // racchette noleggiate da ospiti non registrati (prenotazione privata)
+  invitations        Invitation[]
+  club               Club?           @relation(fields: [clubId], references: [id])
+  court              Court?          @relation(fields: [courtId], references: [id])
+  MatchPlayer        MatchPlayer[]
+  feedbacks          MatchFeedback[]
 
   @@index([status, startTime])
   @@index([clubId, status])
@@ -99,14 +105,15 @@ model Invitation {
 }
 
 model MatchPlayer {
-  id       String    @id @default(uuid())
-  matchId  String
-  playerId String
-  joinedAt DateTime  @default(now())
-  leftAt   DateTime?
-  noShow   Boolean   @default(false)
-  match    Match     @relation(fields: [matchId], references: [id])
-  player   Player    @relation(fields: [playerId], references: [id])
+  id           String    @id @default(uuid())
+  matchId      String
+  playerId     String
+  joinedAt     DateTime  @default(now())
+  leftAt       DateTime?
+  noShow       Boolean   @default(false)
+  racketRented Boolean   @default(false) // il giocatore ha chiesto il noleggio racchetta (matchmaking)
+  match        Match     @relation(fields: [matchId], references: [id])
+  player       Player    @relation(fields: [playerId], references: [id])
 
   @@unique([matchId, playerId])
 }
@@ -124,32 +131,32 @@ model PendingOnboarding {
 }
 
 model Club {
-  id                         String   @id @default(uuid())
+  id                         String    @id @default(uuid())
   name                       String
-  timezone                   String   @default("Europe/Rome")
-  matchDuration              Int      @default(90)
+  timezone                   String    @default("Europe/Rome")
+  matchDuration              Int       @default(90)
   revenueResetAt             DateTime?
-  openTime                   String   @default("08:00")
-  closeTime                  String   @default("23:30")
+  openTime                   String    @default("08:00")
+  closeTime                  String    @default("23:30")
   aiTone                     String?
   adminPhone                 String?
   adminAlternativePhone      String?
-  deadlineMinutesBeforeMatch Int      @default(60)
-  mixedLevelRange            Int      @default(1)
-  matchUpperRange            Float    @default(1.0)
-  matchLowerRange            Float    @default(1.0)
-  skillTestDuration          Int      @default(60)
-  skillTestCost              Float    @default(0.0)
-  skillLevelCount            Int      @default(3)
-  maxDailyMessages           Int      @default(2)
+  deadlineMinutesBeforeMatch Int       @default(60)
+  mixedLevelRange            Int       @default(1)
+  matchUpperRange            Float     @default(1.0)
+  matchLowerRange            Float     @default(1.0)
+  skillTestDuration          Int       @default(60)
+  skillTestCost              Float     @default(0.0)
+  skillLevelCount            Int       @default(3)
+  maxDailyMessages           Int       @default(2)
   city                       String?
   address                    String?
-  dashboardUsername          String?  @unique
+  dashboardUsername          String?   @unique
   dashboardPasswordHash      String?
-  botName                    String?  @default("Francesca")
-  botPhoneNumber             String?  // numero WA del bot per questo circolo (es. 393457991255)
-  racketPrice                Float?   // prezzo noleggio racchetta (€)
-  groupJids                  String[] @default([])
+  botName                    String?   @default("Francesca")
+  botPhoneNumber             String? // numero WA del bot per questo circolo (es. 393457991255)
+  racketPrice                Float? // prezzo noleggio racchetta (€)
+  groupJids                  String[]  @default([])
   courts                     Court[]
   matches                    Match[]
   players                    Player[]
@@ -161,30 +168,49 @@ model Faq {
   clubId    String
   question  String
   answer    String?
-  askedBy   String?  // phoneNumber del giocatore che ha fatto la domanda
+  askedBy   String? // phoneNumber del giocatore che ha fatto la domanda
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  club      Club     @relation(fields: [clubId], references: [id])
+  club Club @relation(fields: [clubId], references: [id])
 
   @@index([clubId])
 }
 
 model WhatsAppMessage {
-  id        String   @id @default(uuid())
-  chatId    String
-  sender    String
-  role      String
-  content   String
-  messageId String?
-  clubId    String?  // quale circolo — null per record legacy
-  timestamp DateTime @default(now())
+  id             String    @id @default(uuid())
+  chatId         String
+  sender         String
+  role           String
+  content        String
+  messageId      String?
+  clubId         String? // quale circolo — null per record legacy
+  timestamp      DateTime  @default(now())
+  // ── Tracciamento consegna (Punto 3) ──
+  deliveryStatus Int       @default(1) // ack Baileys: 1=pending, 2=server (1 spunta), 3=delivered (2 spunte), 4=read, 5=played
+  deliveredAt    DateTime? // quando è passato a 2 spunte
+  resentAt       DateTime? // quando è stato rinviato (una sola volta)
+  important      Boolean   @default(false) // messaggio importante → candidato a rinvio/dormienza
 
   @@index([chatId])
   @@index([chatId, role])
   @@index([timestamp])
   @@index([messageId])
   @@index([clubId])
+  @@index([deliveryStatus, important])
+}
+
+// Audit dei superpoteri admin: ingressi nei circoli e azioni di modifica (Punto 7)
+model AdminAuditLog {
+  id        String   @id @default(uuid())
+  actor     String // identificativo admin (username/console)
+  clubId    String? // circolo su cui ha operato
+  action    String // es. "IMPERSONATE_ENTER", "MATCH_CANCEL", "PLAYER_EDIT"
+  detail    String? // dettaglio libero (id entità, riassunto)
+  createdAt DateTime @default(now())
+
+  @@index([clubId, createdAt])
+  @@index([actor, createdAt])
 }
 
 enum MatchStatus {
@@ -234,13 +260,13 @@ model MatchFeedback {
 model CourtPrice {
   id        String    @id @default(uuid())
   courtId   String
-  startTime String    // "08:00"
-  endTime   String    // "09:00"
+  startTime String // "08:00"
+  endTime   String // "09:00"
   price     Float
   startDate DateTime?
   endDate   DateTime?
 
-  court     Court     @relation(fields: [courtId], references: [id])
+  court Court @relation(fields: [courtId], references: [id])
 
   @@index([courtId])
 }
@@ -248,7 +274,7 @@ model CourtPrice {
 // Stato conversazionale persistente (dual-write con Redis).
 // Redis è il primary (velocità); questa tabella è il fallback in caso di restart/crash Redis.
 model ConversationState {
-  key       String   @id       // e.g. "state:booking:39340...@s.whatsapp.net"
+  key       String   @id // e.g. "state:booking:39340...@s.whatsapp.net"
   value     Json
   expiresAt DateTime
   updatedAt DateTime @updatedAt
