@@ -194,6 +194,7 @@ export async function selectPlayersForWave(
         clubId: match.clubId,
         skillLevel: { gt: 0, gte: skillMin, lte: skillMax },
         active: true,
+        dormantSince: null,   // Punto 3: non contattare i giocatori dormienti (irraggiungibili / sospetto blocco)
         ...(isMorning
             ? { morningContactsToday: { lt: dailyCap }, ...(isWeekday ? { avoidMorning: false } : {}) }
             : { afternoonContactsToday: { lt: dailyCap }, ...(isWeekday ? { avoidAfternoon: false } : {}) }),
@@ -284,6 +285,7 @@ export async function getPlayersForRecovery(matchId: string): Promise<any[]> {
         clubId: match.clubId,
         skillLevel: { gt: 0, gte: skillMin, lte: skillMax },
         active: true,
+        dormantSince: null,   // Punto 3: non contattare i giocatori dormienti
         ...(isWeekday ? (isMorning ? { avoidMorning: false } : { avoidAfternoon: false }) : {}),
         id: { notIn: excludedIds },
     };

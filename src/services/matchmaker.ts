@@ -264,7 +264,7 @@ async function _processWaveInner(matchId: string, waveNumber: number, urgencyMul
         if (i > 0) await sleep(humanSendDelayMs());
 
         try {
-            await simulateTypingAndSend(player.phoneNumber, text);
+            await simulateTypingAndSend(player.phoneNumber, text, undefined, { important: true });
             const isMorning = isMorningMatchInRome(match.startTime);
             const sentNow = new Date();
             await Promise.all([

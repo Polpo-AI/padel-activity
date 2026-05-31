@@ -210,7 +210,14 @@ async function scheduleMaintenance() {
         removeOnComplete: true,
     });
 
-    logger.info('Maintenance jobs scheduled (daily-reset, check-timeouts, check-silent, cleanup-messages, process-outcomes, cleanup-pending-invitations)');
+    // Rinvio messaggi importanti non consegnati (Punto 3) — ogni 20 minuti
+    await maintenanceQueue.add('resend-undelivered', {}, {
+        repeat: { every: 20 * 60 * 1000 },
+        jobId: 'resend-undelivered',
+        removeOnComplete: true,
+    });
+
+    logger.info('Maintenance jobs scheduled (daily-reset, check-timeouts, check-silent, cleanup-messages, process-outcomes, cleanup-pending-invitations, resend-undelivered)');
 }
 
 // ─────────────────────────────────────────────

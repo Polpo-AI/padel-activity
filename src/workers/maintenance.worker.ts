@@ -30,6 +30,11 @@ const maintenanceWorker = new Worker(
             await checkSilentMatches();
         }
 
+        if (job.name === 'resend-undelivered') {
+            const { resendUndeliveredMessages } = await import('../services/delivery');
+            await resendUndeliveredMessages();
+        }
+
         if (job.name === 'cleanup-messages') {
             // Elimina messaggi WhatsApp > 30 giorni (stati conversazionali compresi)
             // Mantiene solo l'ultima settimana per i chatId attivi nelle ultime 48h

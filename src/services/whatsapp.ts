@@ -357,6 +357,36 @@ async function _doConnect(key: string, state: ClubSocketState): Promise<void> {
             }
         }
     });
+
+    // Tracciamento consegna (Punto 3): aggiorna lo stato ack dei messaggi in uscita.
+    // Baileys status: 1=PENDING, 2=SERVER_ACK (1 spunta), 3=DELIVERY_ACK (2 spunte), 4=READ, 5=PLAYED.
+    sock.ev.on('messages.update', async (updates) => {
+        for (const u of updates) {
+            const status = (u.update as any)?.status;
+            const id = u.key?.id;
+            if (status == null || !id) continue;
+            try {
+                const { prisma } = await import('./db');
+                const delivered = status >= 3;
+                const data: any = { deliveryStatus: status };
+                if (delivered) data.deliveredAt = new Date();
+                const res = await prisma.whatsAppMessage.updateMany({ where: { messageId: id }, data });
+                if (delivered && res.count > 0) {
+                    // Consegna riuscita → azzera contatori dormienza del destinatario.
+                    const rec = await prisma.whatsAppMessage.findFirst({ where: { messageId: id }, select: { chatId: true, clubId: true } });
+                    if (rec) {
+                        const phone = rec.chatId.split('@')[0].replace(/\D/g, '');
+                        await prisma.player.updateMany({
+                            where: { phoneNumber: phone, ...(rec.clubId ? { clubId: rec.clubId } : {}) },
+                            data: { lastDeliveredAt: new Date(), consecutiveUndelivered: 0, dormantSince: null },
+                        });
+                    }
+                }
+            } catch (err) {
+                logger.warn({ err }, 'messages.update delivery tracking failed');
+            }
+        }
+    });
 }
 
 // ─────────────────────────────────────────────
@@ -424,7 +454,7 @@ async function _sendRaw(state: ClubSocketState, formattedJid: string, text: stri
 // ─────────────────────────────────────────────
 
 /** Raw send senza simulazione (usato per messaggi di gruppo e admin) */
-export async function sendMessage(jid: string, text: string): Promise<void> {
+export async function sendMessage(jid: string, text: string, opts?: { important?: boolean }): Promise<void> {
     if (process.env.DRY_RUN === 'true') {
         logger.info(`[DRY RUN] Would send raw message to ${jid}: ${text}`);
         return;
@@ -434,7 +464,7 @@ export async function sendMessage(jid: string, text: string): Promise<void> {
     const cs = await waitForSocket(clubId);
 
     const formattedJid = formatJid(jid);
-    await cs.sock!.sendMessage(formattedJid, { text });
+    const sent = await cs.sock!.sendMessage(formattedJid, { text });
 
     try {
         const { prisma } = await import('./db');
@@ -445,10 +475,29 @@ export async function sendMessage(jid: string, text: string): Promise<void> {
                 role: 'BOT',
                 content: text,
                 clubId: clubId || null,
+                messageId: sent?.key?.id || null,
+                important: opts?.important ?? false,
             },
         });
     } catch (err) {
         logger.error({ err }, 'Failed to persist outgoing raw message');
+    }
+}
+
+/**
+ * Verifica se un numero è ancora registrato su WhatsApp (Punto 3).
+ * Ritorna true/false, oppure null se non determinabile (socket assente, errore).
+ */
+export async function isOnWhatsApp(jid: string, clubId?: string | null): Promise<boolean | null> {
+    if (process.env.DRY_RUN === 'true') return null;
+    try {
+        const cs = await waitForSocket(clubId ?? undefined);
+        const phone = jid.split('@')[0].replace(/\D/g, '');
+        const res = await cs.sock!.onWhatsApp(phone);
+        if (!res || res.length === 0) return false;
+        return res[0]?.exists ?? null;
+    } catch {
+        return null;
     }
 }
 
@@ -459,7 +508,8 @@ export async function sendMessage(jid: string, text: string): Promise<void> {
 export async function humanSend(
     jid: string,
     text: string,
-    incomingMsgKey?: proto.IMessageKey
+    incomingMsgKey?: proto.IMessageKey,
+    opts?: { important?: boolean }
 ): Promise<void> {
     if (process.env.DRY_RUN === 'true') {
         logger.info(`[DRY RUN] Would humanSend to ${jid}: ${text.slice(0, 80)}`);
@@ -527,13 +577,13 @@ export async function humanSend(
     // ── Message chunking ──────────────────────────────────────────
     const [part1, part2] = maybeSplitMessage(text);
 
-    await sock.sendMessage(formattedJid, { text: part1 });
+    const sent1 = await sock.sendMessage(formattedJid, { text: part1 });
     logger.info({ jid, clubId }, `[HUMAN SEND] → "${part1}"`);
 
     try {
         const { prisma } = await import('./db');
         await prisma.whatsAppMessage.create({
-            data: { chatId: formattedJid, sender: 'BOT', role: 'BOT', content: part1, clubId: clubId || null },
+            data: { chatId: formattedJid, sender: 'BOT', role: 'BOT', content: part1, clubId: clubId || null, messageId: sent1?.key?.id || null, important: opts?.important ?? false },
         });
     } catch (err) {
         logger.error({ err }, 'Failed to persist outgoing human message (part 1)');
@@ -545,13 +595,13 @@ export async function humanSend(
         await jitteredSleep(randomInt(1500, 3500), 300);
         await sock.sendPresenceUpdate('paused', formattedJid);
         await jitteredSleep(200, 100);
-        await sock.sendMessage(formattedJid, { text: part2 });
+        const sent2 = await sock.sendMessage(formattedJid, { text: part2 });
         logger.info({ jid, clubId }, `[HUMAN SEND] → "${part2}" (chunk 2)`);
 
         try {
             const { prisma } = await import('./db');
             await prisma.whatsAppMessage.create({
-                data: { chatId: formattedJid, sender: 'BOT', role: 'BOT', content: part2, clubId: clubId || null },
+                data: { chatId: formattedJid, sender: 'BOT', role: 'BOT', content: part2, clubId: clubId || null, messageId: sent2?.key?.id || null, important: opts?.important ?? false },
             });
         } catch (err) {
             logger.error({ err }, 'Failed to persist outgoing human message (part 2)');

@@ -333,6 +333,14 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[], cor
         where: { phoneNumber: { in: phoneVariants }, clubId: resolvedClubId ? resolvedClubId : { not: '' } }
     });
 
+    // Punto 3: un messaggio in entrata prova che il canale funziona → registra e riattiva dalla dormienza.
+    if (player) {
+        prisma.player.update({
+            where: { id: player.id },
+            data: { lastInboundAt: new Date(), dormantSince: null, consecutiveUndelivered: 0 },
+        }).catch(() => { /* fire-and-forget */ });
+    }
+
     if (!player) {
         // L'admin bypassa sempre il gate — può onboardarsi senza approvazione
         const redis = getRedis();
@@ -860,7 +868,7 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[], cor
                         otherPlayers,
                         location:     [club?.address, club?.city].filter(Boolean).join(' — ') || null,
                         waveWillStart,
-                    }));
+                    }), undefined, { important: true });
 
                     // Punto 1: dopo la card, chiedi del noleggio racchetta (se il circolo lo offre).
                     // Privata → quante racchette per il gruppo; matchmaking → sì/no per il giocatore.
