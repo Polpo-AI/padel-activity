@@ -1,14 +1,19 @@
 /**
  * DELIVERY / RINVIO (Punto 3)
  *
- * Scansione periodica (maintenance worker) dei messaggi IMPORTANTI ancora non consegnati
- * (1 spunta) dopo 1h: rinvio UNA volta, verbatim (zero costo AI). Gestisce inoltre:
+ * Scansione periodica (maintenance worker) dei messaggi IMPORTANTI che non sono mai
+ * usciti davvero (status 0=ERROR o 1=PENDING dopo 1h): rinvio UNA volta, verbatim (zero
+ * costo AI). Gestisce inoltre:
  *  - numero cambiato/dismesso → onWhatsApp() → disattiva
  *  - dormienza (sospetto blocco): 5 non consegnati consecutivi OR 60 giorni senza
  *    consegne né risposte (e account abbastanza vecchio) → stop generazione+invio.
  *
- * Lo stato di consegna (deliveryStatus) è mantenuto in tempo reale dal listener
- * messages.update in whatsapp.ts, quindi qui "deliveryStatus < 3" è già il dato live.
+ * ⚠️ Soglia `deliveryStatus < 2`, NON `< 3`. In produzione WhatsApp spesso non ritorna mai
+ * il DELIVERY_ACK (status 3): ogni messaggio si ferma a SERVER_ACK (2). Usare `< 3` faceva
+ * auto-rispedire OGNI invito important dopo 1h (anche quelli già ricevuti e accettati →
+ * giocatore reinvitato a una partita in cui era già dentro). SERVER_ACK (2) significa che i
+ * server WhatsApp hanno PRESO il messaggio: è "inviato", non va rispedito. Si rinvia solo ciò
+ * che è genuinamente bloccato lato nostro (mai arrivato al server).
  */
 
 import { prisma } from './db';
@@ -28,13 +33,13 @@ export async function resendUndeliveredMessages(): Promise<void> {
     const oneHourAgo = new Date(now - HOUR);
     const dayAgo = new Date(now - DAY);
 
-    // Importanti, non consegnati (1 spunta), mai rinviati, inviati tra 1h e 24h fa.
+    // Importanti, mai usciti davvero (ERROR/PENDING), mai rinviati, inviati tra 1h e 24h fa.
     const stuck = await prisma.whatsAppMessage.findMany({
         where: {
             role: 'BOT',
             important: true,
             resentAt: null,
-            deliveryStatus: { lt: 3 },
+            deliveryStatus: { lt: 2 },
             timestamp: { gte: dayAgo, lte: oneHourAgo },
             messageId: { not: null },
         },
@@ -55,6 +60,16 @@ export async function resendUndeliveredMessages(): Promise<void> {
 
         // Marca resentAt SUBITO: evita doppio invio se la scansione si sovrappone.
         await prisma.whatsAppMessage.update({ where: { id: msg.id }, data: { resentAt: new Date() } }).catch(() => {});
+
+        // Il giocatore ha SCRITTO dopo che abbiamo inviato questo messaggio?
+        // Allora l'ha ricevuto eccome — la spunta di consegna (deliveryStatus 3) semplicemente
+        // non è mai arrivata da WhatsApp (succede spesso). Rinviarlo creerebbe solo un duplicato:
+        // è esattamente come un invito già accettato che viene riproposto a chi è già in partita.
+        // Non rinviare.
+        if (player?.lastInboundAt && player.lastInboundAt > msg.timestamp) {
+            logger.info({ phone, msgId: msg.id }, 'resendUndelivered: skip — il giocatore ha risposto dopo l\'invio');
+            continue;
+        }
 
         // Già dormiente → non insistere (lo riattiva un suo messaggio in entrata).
         if (player?.dormantSince) continue;

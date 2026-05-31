@@ -1015,40 +1015,12 @@ export async function executeAction(
             const { increaseReliability } = await import('./scoring');
             await increaseReliability(player.id).catch(() => {});
 
-            // Misto: se il genere del giocatore ha appena raggiunto quota 2, notifica e chiudi i pending dello stesso genere
-            if ((player as any).gender && (player as any).gender !== 'UNKNOWN') {
-                try {
-                    const reloadedMatch = await prisma.match.findUnique({
-                        where: { id: inv.matchId },
-                        include: { MatchPlayer: { where: { leftAt: null }, include: { player: { select: { gender: true } } } } },
-                    });
-                    const isMixedMatch = reloadedMatch?.isMixed ?? false;
-                    const myGenderCount = reloadedMatch?.MatchPlayer.filter((mp: any) => mp.player?.gender === (player as any).gender).length ?? 0;
-                    if (isMixedMatch && myGenderCount >= 2) {
-                        const pendingOfGender = await prisma.invitation.findMany({
-                            where: { matchId: inv.matchId, status: 'PENDING' },
-                            include: { player: { select: { gender: true, phoneNumber: true } } },
-                        });
-                        const toClose = pendingOfGender.filter((i: any) => i.player?.gender === (player as any).gender);
-                        if (toClose.length > 0) {
-                            await prisma.invitation.updateMany({
-                                where: { id: { in: toClose.map((i: any) => i.id) } },
-                                data: { status: 'IGNORED' },
-                            });
-                            const genderMsgs = [
-                                'I posti del tuo genere per questa partita sono esauriti, mi dispiace! Vuoi che ti cerchi un\'altra? 🎾',
-                                'Purtroppo i posti per il tuo genere si sono appena riempiti. Cerco qualcos\'altro per te?',
-                            ];
-                            for (const pending of toClose) {
-                                const pjid = `${(pending as any).player.phoneNumber}@s.whatsapp.net`;
-                                simulateTypingAndSend(pjid, genderMsgs[Math.floor(Math.random() * genderMsgs.length)]).catch(() => {});
-                            }
-                        }
-                    }
-                } catch (notifyErr) {
-                    logger.warn({ notifyErr, matchId: inv.matchId }, 'Gender-slot-full notify failed silently');
-                }
-            }
+            // NB: quando il genere del giocatore raggiunge quota 2 NON notifichiamo proattivamente
+            // gli altri pending dello stesso genere e NON li chiudiamo. Convenzione del progetto
+            // (vedi handleMatchFilled in messageHandler.ts): chi non ha ancora risposto resta in
+            // silenzio. Gli inviti restano PENDING così il brain li mostra ancora: se uno di loro
+            // prova ad accettare, il check gender in questa stessa transazione (più sotto) lancia
+            // GENDER_SLOT_FULL e il messaggio "pieno" arriva SOLO allora, reattivamente.
 
             // Se LOCKED: messageHandler chiamerà handleMatchFilled — restituiamo matchId per segnalarlo
             const updatedMatch = await prisma.match.findUnique({ where: { id: inv.matchId }, select: { status: true } });
@@ -1683,58 +1655,11 @@ async function joinExistingMatch(matchId: string, player: any): Promise<{ succes
             }
         });
 
-        // Post-join: per match misti, se un genere ha raggiunto quota 2 → notifica i PENDING di quel genere
-        try {
-            const updatedMatch = await prisma.match.findUnique({
-                where: { id: matchId },
-                include: {
-                    MatchPlayer: {
-                        where: { leftAt: null },
-                        include: { player: { select: { gender: true } } },
-                    },
-                    court: true,
-                },
-            });
-            if (updatedMatch?.isMixed) {
-                const maleCount = updatedMatch.MatchPlayer.filter((mp: any) => mp.player?.gender === 'MALE').length;
-                const femaleCount = updatedMatch.MatchPlayer.filter((mp: any) => mp.player?.gender === 'FEMALE').length;
-                const fullGender: string | null = maleCount >= 2 ? 'MALE' : femaleCount >= 2 ? 'FEMALE' : null;
-
-                if (fullGender) {
-                    // Trova invitation PENDING per giocatori del genere pieno
-                    const pendingForGender = await prisma.invitation.findMany({
-                        where: { matchId, status: 'PENDING' },
-                        include: { player: { select: { id: true, phoneNumber: true, gender: true } } },
-                    });
-                    const toNotify = pendingForGender.filter((inv: any) => inv.player?.gender === fullGender);
-
-                    if (toNotify.length > 0) {
-                        const { simulateTypingAndSend } = await import('./whatsapp');
-                        const timeStr = updatedMatch.startTime.toLocaleTimeString('it-IT', { timeZone: 'Europe/Rome', hour: '2-digit', minute: '2-digit' });
-                        const dateStr = updatedMatch.startTime.toLocaleDateString('it-IT', { timeZone: 'Europe/Rome', weekday: 'long', day: 'numeric', month: 'long' });
-                        const genderLabel = fullGender === 'MALE' ? 'uomini' : 'donne';
-                        const _genderMsgs = [
-                            `La partita di ${dateStr} alle ${timeStr} ha raggiunto il massimo di ${genderLabel}, non c'è più posto per te.`,
-                            `I posti per ${genderLabel} in questa partita (${dateStr} alle ${timeStr}) sono esauriti 😔`,
-                            `Posti per ${genderLabel} al completo il ${dateStr} alle ${timeStr}, non c'è spazio 😕`,
-                            `Il limite di ${genderLabel} per questa partita è già raggiunto (${dateStr} alle ${timeStr}) 😔`,
-                            `I posti per ${genderLabel} il ${dateStr} alle ${timeStr} sono finiti 😔`,
-                        ];
-                        const msg = _genderMsgs[Math.floor(Math.random() * _genderMsgs.length)];
-
-                        for (const inv of toNotify) {
-                            await prisma.invitation.update({ where: { id: inv.id }, data: { status: 'IGNORED' } });
-                            if (inv.player?.phoneNumber) {
-                                simulateTypingAndSend(`${inv.player.phoneNumber}@s.whatsapp.net`, msg).catch(() => {});
-                            }
-                        }
-                        logger.info({ matchId, fullGender, notified: toNotify.length }, 'Mixed match gender slot full — pending notified and ignored');
-                    }
-                }
-            }
-        } catch (notifyErr) {
-            logger.warn({ notifyErr, matchId }, 'Failed to notify mixed gender-full pending invitations');
-        }
+        // Post-join: per match misti, quando un genere raggiunge quota 2 NON notifichiamo
+        // proattivamente i PENDING di quel genere e NON li chiudiamo (convenzione del progetto:
+        // chi non ha risposto resta in silenzio). Gli inviti restano PENDING: se uno prova ad
+        // accettare, il check gender in ACCEPT_INVITATION lancia GENDER_SLOT_FULL e il messaggio
+        // "pieno" arriva SOLO allora, reattivamente.
 
         return { success: true };
     } catch (err: any) {

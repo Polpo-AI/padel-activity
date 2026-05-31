@@ -369,8 +369,36 @@ async function _doConnect(key: string, state: ClubSocketState): Promise<void> {
         }
     });
 
-    // Tracciamento consegna (Punto 3): aggiorna lo stato ack dei messaggi in uscita.
+    // Tracciamento ACK dei messaggi in uscita (Punto 3).
     // Baileys status: 1=PENDING, 2=SERVER_ACK (1 spunta), 3=DELIVERY_ACK (2 spunte), 4=READ, 5=PLAYED.
+    // messages.update porta soprattutto il SERVER_ACK (2). La CONSEGNA reale (3, 2 spunte) e la
+    // LETTURA (4) arrivano invece da `message-receipt.update` (listener qui sotto): in questo
+    // deployment quello è l'unico canale da cui ci arriva lo status >= 3 — per questo prima il DB
+    // si fermava a 2 (1 spunta) anche per messaggi realmente consegnati. "Consegnato" (deliveredAt
+    // + reset dormienza) = status >= 3, cioè il destinatario lo ha davvero ricevuto.
+    const markDelivery = async (prisma: any, id: string, status: number) => {
+        // No-downgrade: aggiorna deliveryStatus solo se più avanzato di quello già salvato (4→2 no).
+        await prisma.whatsAppMessage.updateMany({
+            where: { messageId: id, deliveryStatus: { lt: status } },
+            data: { deliveryStatus: status },
+        });
+        if (status < 3) return; // SERVER_ACK non è consegna: niente deliveredAt né reset dormienza.
+        // deliveredAt = primo istante di consegna confermata, impostato una volta sola.
+        await prisma.whatsAppMessage.updateMany({
+            where: { messageId: id, deliveredAt: null },
+            data: { deliveredAt: new Date() },
+        });
+        // Consegna confermata → azzera contatori dormienza del destinatario.
+        const rec = await prisma.whatsAppMessage.findFirst({ where: { messageId: id }, select: { chatId: true, clubId: true } });
+        if (rec) {
+            const phone = rec.chatId.split('@')[0].replace(/\D/g, '');
+            await prisma.player.updateMany({
+                where: { phoneNumber: phone, ...(rec.clubId ? { clubId: rec.clubId } : {}) },
+                data: { lastDeliveredAt: new Date(), consecutiveUndelivered: 0, dormantSince: null },
+            });
+        }
+    };
+
     sock.ev.on('messages.update', async (updates) => {
         for (const u of updates) {
             const status = (u.update as any)?.status;
@@ -378,23 +406,29 @@ async function _doConnect(key: string, state: ClubSocketState): Promise<void> {
             if (status == null || !id) continue;
             try {
                 const { prisma } = await import('./db');
-                const delivered = status >= 3;
-                const data: any = { deliveryStatus: status };
-                if (delivered) data.deliveredAt = new Date();
-                const res = await prisma.whatsAppMessage.updateMany({ where: { messageId: id }, data });
-                if (delivered && res.count > 0) {
-                    // Consegna riuscita → azzera contatori dormienza del destinatario.
-                    const rec = await prisma.whatsAppMessage.findFirst({ where: { messageId: id }, select: { chatId: true, clubId: true } });
-                    if (rec) {
-                        const phone = rec.chatId.split('@')[0].replace(/\D/g, '');
-                        await prisma.player.updateMany({
-                            where: { phoneNumber: phone, ...(rec.clubId ? { clubId: rec.clubId } : {}) },
-                            data: { lastDeliveredAt: new Date(), consecutiveUndelivered: 0, dormantSince: null },
-                        });
-                    }
-                }
+                await markDelivery(prisma, id, status);
             } catch (err) {
                 logger.warn({ err }, 'messages.update delivery tracking failed');
+            }
+        }
+    });
+
+    // Consegna/lettura reale (2 spunte). In Baileys 7 gli ack di consegna e lettura dei messaggi
+    // in USCITA arrivano da qui, non da messages.update. Senza questo listener deliveryStatus
+    // restava a 2 anche per messaggi consegnati → DB incoerente col telefono e dormienza inattiva.
+    sock.ev.on('message-receipt.update', async (updates) => {
+        for (const u of updates) {
+            const id = u.key?.id;
+            const r: any = (u as any).receipt;
+            if (!id || !r) continue;
+            // played(5) > read(4) > delivered(3): mappa al massimo stato indicato dal receipt.
+            const status = r.playedTimestamp ? 5 : r.readTimestamp ? 4 : r.receiptTimestamp ? 3 : null;
+            if (status == null) continue;
+            try {
+                const { prisma } = await import('./db');
+                await markDelivery(prisma, id, status);
+            } catch (err) {
+                logger.warn({ err }, 'message-receipt.update delivery tracking failed');
             }
         }
     });
