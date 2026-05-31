@@ -365,6 +365,11 @@ export default function RevenueView({ token }) {
         </button>
       </div>
       {compareOpen && <ComparePanel token={token} years={years} />}
+
+      {/* Nota trasparenza: cosa è incluso nel calcolo */}
+      <div style={{ fontSize: 11, color: C.muted, lineHeight: 1.5, borderTop: `1px solid ${C.dim}`, paddingTop: 14 }}>
+        Conteggia il <strong style={{ color: C.text }}>noleggio campo</strong> delle partite effettivamente giocate, applicando le tariffe per fascia oraria, le differenze tra campi e le eventuali eccezioni di calendario. Non include il noleggio racchette (non viene tracciato chi lo richiede).
+      </div>
     </div>
   );
 }

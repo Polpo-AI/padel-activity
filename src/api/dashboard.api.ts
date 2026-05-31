@@ -18,6 +18,7 @@
 
 import { Router, Request, Response, NextFunction } from 'express';
 import { prisma } from '../services/db';
+import { calculateCostFromPrices } from '../services/pricing';
 import { waveQueue } from '../services/queue';
 import { sendMessage } from '../services/whatsapp';
 import { runWithContext } from '../utils/request-context';
@@ -831,8 +832,10 @@ router.get('/stats', authMiddleware, async (req: Request, res: Response) => {
         const fillRate = completed > 0 ? locked / completed : 0;
 
         // ── Revenue: solo partite LOCKED già concluse, dopo l'eventuale azzeramento guadagni ──
-        const clubRev = await prisma.club.findUnique({ where: { id: clubId }, select: { revenueResetAt: true } });
+        // Usa la funzione canonica (precedenza eccezioni + durata) — coerente con billing admin.
+        const clubRev = await prisma.club.findUnique({ where: { id: clubId }, select: { revenueResetAt: true, matchDuration: true } });
         const revenueSince = clubRev?.revenueResetAt && clubRev.revenueResetAt > since ? clubRev.revenueResetAt : since;
+        const clubDuration = clubRev?.matchDuration || 90;
         const lockedMatches = await prisma.match.findMany({
             where: { clubId, startTime: { gte: revenueSince, lte: now }, status: 'LOCKED' },
             include: { court: { include: { prices: true } } },
@@ -840,14 +843,10 @@ router.get('/stats', authMiddleware, async (req: Request, res: Response) => {
         let revenue = 0;
         for (const match of lockedMatches) {
             if (!match.court?.prices?.length) continue;
-            const rome = new Date(match.startTime).toLocaleTimeString('it-IT', { timeZone: 'Europe/Rome', hour: '2-digit', minute: '2-digit' });
-            const price = match.court.prices.find(p => {
-                if (rome < p.startTime || rome >= p.endTime) return false;
-                if (p.startDate && match.startTime < p.startDate) return false;
-                if (p.endDate && match.startTime > p.endDate) return false;
-                return true;
-            });
-            if (price) revenue += price.price;
+            const durationMin = match.endTime
+                ? Math.round((match.endTime.getTime() - match.startTime.getTime()) / 60000)
+                : clubDuration;
+            revenue += calculateCostFromPrices(match.startTime, match.court.prices, durationMin);
         }
 
         // ── Partite salvate da disdetta (solo concluse) ───────────────
@@ -920,17 +919,11 @@ function romeParts(d: Date): { y: number; mo: number; da: number } {
     return { y, mo, da };
 }
 
-// Prezzo del campo per la fascia oraria della partita (stessa logica di /stats).
-function priceForMatch(match: any): number {
-    if (!match.court?.prices?.length) return 0;
-    const rome = new Date(match.startTime).toLocaleTimeString('it-IT', { timeZone: 'Europe/Rome', hour: '2-digit', minute: '2-digit' });
-    const price = match.court.prices.find((p: any) => {
-        if (rome < p.startTime || rome >= p.endTime) return false;
-        if (p.startDate && match.startTime < p.startDate) return false;
-        if (p.endDate && match.startTime > p.endDate) return false;
-        return true;
-    });
-    return price ? price.price : 0;
+// Durata effettiva della partita in minuti (da endTime se presente, altrimenti durata circolo).
+function matchDurationMin(match: any, fallback: number): number {
+    return match.endTime
+        ? Math.round((new Date(match.endTime).getTime() - new Date(match.startTime).getTime()) / 60000)
+        : fallback;
 }
 
 // GET /revenue?period=month&year=2026&month=5  → serie giornaliera
@@ -965,6 +958,9 @@ router.get('/revenue', authMiddleware, async (req: Request, res: Response) => {
         const since = new Date(winStart);
         const until = new Date(Math.min(winEnd, now.getTime()));
 
+        const club = await prisma.club.findUnique({ where: { id: clubId }, select: { matchDuration: true } });
+        const clubDuration = club?.matchDuration || 90;
+
         const lockedMatches = await prisma.match.findMany({
             where: { clubId, startTime: { gte: since, lte: until }, status: 'LOCKED' },
             include: { court: { include: { prices: true } } },
@@ -974,14 +970,18 @@ router.get('/revenue', authMiddleware, async (req: Request, res: Response) => {
         let matchCount = 0;
         for (const match of lockedMatches) {
             const rp = romeParts(new Date(match.startTime));
+            let idx: number;
             if (period === 'month') {
                 if (rp.y !== year || rp.mo !== month) continue;        // fuori dal mese target
-                series[rp.da - 1] += priceForMatch(match);
+                idx = rp.da - 1;
             } else {
                 if (rp.y !== year) continue;                            // fuori dall'anno target
-                series[rp.mo - 1] += priceForMatch(match);
+                idx = rp.mo - 1;
             }
-            matchCount++;
+            matchCount++;                                               // partita giocata nel periodo
+            if (!match.court?.prices?.length) continue;                 // nessun prezzo configurato → 0
+            // Stesso calcolo del billing: precedenza eccezioni + somma per durata slot.
+            series[idx] += calculateCostFromPrices(match.startTime, match.court.prices, matchDurationMin(match, clubDuration));
         }
 
         const total = series.reduce((a, b) => a + b, 0);
