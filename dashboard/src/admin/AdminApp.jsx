@@ -9,10 +9,12 @@ import PlayersAdminView from "./views/PlayersView";
 import SystemView from "./views/SystemView";
 import AuditView from "./views/AuditView";
 import UsageView from "./views/UsageView";
+import ClubControlView from "./views/ClubControlView";
 
 const NAV = [
   { id: "overview",  label: "Overview",    icon: "📊", desc: "KPI aggregati su tutti i circoli." },
   { id: "clubs",     label: "Circoli",     icon: "🏟", desc: "Gestisci tutti i circoli, configurazioni e statistiche." },
+  { id: "club-control", label: "Vista Circolo", icon: "🎛", desc: "Entra nei dati di un circolo: gestisci giocatori e guadagni." },
   { id: "matches",   label: "Partite",     icon: "🎾", desc: "Tutte le partite cross-club con filtri." },
   { id: "players",   label: "Giocatori",   icon: "👥", desc: "Tutti i giocatori cross-club, ricerca e filtri." },
   { id: "system",    label: "Sistema",     icon: "⚙️", desc: "Stato WhatsApp per circolo, DB e Redis." },
@@ -176,6 +178,7 @@ export default function AdminApp() {
 
         {tab === "overview" && <OverviewView token={token} />}
         {tab === "clubs"    && <ClubsView    token={token} />}
+        {tab === "club-control" && <ClubControlView token={token} clubs={clubs} />}
         {tab === "matches"  && <MatchesView  token={token} clubs={clubs} />}
         {tab === "players"  && <PlayersAdminView token={token} clubs={clubs} />}
         {tab === "system"   && <SystemView   token={token} />}
