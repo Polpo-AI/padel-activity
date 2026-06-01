@@ -15,7 +15,7 @@ import { prisma } from './db';
 import { getRedis } from './queue';
 import { transcribeAudio } from './ai';
 import { increaseReliability } from './scoring';
-import { registerBatchHandler, NormalizedMessage } from './inbound-queue';
+import { registerBatchHandler, NormalizedMessage, extractQuotedRef } from './inbound-queue';
 import { confirmRedirectChoice } from './redirect';
 import pino from 'pino';
 import { simulateTypingAndSend, sendMessage, createGroupAndAddPlayers, downloadMediaMessage } from './whatsapp';
@@ -381,11 +381,39 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[], cor
     const { buildBrainContext, callBrain, executeAction } = await import('./brain');
     const brainContext = await buildBrainContext(jid, phoneNumber);
 
+    // ── Messaggio citato (reply) ─────────────────────────────────
+    // Se l'utente risponde citando un messaggio precedente, il brain non saprebbe
+    // a cosa si riferisce un "questo". Risaliamo al messaggio citato dal raw Baileys
+    // e determiniamo l'autore (bot vs utente) dallo stanzaId nel DB.
+    let quotedContext: { text: string; fromBot: boolean } | undefined;
+    for (const m of textMessages) {
+        const ref = extractQuotedRef(m.raw);
+        if (!ref?.text && !ref?.stanzaId) continue;
+
+        let text = ref.text;
+        let fromBot = false;
+        if (ref.stanzaId) {
+            const quoted = await prisma.whatsAppMessage.findFirst({
+                where: { messageId: ref.stanzaId },
+                select: { role: true, content: true },
+            });
+            if (quoted) {
+                fromBot = quoted.role === 'BOT';
+                if (!text) text = quoted.content; // fallback se il proto non aveva testo (es. scheda con media)
+            }
+        }
+        if (text) {
+            quotedContext = { text: text.trim(), fromBot };
+            break; // basta la prima citazione del batch
+        }
+    }
+
     const mappedContactCards = contactCards.map(c => ({ phone: c.contactPhone ?? undefined, name: c.contactName ?? undefined }));
     const { message, action, params, secondaryAction, secondaryParams } = await callBrain(
         brainContext,
         combinedText || '(messaggio senza testo)',
         mappedContactCards.length > 0 ? mappedContactCards : undefined,
+        quotedContext,
     );
 
     const { splitAtEmoji } = await import('../utils/split-message');

@@ -135,6 +135,32 @@ async function flush(jid: string): Promise<void> {
 // NORMALIZZA
 // ─────────────────────────────────────────────
 
+/**
+ * Estrae il messaggio citato (reply) da un raw Baileys.
+ * La citazione vive in extendedTextMessage.contextInfo (o nella variante ephemeral).
+ * Ricavata da rawMessage → robusta ai restart (rawMessage è serializzato in Redis).
+ * Ritorna il testo del messaggio citato + lo stanzaId per risalire all'autore.
+ */
+export function extractQuotedRef(raw: proto.IWebMessageInfo): { text?: string; stanzaId?: string } | null {
+    const msg = raw.message;
+    if (!msg) return null;
+
+    const ctx =
+        msg.extendedTextMessage?.contextInfo ||
+        msg.ephemeralMessage?.message?.extendedTextMessage?.contextInfo;
+    if (!ctx?.quotedMessage) return null;
+
+    const q = ctx.quotedMessage;
+    const text =
+        q.conversation ||
+        q.extendedTextMessage?.text ||
+        q.imageMessage?.caption ||
+        q.videoMessage?.caption ||
+        undefined;
+
+    return { text: text || undefined, stanzaId: ctx.stanzaId || undefined };
+}
+
 function normalize(raw: proto.IWebMessageInfo, clubId?: string): NormalizedMessage | null {
     const msg = raw.message;
     if (!msg) return null;

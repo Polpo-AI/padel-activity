@@ -530,6 +530,7 @@ export async function callBrain(
     context: BrainContext,
     userMessage: string,
     contactCards?: { phone?: string; name?: string }[],
+    quotedContext?: { text: string; fromBot: boolean },
 ): Promise<BrainResponse> {
     const { club, player, isAdmin, recentMessages, pendingInvitations, confirmedMatches, availableMatches, courts, faqs, slotsAvailability, pendingBookingIntent, pendingRacket } = context;
 
@@ -784,7 +785,12 @@ ${pendingRacket.mode === 'count'
     ? `Se risponde indicando QUANTE racchette servono (es. "2", "due", "nessuna", "le portiamo noi") → usa SET_RACKET_RENTAL con params { "matchId": "${pendingRacket.matchId}", "rackets": <numero 0-4> }.`
     : `Se risponde se gli serve o no (es. "sì mi serve", "no porto la mia", "ne ho una") → usa SET_RACKET_RENTAL con params { "matchId": "${pendingRacket.matchId}", "rackets": <1 se serve, 0 se no> }.`}
 Conferma brevemente ("Perfetto, segnato!" o simile). Se l'utente NON parla di racchetta, ignora questa sezione e gestisci normalmente il suo messaggio.
-╚════════════════════════════════╝` : ''}`;
+╚════════════════════════════════╝` : ''}
+${quotedContext ? `
+═══ MESSAGGIO CITATO ═══
+L'utente sta rispondendo citando ${quotedContext.fromBot ? 'un TUO messaggio precedente' : 'un suo messaggio precedente'}. Quando dice "questo", "quello", "il primo" e simili, si riferisce a questo testo citato:
+"${quotedContext.text.slice(0, 500)}"
+Usa questa citazione per capire a cosa si riferisce l'utente. NON rispondere alla citazione in sé, ma al messaggio attuale dell'utente interpretato alla luce di ciò che ha citato.` : ''}`;
 
     const rawHistory = recentMessages.slice(-15);
 
