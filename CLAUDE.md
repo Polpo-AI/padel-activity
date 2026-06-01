@@ -11,6 +11,8 @@ Per architettura, stack, workflow e mappa file → [ARCHITECTURE.md](ARCHITECTUR
 
 #### Deploy: staging → preview → main
 Lavorare SEMPRE su staging. MAI pushare su `main` durante sviluppo — solo `preview`.
+
+**⚠️ Il VPS staging è la fonte di lavoro autoritativa, non il locale.** Si sviluppa, si committa e si pusha DAL VPS (`/root/padel-staging`). GitHub (`preview`) e la copia locale sono solo backup/mirror: in locale si fa SOLO sync (`git fetch && git merge origin/preview`), MAI sviluppo+push da locale. Un push da uno stato locale stale può riportare indietro `preview` e cancellare feature già salite da altri o dal VPS. Prima di OGNI push: `git fetch` e verifica che `origin/preview` non abbia commit che non hai; mai force/backward push. La cosa deve funzionare sul VPS in primis.
 ```bash
 # Sul VPS staging
 cd /root/padel-staging
