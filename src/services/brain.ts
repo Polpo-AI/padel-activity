@@ -9,6 +9,7 @@ import { prisma } from './db';
 import { anthropic } from './ai';
 import { waveQueue, getRedis } from './queue';
 import { simulateTypingAndSend, dissolveGroup } from './whatsapp';
+import { isRacketQuestion } from './invitation-templates';
 import pino from 'pino';
 
 const logger = pino({ level: 'info' });
@@ -228,22 +229,25 @@ export async function buildBrainContext(jid: string, phoneNumber: string): Promi
         if (raw) pendingBookingIntent = JSON.parse(raw);
     } catch { /* non bloccare il contesto se Redis non risponde */ }
 
-    // Pending racket (Punto 1): rileva (stateless, da DB) una domanda racchetta in sospeso
-    // dopo una conferma recente (ultimi 30 min). Aiuta il brain a interpretare la risposta.
+    // Pending racket (Punto 1): rileva (stateless) una domanda racchetta in sospeso.
+    // Segnale = l'ULTIMO messaggio inviato dal bot è una domanda racchetta. Robusto al tempo
+    // trascorso: l'utente può rispondere anche ore dopo (prima la finestra era 30 min dal join
+    // → le risposte tardive venivano perse e male interpretate). Si auto-azzera appena la
+    // conversazione prosegue (l'ultimo messaggio bot non è più la domanda). Non dipende dal
+    // valore di guestRacketsRented/racketRented (0/false = default, indistinguibile da "risposto 0").
     let pendingRacket: { matchId: string; mode: 'single' | 'count' } | null = null;
     if (player?.id && club?.racketPrice != null) {
         try {
-            const since = new Date(Date.now() - 30 * 60 * 1000);
-            const mp = await prisma.matchPlayer.findFirst({
-                where: { playerId: player.id, leftAt: null, joinedAt: { gte: since }, match: { startTime: { gt: new Date() } } },
-                orderBy: { joinedAt: 'desc' },
-                include: { match: { select: { id: true, isPrivateBooking: true, guestRacketsRented: true } } },
-            });
-            if (mp?.match) {
-                if (mp.match.isPrivateBooking && mp.match.guestRacketsRented === 0) {
-                    pendingRacket = { matchId: mp.match.id, mode: 'count' };
-                } else if (!mp.match.isPrivateBooking && !(mp as any).racketRented) {
-                    pendingRacket = { matchId: mp.match.id, mode: 'single' };
+            // recentMessages è newest-first → il primo BOT è l'ultimo messaggio inviato dal bot.
+            const lastBot = recentMessages.find(m => m.role === 'BOT');
+            if (lastBot && isRacketQuestion(lastBot.content)) {
+                const mp = await prisma.matchPlayer.findFirst({
+                    where: { playerId: player.id, leftAt: null, match: { startTime: { gt: new Date() } } },
+                    orderBy: { joinedAt: 'desc' },
+                    include: { match: { select: { id: true, isPrivateBooking: true } } },
+                });
+                if (mp?.match) {
+                    pendingRacket = { matchId: mp.match.id, mode: mp.match.isPrivateBooking ? 'count' : 'single' };
                 }
             }
         } catch { /* non bloccante */ }

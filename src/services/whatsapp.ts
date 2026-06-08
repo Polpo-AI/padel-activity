@@ -629,8 +629,10 @@ export async function humanSend(
             orderBy: { timestamp: 'desc' },
         });
         if (lastMsg && lastMsg.content.trim() === text.trim()) {
-            logger.warn({ jid: formattedJid }, 'Duplicate message detected — adding variation');
-            text = text + ' .';
+            logger.warn({ jid: formattedJid }, 'Duplicate message detected — adding invisible variation');
+            // Zero-width space (U+200B): rende il messaggio non identico al precedente per evitare
+            // il blocco/duplicato, ma invisibile all'utente (prima si vedeva un brutto " ." in coda).
+            text = text + '\u200B';
         }
     } catch (err) {
         logger.error({ err }, 'Duplicate check failed');
