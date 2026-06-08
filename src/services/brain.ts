@@ -762,6 +762,7 @@ ${invitationsStr}
 ═══ PARTITE CONFERMATE ═══
 ${confirmedStr}
 ⚠️ IMPORTANTE: questa sezione è l'UNICA fonte autorevole sulle prenotazioni attuali del giocatore. La cronologia della conversazione può essere obsoleta (es. partite cancellate dal circolo dopo la prenotazione). Se qui risulta "nessuno", il giocatore NON ha prenotazioni attive — indipendentemente da cosa dicono i messaggi precedenti.
+⛔ NON affermare MAI che una prenotazione "è al suo posto", "è ancora attiva", "non ho cancellato nulla" o simili se quella partita NON compare qui sopra. Se questa sezione è vuota o non contiene la partita di cui parla l'utente, dì con chiarezza che non risulta nessuna prenotazione attiva — anche se l'utente insiste, si lamenta o dice di essere già al campo. Niente rassicurazioni inventate sullo stato delle prenotazioni.
 
 ═══ LISTA PER CANCELLAZIONE / SPOSTAMENTO ═══
 Quando devi chiedere all'utente quale partita cancellare o spostare, usa VERBATIM questa lista (non aggiungere nient'altro):
@@ -836,7 +837,7 @@ Usa questa citazione per capire a cosa si riferisce l'utente. NON rispondere all
         try {
             const parsed = JSON.parse(text.substring(start, end + 1));
             const result: BrainResponse = {
-                message: String(parsed.message || '...'),
+                message: String(parsed.message ?? ''),
                 action: (parsed.action || 'NONE') as BrainAction,
                 params: parsed.params || {},
             };
@@ -1464,6 +1465,16 @@ export async function executeAction(
             }
 
             const oldMatch = existingMp.match;
+
+            // ⛔ Guard tempo: il matchmaking ha bisogno di tempo per girare le wave (sotto i 60 min
+            // le wave sono soppresse in matchmaker.ts). Convertire una prenotazione a ridosso dello
+            // start = NON cercare nessuno e poi cancellare → l'utente perde il campo (caso reale Monica).
+            // Rifiutiamo la conversione e lasciamo INTATTA la prenotazione privata.
+            const MIN_MINUTES_FOR_MATCHMAKING = 90;
+            const minutesUntilStart = (oldMatch.startTime.getTime() - Date.now()) / 60000;
+            if (minutesUntilStart < MIN_MINUTES_FOR_MATCHMAKING) {
+                return { success: false, errorMessage: 'TOO_LATE_FOR_MATCHMAKING' };
+            }
 
             // 1. Cancella il vecchio match privato
             await prisma.matchPlayer.update({ where: { id: existingMp.id }, data: { leftAt: new Date() } });

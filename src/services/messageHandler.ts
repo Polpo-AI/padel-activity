@@ -416,8 +416,21 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[], cor
         quotedContext,
     );
 
+    // Se il brain restituisce un message vuoto, NON inviare il placeholder "..." (rimosso da brain.ts).
+    // Con un'azione, è l'azione stessa a produrre la risposta (card di conferma, ecc.) → niente bolla.
+    // Senza azione (output degenerato), manda un fallback neutro invece di lasciare l'utente senza risposta.
+    let outMessage = (message ?? '').trim();
+    if (!outMessage && action === 'NONE') {
+        const _neutral = [
+            'Dimmi pure, come posso aiutarti? 🎾',
+            'Eccomi! Cosa ti serve?',
+            'Sono qui, dimmi pure!',
+        ];
+        outMessage = _neutral[Math.floor(Math.random() * _neutral.length)];
+    }
     const { splitAtEmoji } = await import('../utils/split-message');
-    for (const part of splitAtEmoji(message)) {
+    for (const part of splitAtEmoji(outMessage)) {
+        if (!part.trim()) continue;
         await simulateTypingAndSend(jid, part, undefined);
     }
     // NON salvare qui: simulateTypingAndSend salva già il messaggio (Lesson #6)
@@ -677,6 +690,15 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[], cor
                     'Non ho trovato una prenotazione privata da convertire. Hai già una partita fissa o vuoi crearne una?',
                     'Non risulta nessuna prenotazione privata aperta. Vuoi che prenoti il campo adesso e poi cerco altri giocatori?',
                     'Non trovo partite private da aprire. Hai già prenotato qualcosa, o vuoi iniziare da zero?',
+                ];
+                await simulateTypingAndSend(jid, _msgs[Math.floor(Math.random() * _msgs.length)]);
+            } else if (result.errorMessage === 'TOO_LATE_FOR_MATCHMAKING') {
+                // La conversione a matchmaking è stata rifiutata (troppo poco tempo): la prenotazione
+                // privata NON è stata toccata, resta valida. Lo comunichiamo chiaramente.
+                const _msgs = [
+                    'Manca troppo poco all\'orario per trovare altri giocatori in tempo, quindi non apro la partita al matchmaking — ma tranquilla, il tuo campo resta prenotato! Vieni pure con chi vuoi 🎾',
+                    'Per cercare altri giocatori servirebbe più anticipo: così a ridosso dell\'orario rischierei di non trovarli e farti perdere il campo. La tua prenotazione resta valida, gioca con chi hai! 🎾',
+                    'Troppo a ridosso per il matchmaking, rischierei di lasciarti senza campo. Tengo la tua prenotazione privata così com\'è — il campo è tuo, porta chi vuoi! 🎾',
                 ];
                 await simulateTypingAndSend(jid, _msgs[Math.floor(Math.random() * _msgs.length)]);
             } else if (result.errorMessage === 'GENDER_MISMATCH') {
