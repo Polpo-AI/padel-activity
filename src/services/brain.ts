@@ -988,6 +988,7 @@ export async function executeAction(
             });
             if (!inv) return { success: false, errorMessage: 'Invito non trovato.' };
 
+            try {
             await prisma.$transaction(async (tx: any) => {
                 await tx.$executeRaw`SELECT 1 FROM "Match" WHERE id = ${inv.matchId} FOR UPDATE`;
                 const match = await tx.match.findUnique({
@@ -1032,6 +1033,22 @@ export async function executeAction(
                     data: { lastContactedAt: new Date() },
                 });
             });
+            } catch (accErr: any) {
+                // "Willing but full": il giocatore HA risposto che viene, ma la partita (o la quota
+                // del suo genere) si è appena riempita. NON è una sua mancanza → non penalizzarlo.
+                // Marchiamo l'invito IGNORED (così processMatchOutcomes NON lo conta come no-show)
+                // e diamo un piccolo segnale POSITIVO di affidabilità: ha risposto ed era disponibile,
+                // è esattamente il giocatore che vogliamo in cima alla lista, non in fondo.
+                if (accErr?.message === 'MATCH_FULL' || accErr?.message === 'GENDER_SLOT_FULL') {
+                    await prisma.invitation.update({
+                        where: { id: inv.id },
+                        data: { status: 'IGNORED', respondedAt: new Date() },
+                    }).catch(() => {});
+                    const { increaseReliability } = await import('./scoring');
+                    await increaseReliability(player.id).catch(() => {});
+                }
+                throw accErr; // rilancia → l'outer catch ritorna errorMessage → messageHandler manda il "pieno"
+            }
 
             const { increaseReliability } = await import('./scoring');
             await increaseReliability(player.id).catch(() => {});
