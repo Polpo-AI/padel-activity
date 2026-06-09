@@ -106,12 +106,20 @@ const maintenanceWorker = new Worker(
         if (job.name === 'cleanup-pending-invitations') {
             const now = new Date();
             const fortyEightHoursAgo = new Date(Date.now() - 48 * 60 * 60 * 1000);
+            const threeHoursAgo = new Date(Date.now() - 3 * 60 * 60 * 1000);
 
-            // 1. Invitation per partite già passate (match terminato o scaduto)
+            // 1. Invitation per partite già passate → IGNORED. MA NON toccare i PENDING su partite
+            //    LOCKED finite da meno di 3h: sono "fantasmi" che processMatchOutcomes deve ancora
+            //    penalizzare (gira ogni 2h su finestra 3h). Metterli IGNORED qui li farebbe sfuggire
+            //    alla penalità (com'era prima). Le LOCKED più vecchie di 3h (fuori finestra) le
+            //    ripuliamo comunque per non lasciare PENDING orfani.
             const expiredByMatch = await prisma.invitation.updateMany({
                 where: {
                     status: 'PENDING',
-                    match: { startTime: { lt: now } },
+                    OR: [
+                        { match: { startTime: { lt: threeHoursAgo } } },                 // troppo vecchie: pulisci
+                        { match: { startTime: { lt: now }, status: { not: 'LOCKED' } } }, // passate non-giocate: neutro
+                    ],
                 },
                 data: { status: 'IGNORED' },
             });

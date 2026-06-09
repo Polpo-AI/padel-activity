@@ -1071,6 +1071,12 @@ export async function executeAction(
                 where: { id: params.invitationId },
                 data: { status: 'REJECTED', respondedAt: new Date() },
             });
+            // Penalità LIEVE: ha declinato ma HA comunicato (possiamo cercare un sostituto).
+            // Molto più lieve del fantasma che non risponde affatto (penalità piena via processMatchOutcomes).
+            if (player?.id) {
+                const { declineReliability } = await import('./scoring');
+                await declineReliability(player.id).catch(() => {});
+            }
             return { success: true };
         }
 

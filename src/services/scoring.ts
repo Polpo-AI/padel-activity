@@ -23,6 +23,8 @@ const LAST_MINUTE_BONUS = 1.3;
 const LAST_MINUTE_THRESHOLD_MIN = 120;
 const EXCLUSION_MIN_INVITES = 10;
 const EXCLUSION_THRESHOLD = 0.05;
+// Peso EMA per il "declina educato": penalità più lieve di un no-show/fantasma (peso 1.0).
+const DECLINE_WEIGHT = 0.4;
 
 // ─────────────────────────────────────────────
 // AGGIORNA SHOW UP RATE
@@ -31,7 +33,8 @@ const EXCLUSION_THRESHOLD = 0.05;
 export async function updateShowUpRate(
     playerId: string,
     showed: boolean,
-    minutesUntilMatchWhenInvited: number
+    minutesUntilMatchWhenInvited: number,
+    weight: number = 1.0, // <1 = evento "leggero" (es. declina educato): passo EMA ridotto
 ): Promise<void> {
     const player = await prisma.player.findUnique({ where: { id: playerId } });
     if (!player) return;
@@ -50,7 +53,9 @@ export async function updateShowUpRate(
     });
     // +2 a denominatore (smoothing): anche alla prima osservazione il prior pesa ancora (α=0.5),
     // così un singolo evento non porta lo score a 0 o 1.
-    const alpha = Math.max(MIN_ALPHA, 1 / (priorObservations + 2));
+    // weight scala il passo: un "declina educato" pesa meno di un no-show/fantasma (target=0.0 in entrambi,
+    // ma il declina muove meno → penalità più lieve, premia la comunicazione).
+    const alpha = Math.max(MIN_ALPHA, 1 / (priorObservations + 2)) * weight;
 
     const newRate = Math.min(1.0, (1 - alpha) * currentRate + alpha * eventValue);
 
@@ -106,14 +111,21 @@ export async function processMatchOutcomes(matchId: string): Promise<void> {
         const showed = !!mp && !mp.noShow;
         const minutesUntilMatch = inv.minutesUntilMatch ?? 360;
 
-        await updateShowUpRate(inv.playerId, showed, minutesUntilMatch);
-
         if (inv.status === 'PENDING') {
+            // Fantasma: invitato, mai risposto. Penalità PIENA SOLO se la partita si è giocata
+            // (LOCKED). Se cancellata/non riempita non c'era niente a cui presentarsi → neutro.
+            if (match.status === 'LOCKED') {
+                await updateShowUpRate(inv.playerId, false, minutesUntilMatch);
+            }
             await prisma.invitation.update({
                 where: { id: inv.id },
                 data: { status: 'EXPIRED' },
             });
+            continue; // nessun feedback a chi non ha risposto
         }
+
+        // ACCEPTED con giocatore presente → presenza effettiva (positivo, una sola volta).
+        await updateShowUpRate(inv.playerId, showed, minutesUntilMatch);
 
         // ─── TRIGGER FEEDBACK ───
         if (showed) {
@@ -476,5 +488,13 @@ export async function increaseReliability(playerId: string): Promise<void> {
 
 export async function decreaseReliability(playerId: string, _amount?: number): Promise<void> {
     // _amount ignorato — scoring ora è relativo, non assoluto
-    await updateShowUpRate(playerId, false, 60); // trattato come last-minute miss
+    await updateShowUpRate(playerId, false, 60); // penalità PIENA: no-show / fantasma
+}
+
+/**
+ * Penalità LIEVE per chi declina educatamente ("non ci sono"): ha comunicato, possiamo
+ * cercare un sostituto → pesa meno di un fantasma che non risponde affatto.
+ */
+export async function declineReliability(playerId: string): Promise<void> {
+    await updateShowUpRate(playerId, false, 360, DECLINE_WEIGHT);
 }

@@ -1125,21 +1125,11 @@ export async function handleMatchFilled(matchId: string, startTime: Date): Promi
         const groupId = await createGroupAndAddPlayers(groupName, playerPhones, confirmationMsg);
         await prisma.match.update({ where: { id: matchId }, data: { groupId } });
 
-        // Notifica i PENDING rimasti e dirottali
-        const pendingInvs = await prisma.invitation.findMany({
-            where: { matchId, status: 'PENDING' },
-            include: { player: true },
-        });
-
-        // PENDING = non hanno ancora risposto → silenzio, solo IGNORED nel DB.
-        // Chi prova attivamente ad accettare e trova il match pieno riceve feedback
-        // direttamente nell'handler ACCEPT_INVITATION di brain.ts.
-        if (pendingInvs.length > 0) {
-            await prisma.invitation.updateMany({
-                where: { id: { in: pendingInvs.map(i => i.id) } },
-                data: { status: 'IGNORED' },
-            });
-        }
+        // I PENDING rimasti (invitati che NON hanno risposto) NON vengono più messi a IGNORED qui.
+        // Restano PENDING: a partita giocata (LOCKED) processMatchOutcomes li conta come "fantasma"
+        // (no-show) e applica la penalità piena. Prima, messi a IGNORED, sfuggivano del tutto al
+        // calcolo → solo chi rispondeva veniva valutato. Restano comunque invisibili in chat/wave
+        // (match LOCKED → non più OPEN). Chi prova ad accettare a match pieno → path willing-but-full.
 
         // NB(reliability): il segnale positivo NON viene più dato qui a partita piena.
         // Arriva UNA sola volta da processMatchOutcomes a fine partita (presenza effettiva),
