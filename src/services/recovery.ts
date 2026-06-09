@@ -12,7 +12,7 @@
 import { prisma } from './db';
 import { simulateTypingAndSend } from './whatsapp';
 import { generateInvitation } from './ai';
-import { getPlayersForRecovery, decreaseReliability } from './scoring';
+import { getPlayersForRecovery, setInvitationOutcome } from './scoring';
 import { notifyAdmin } from '../utils/notify-admin';
 import { formatMatchSlot } from '../utils/format-match';
 import pino from 'pino';
@@ -74,9 +74,10 @@ export async function handleCancellation(
         return { spotsLeft: spots, playerId: updated.playerId };
     });
 
-    // Penalizza score (fuori transazione — è best-effort)
-    const player = await prisma.player.findUnique({ where: { id: playerId } });
-    if (player) await decreaseReliability(player.id);
+    // Reliability v2: si è tirato indietro dopo aver accettato → tagga l'invito
+    // CANCELLED_AFTER_ACCEPT (best-effort, fuori transazione).
+    const recInv = await prisma.invitation.findFirst({ where: { matchId, playerId }, select: { id: true } });
+    if (recInv) await setInvitationOutcome(recInv.id, 'CANCELLED_AFTER_ACCEPT').catch(() => {});
 
     await simulateTypingAndSend(
         senderJid,

@@ -1040,19 +1040,21 @@ export async function executeAction(
                 // e diamo un piccolo segnale POSITIVO di affidabilità: ha risposto ed era disponibile,
                 // è esattamente il giocatore che vogliamo in cima alla lista, non in fondo.
                 if (accErr?.message === 'MATCH_FULL' || accErr?.message === 'GENDER_SLOT_FULL') {
+                    // Reliability v2: outcome WILLING_FULL → ESCLUSO dalla finestra (nessuna colpa,
+                    // ma nemmeno una conversione). Non penalizza e non premia.
                     await prisma.invitation.update({
                         where: { id: inv.id },
-                        data: { status: 'IGNORED', respondedAt: new Date() },
+                        data: { status: 'IGNORED', respondedAt: new Date(), outcome: 'WILLING_FULL' } as any,
                     }).catch(() => {});
-                    const { increaseReliability } = await import('./scoring');
-                    await increaseReliability(player.id).catch(() => {});
+                    const { recomputeReliability } = await import('./scoring');
+                    await recomputeReliability(player.id).catch(() => {});
                 }
                 throw accErr; // rilancia → l'outer catch ritorna errorMessage → messageHandler manda il "pieno"
             }
 
-            // NB(reliability): NON incrementiamo l'affidabilità qui all'accept. Il segnale positivo
-            // arriva UNA sola volta da processMatchOutcomes a fine partita (presenza effettiva),
-            // evitando il doppio/triplo conteggio (accept + match-pieno + outcome).
+            // Reliability v2: l'accept È la conversione → tagga ACCEPTED e ricalcola la finestra.
+            const { setInvitationOutcome } = await import('./scoring');
+            await setInvitationOutcome(inv.id, 'ACCEPTED').catch(() => {});
 
             // NB: quando il genere del giocatore raggiunge quota 2 NON notifichiamo proattivamente
             // gli altri pending dello stesso genere e NON li chiudiamo. Convenzione del progetto
@@ -1071,12 +1073,10 @@ export async function executeAction(
                 where: { id: params.invitationId },
                 data: { status: 'REJECTED', respondedAt: new Date() },
             });
-            // Penalità LIEVE: ha declinato ma HA comunicato (possiamo cercare un sostituto).
-            // Molto più lieve del fantasma che non risponde affatto (penalità piena via processMatchOutcomes).
-            if (player?.id) {
-                const { declineReliability } = await import('./scoring');
-                await declineReliability(player.id).catch(() => {});
-            }
+            // Reliability v2: outcome DECLINED → conta come "non convertito" nella finestra
+            // (scontato se ha una partita vicina). setInvitationOutcome ricalcola.
+            const { setInvitationOutcome } = await import('./scoring');
+            await setInvitationOutcome(params.invitationId, 'DECLINED').catch(() => {});
             return { success: true };
         }
 
@@ -1171,8 +1171,13 @@ export async function executeAction(
                 logger.info({ matchId: mp.matchId, leavingGender }, 'OPEN match: player cancelled — wave relaunched');
             }
 
-            const { decreaseReliability } = await import('./scoring');
-            await decreaseReliability(player.id).catch(() => {});
+            // Reliability v2: ha accettato e si è tirato indietro → tagga l'invito CANCELLED_AFTER_ACCEPT
+            // (l'unico "danno" davvero osservabile: aveva confermato uno slot e l'ha mollato).
+            if (player?.id) {
+                const { setInvitationOutcome } = await import('./scoring');
+                const cancInv = await prisma.invitation.findFirst({ where: { matchId: mp.matchId, playerId: player.id }, select: { id: true } });
+                if (cancInv) await setInvitationOutcome(cancInv.id, 'CANCELLED_AFTER_ACCEPT').catch(() => {});
+            }
             return {
                 success: true,
                 matchId: mp.matchId,

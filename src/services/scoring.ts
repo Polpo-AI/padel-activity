@@ -106,27 +106,25 @@ export async function processMatchOutcomes(matchId: string): Promise<void> {
         inv => !FINAL_STATUSES.has(inv.status) || match.MatchPlayer.some(mp => mp.playerId === inv.playerId && !mp.leftAt)
     );
 
+    const touched = new Set<string>();
     for (const inv of unprocessed) {
         const mp = match.MatchPlayer.find(mp => mp.playerId === inv.playerId && !mp.leftAt);
         const showed = !!mp && !mp.noShow;
-        const minutesUntilMatch = inv.minutesUntilMatch ?? 360;
 
         if (inv.status === 'PENDING') {
-            // Fantasma: invitato, mai risposto. Penalità PIENA SOLO se la partita si è giocata
-            // (LOCKED). Se cancellata/non riempita non c'era niente a cui presentarsi → neutro.
-            if (match.status === 'LOCKED') {
-                await updateShowUpRate(inv.playerId, false, minutesUntilMatch);
-            }
+            // Reliability v2: invitato che non ha MAI risposto.
+            //  · partita GIOCATA (LOCKED) → outcome GHOST (conta come mancata conversione)
+            //  · partita non giocata (cancellata/non riempita) → MATCH_CANCELLED (escluso, nessuna chance)
+            const outcome = match.status === 'LOCKED' ? 'GHOST' : 'MATCH_CANCELLED';
             await prisma.invitation.update({
                 where: { id: inv.id },
-                data: { status: 'EXPIRED' },
+                data: { status: 'EXPIRED', outcome } as any,
             });
+            touched.add(inv.playerId);
             continue; // nessun feedback a chi non ha risposto
         }
 
-        // ACCEPTED con giocatore presente → presenza effettiva (positivo, una sola volta).
-        await updateShowUpRate(inv.playerId, showed, minutesUntilMatch);
-
+        // ACCEPTED+presente: l'outcome ACCEPTED è già taggato all'accept → qui solo il feedback.
         // ─── TRIGGER FEEDBACK ───
         if (showed) {
             const { getRedis } = await import('./queue');
@@ -164,6 +162,9 @@ export async function processMatchOutcomes(matchId: string): Promise<void> {
             }
         }
     }
+
+    // Reliability v2: ricalcola la finestra per i giocatori i cui inviti sono stati appena taggati (fantasmi).
+    for (const pid of touched) await recomputeReliability(pid);
 
     // Marca la partita come processata (TTL 30g) → i run successivi escono subito.
     try { await _redis.set(_procKey, '1', 'EX', 30 * 24 * 60 * 60); } catch { /* best-effort */ }
@@ -497,4 +498,91 @@ export async function decreaseReliability(playerId: string, _amount?: number): P
  */
 export async function declineReliability(playerId: string): Promise<void> {
     await updateShowUpRate(playerId, false, 360, DECLINE_WEIGHT);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// RELIABILITY v2 — finestra di conversione su eventi OSSERVABILI
+// reliability = media degli ultimi N inviti "validi" (= con segnale).
+// Niente EMA accumulata: il punteggio si RICALCOLA dagli outcome, così il recente
+// pesa e il vecchio esce dalla finestra (richiesta: "finestra mobile").
+// ═══════════════════════════════════════════════════════════════════════════
+
+export const RELIAB_WINDOW = 20;     // ultimi N inviti "validi"
+const NEARBY_DAYS = 7;               // ±giorni: se ha già una partita vicina, declina/fantasma è scontato
+const NEARBY_DISCOUNT = 0.5;         // valore di declina/fantasma quando ha una partita vicina
+
+// Outcome possibili (campo Invitation.outcome). Valore nella finestra; null = ESCLUSO.
+export type InvOutcome =
+    | 'ACCEPTED' | 'DECLINED' | 'GHOST' | 'CANCELLED_AFTER_ACCEPT'
+    | 'WILLING_FULL' | 'MATCH_CANCELLED' | 'SLOT_FILLED';
+
+function outcomeValue(outcome: string, nearby: boolean): number | null {
+    switch (outcome) {
+        case 'ACCEPTED': return 1;                    // conversione riuscita
+        case 'CANCELLED_AFTER_ACCEPT': return 0;      // ha accettato e si è tirato indietro
+        case 'DECLINED':
+        case 'GHOST': return nearby ? NEARBY_DISCOUNT : 0; // non convertito (scontato se ha partita vicina)
+        case 'WILLING_FULL':                          // voleva ma era pieno → nessuna colpa
+        case 'MATCH_CANCELLED':                       // partita non giocata
+        case 'SLOT_FILLED':                           // slot chiuso prima che potesse → nessuna chance
+        default: return null;                         // ESCLUSO dalla finestra
+    }
+}
+
+// Fallback per inviti storici senza `outcome` esplicito (inferenza da status/respondedAt).
+function inferOutcome(status: string, respondedAt: Date | null): string | null {
+    switch (status) {
+        case 'ACCEPTED': return 'ACCEPTED';
+        case 'REJECTED': return 'DECLINED';
+        case 'EXPIRED': return 'GHOST';
+        case 'IGNORED': return respondedAt ? 'WILLING_FULL' : 'MATCH_CANCELLED'; // chiuso dal sistema → escluso
+        default: return null; // PENDING: non ancora deciso
+    }
+}
+
+/** Calcola (senza scrivere) la reliability v2 dagli ultimi inviti del giocatore. */
+export async function computeWindowedReliability(playerId: string): Promise<number> {
+    const invs = await prisma.invitation.findMany({
+        where: { playerId },
+        orderBy: { sentAt: 'desc' },
+        take: 200,
+        include: { match: { select: { startTime: true } } },
+    });
+    // Partite confermate (giocate o in programma) per lo "sconto partita vicina".
+    const confirmed = await prisma.matchPlayer.findMany({
+        where: { playerId, leftAt: null, match: { status: 'LOCKED' } },
+        include: { match: { select: { startTime: true } } },
+    });
+    const confTimes = confirmed.map(c => c.match.startTime.getTime());
+    const DAY = 24 * 60 * 60 * 1000;
+
+    const vals: number[] = [];
+    for (const i of invs) {
+        if (vals.length >= RELIAB_WINDOW) break;
+        const outcome = (i as any).outcome ?? inferOutcome(i.status, i.respondedAt);
+        if (!outcome) continue;
+        const mStart = i.match?.startTime?.getTime() ?? 0;
+        const nearby = confTimes.some(t => Math.abs(t - mStart) <= NEARBY_DAYS * DAY);
+        const v = outcomeValue(outcome, nearby);
+        if (v === null) continue;
+        vals.push(v);
+    }
+    if (vals.length === 0) return PRIOR; // nessun segnale → resta al prior
+    return vals.reduce((a, b) => a + b, 0) / vals.length;
+}
+
+/** Tagga l'outcome di un invito e ricalcola la reliability del giocatore. */
+export async function setInvitationOutcome(invitationId: string, outcome: InvOutcome): Promise<void> {
+    const inv = await prisma.invitation.update({
+        where: { id: invitationId },
+        data: { outcome } as any,
+        select: { playerId: true },
+    }).catch(() => null);
+    if (inv?.playerId) await recomputeReliability(inv.playerId);
+}
+
+/** Ricalcola e salva la reliability v2 del giocatore dalla finestra. */
+export async function recomputeReliability(playerId: string): Promise<void> {
+    const score = await computeWindowedReliability(playerId);
+    await prisma.player.update({ where: { id: playerId }, data: { reliabilityScore: score } }).catch(() => {});
 }

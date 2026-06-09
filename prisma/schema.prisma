@@ -96,6 +96,10 @@ model Invitation {
   minutesUntilMatch Int?
   isFriendInvite    Boolean          @default(false)
   invitedById       String?
+  // Reliability v2: motivo terminale esplicito dell'invito (null finché non deciso).
+  // ACCEPTED / DECLINED / GHOST / CANCELLED_AFTER_ACCEPT (contano nella finestra) ·
+  // WILLING_FULL / MATCH_CANCELLED (esclusi: nessuna chance / partita non giocata).
+  outcome           String?
   match             Match            @relation(fields: [matchId], references: [id])
   player            Player           @relation(fields: [playerId], references: [id])
 

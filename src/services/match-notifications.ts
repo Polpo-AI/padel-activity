@@ -37,10 +37,12 @@ export async function notifyMatchCancelled(matchId: string, clubId: string): Pro
     });
     if (!match) return;
 
-    // Annulla subito tutti gli inviti PENDING
+    // Annulla subito tutti gli inviti PENDING.
+    // Reliability v2: outcome MATCH_CANCELLED → ESCLUSO dalla finestra (partita non giocata,
+    // nessuna colpa di chi non ha risposto). Niente ricalcolo: escluso = non cambia il punteggio.
     await prisma.invitation.updateMany({
         where: { matchId, status: 'PENDING' },
-        data: { status: 'IGNORED' },
+        data: { status: 'IGNORED', outcome: 'MATCH_CANCELLED' } as any,
     });
 
     const confirmed = match.MatchPlayer;
