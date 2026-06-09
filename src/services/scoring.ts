@@ -510,6 +510,7 @@ export async function declineReliability(playerId: string): Promise<void> {
 export const RELIAB_WINDOW = 20;     // ultimi N inviti "validi"
 const NEARBY_DAYS = 7;               // ±giorni: se ha già una partita vicina, declina/fantasma è scontato
 const NEARBY_DISCOUNT = 0.5;         // valore di declina/fantasma quando ha una partita vicina
+const RELIAB_PRIOR_SMOOTH = 3;       // osservazioni-prior virtuali (smoothing): tempera i pochi dati
 
 // Outcome possibili (campo Invitation.outcome). Valore nella finestra; null = ESCLUSO.
 export type InvOutcome =
@@ -567,8 +568,11 @@ export async function computeWindowedReliability(playerId: string): Promise<numb
         if (v === null) continue;
         vals.push(v);
     }
-    if (vals.length === 0) return PRIOR; // nessun segnale → resta al prior
-    return vals.reduce((a, b) => a + b, 0) / vals.length;
+    // Smoothing bayesiano: RELIAB_PRIOR_SMOOTH "osservazioni-prior" virtuali a PRIOR.
+    // Su pochi dati il punteggio resta vicino al prior (un singolo evento non manda a 0/1),
+    // e converge al tasso vero man mano che la finestra si riempie. Con vals vuoto → PRIOR.
+    const sum = vals.reduce((a, b) => a + b, 0);
+    return (sum + PRIOR * RELIAB_PRIOR_SMOOTH) / (vals.length + RELIAB_PRIOR_SMOOTH);
 }
 
 /** Tagga l'outcome di un invito e ricalcola la reliability del giocatore. */
