@@ -213,7 +213,14 @@ export async function checkSilentMatches(): Promise<void> {
                 const delayMs = 5000;
                 waveQueue.add('process-wave', {
                     matchId: match.id,
-                    waveNumber: match.recoveryWaveCount + 1,
+                    // ⚠️ Almeno 2: una partita orfana ripescata dal watchdog NON è una "prima wave".
+                    // Con waveNumber=1 (recoveryWaveCount resta 0 su questo percorso), il ramo
+                    // pool-vuoto di processWave scatta la guardia `if (waveNumber < 2) return`
+                    // ("troppo presto per cancellare") → la wave è un no-op e il watchdog rilancia
+                    // ogni 30 min all'infinito senza mai poter cancellare una partita non riempibile
+                    // (spam di alert all'admin). Forzando >=2, il ramo pool-vuoto valuta
+                    // checkAndCancelIfUnfillable e cancella se non c'è davvero più nessuno da invitare.
+                    waveNumber: Math.max(2, match.recoveryWaveCount + 1),
                     scheduledAt: Date.now() + delayMs,
                 }, { delay: delayMs }).catch(async (err) => {
                     logger.warn({ err, matchId: match.id }, 'checkSilentMatches: wave reschedule failed');
