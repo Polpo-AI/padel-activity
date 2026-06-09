@@ -1050,8 +1050,9 @@ export async function executeAction(
                 throw accErr; // rilancia → l'outer catch ritorna errorMessage → messageHandler manda il "pieno"
             }
 
-            const { increaseReliability } = await import('./scoring');
-            await increaseReliability(player.id).catch(() => {});
+            // NB(reliability): NON incrementiamo l'affidabilità qui all'accept. Il segnale positivo
+            // arriva UNA sola volta da processMatchOutcomes a fine partita (presenza effettiva),
+            // evitando il doppio/triplo conteggio (accept + match-pieno + outcome).
 
             // NB: quando il genere del giocatore raggiunge quota 2 NON notifichiamo proattivamente
             // gli altri pending dello stesso genere e NON li chiudiamo. Convenzione del progetto

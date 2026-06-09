@@ -14,7 +14,6 @@ import { proto } from '@whiskeysockets/baileys';
 import { prisma } from './db';
 import { getRedis } from './queue';
 import { transcribeAudio } from './ai';
-import { increaseReliability } from './scoring';
 import { registerBatchHandler, NormalizedMessage, extractQuotedRef } from './inbound-queue';
 import { confirmRedirectChoice } from './redirect';
 import pino from 'pino';
@@ -1142,7 +1141,9 @@ export async function handleMatchFilled(matchId: string, startTime: Date): Promi
             });
         }
 
-        for (const mp of confirmed) await increaseReliability(mp.player.id);
+        // NB(reliability): il segnale positivo NON viene più dato qui a partita piena.
+        // Arriva UNA sola volta da processMatchOutcomes a fine partita (presenza effettiva),
+        // per evitare il doppio/triplo conteggio (accept + match-pieno + outcome).
 
         // GAP #19: schedula reminder solo se mancano almeno 10 minuti all'orario previsto
         // (1h prima del match). Con delay=0 il reminder scatta immediatamente — sbagliato.

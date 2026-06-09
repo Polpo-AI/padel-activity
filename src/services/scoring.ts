@@ -68,7 +68,9 @@ export async function updateShowUpRate(
 
 // ─────────────────────────────────────────────
 // PROCESSA OUTCOME PARTITA
-// Idempotente: salta se la partita ha già un outcomeProcessedAt
+// Idempotente via marcatore Redis: processa gli outcome di una partita UNA SOLA volta.
+// (Il job maintenance gira ogni 2h su finestra 3h → senza guardia la stessa partita
+//  verrebbe processata più volte e l'EMA dei presenti si gonfierebbe a ogni passaggio.)
 // ─────────────────────────────────────────────
 
 export async function processMatchOutcomes(matchId: string): Promise<void> {
@@ -78,6 +80,17 @@ export async function processMatchOutcomes(matchId: string): Promise<void> {
     });
 
     if (!match) return;
+
+    // Idempotenza: se questa partita ha già avuto gli outcome processati, esci subito.
+    // Senza questo, updateShowUpRate (EMA, NON idempotente) veniva riapplicato a ogni run.
+    const _redis = (await import('./queue')).getRedis();
+    const _procKey = `outcomes_processed:${matchId}`;
+    try {
+        if (await _redis.get(_procKey)) {
+            logger.info(`processMatchOutcomes ${matchId}: già processato — skip (idempotenza)`);
+            return;
+        }
+    } catch { /* Redis non raggiungibile: procediamo comunque (rischio basso) */ }
 
     // Invitations già in stato finale = già processate in un run precedente.
     // ACCEPTED/REJECTED/IGNORED vanno in FINAL_STATUSES per evitare che updateShowUpRate
@@ -139,6 +152,9 @@ export async function processMatchOutcomes(matchId: string): Promise<void> {
             }
         }
     }
+
+    // Marca la partita come processata (TTL 30g) → i run successivi escono subito.
+    try { await _redis.set(_procKey, '1', 'EX', 30 * 24 * 60 * 60); } catch { /* best-effort */ }
 
     logger.info(`processMatchOutcomes ${matchId}: ${match.invitations.length} invitations processed`);
 }
