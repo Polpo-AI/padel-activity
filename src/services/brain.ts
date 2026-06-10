@@ -950,7 +950,10 @@ export async function executeAction(
             });
             if (club.adminPhone) {
                 const { notifyAdmin } = await import('../utils/notify-admin');
-                notifyAdmin(`🆕 Nuovo giocatore registrato: ${name} (${phoneNumber})`).catch(() => {});
+                const genderWarning = gender === 'UNKNOWN'
+                    ? `\n⚠️ Genere non riconosciuto dal nome — impostalo a mano (Dashboard → Utenti): finché manca, non riceverà inviti alle partite.`
+                    : '';
+                notifyAdmin(`🆕 Nuovo giocatore registrato: ${name} (${phoneNumber})${genderWarning}`).catch(() => {});
             }
             return { success: true };
         } catch (regErr: any) {

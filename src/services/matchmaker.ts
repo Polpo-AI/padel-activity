@@ -162,6 +162,12 @@ async function _processWaveInner(matchId: string, waveNumber: number, urgencyMul
             const skillMax = match.skillLevel + (match.club?.matchUpperRange ?? 1.0);
 
             for (const p of preferred) {
+                // Genere UNKNOWN = MAI invitato, nemmeno come preferito (scelta di prodotto):
+                // l'alert per l'admin parte da alertUnknownGenderPlayers in scoring.ts
+                if ((p as any).gender !== 'MALE' && (p as any).gender !== 'FEMALE') {
+                    logger.info(`Preferred player ${p.name} (${p.id}) skipped — gender UNKNOWN`);
+                    continue;
+                }
                 if (p.skillLevel >= skillMin && p.skillLevel <= skillMax) {
                     playersList.unshift(p);
                     logger.info(`Adding preferred player ${p.name} (${p.id}) to Wave 1 prioritisation`);

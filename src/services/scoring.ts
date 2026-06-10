@@ -245,11 +245,17 @@ export async function selectPlayersForWave(
         skillLevel: { gt: 0, gte: skillMin, lte: skillMax },
         active: true,
         dormantSince: null,   // Punto 3: non contattare i giocatori dormienti (irraggiungibili / sospetto blocco)
+        // Genere UNKNOWN = MAI invitato (scelta di prodotto): l'admin riceve un alert
+        // per impostarlo a mano. Il filtro specifico per genere (selectByEma) lo sovrascrive.
+        gender: { in: ['MALE', 'FEMALE'] } as any,
         ...(isMorning
             ? { morningContactsToday: { lt: dailyCap }, ...(isWeekday ? { avoidMorning: false } : {}) }
             : { afternoonContactsToday: { lt: dailyCap }, ...(isWeekday ? { avoidAfternoon: false } : {}) }),
         id: { notIn: excludedIds },
     };
+
+    // Fire-and-forget: avvisa l'admin se nel club ci sono giocatori invitabili ma senza genere
+    alertUnknownGenderPlayers(match.club as any).catch(() => {});
 
     const sortFn = (a: any, b: any) => {
         const lastA = a.lastContactedAt?.getTime() || 0;
@@ -307,6 +313,47 @@ export async function selectPlayersForWave(
 }
 
 // ─────────────────────────────────────────────
+// ALERT GENERE MANCANTE
+// I giocatori con genere UNKNOWN sono ESCLUSI da tutti gli inviti (scelta di prodotto):
+// l'admin riceve un alert — max uno ogni 7 giorni per giocatore (dedup Redis) — per
+// impostare il genere a mano dalla dashboard (sezione Utenti).
+// ─────────────────────────────────────────────
+
+const GENDER_ALERT_TTL_S = 7 * 24 * 3600;
+
+async function alertUnknownGenderPlayers(
+    club: { id: string; adminPhone?: string | null; name?: string | null } | null | undefined,
+): Promise<void> {
+    if (!club?.id) return;
+
+    // Solo i giocatori che la wave avrebbe potuto invitare: attivi, non dormienti, con skill
+    const unknowns = await prisma.player.findMany({
+        where: { clubId: club.id, active: true, dormantSince: null, skillLevel: { gt: 0 }, gender: 'UNKNOWN' as any },
+        select: { id: true, name: true, phoneNumber: true },
+        take: 20,
+    });
+    if (unknowns.length === 0) return;
+
+    const { getRedis } = await import('./queue');
+    const redis = getRedis();
+    const fresh: typeof unknowns = [];
+    for (const p of unknowns) {
+        const ok = await redis.set(`alert:gender_unknown:${club.id}:${p.id}`, '1', 'EX', GENDER_ALERT_TTL_S, 'NX').catch(() => null);
+        if (ok) fresh.push(p);
+    }
+    if (fresh.length === 0) return;
+
+    const lines = fresh.map(p => `• ${p.name || 'Senza nome'} (+${p.phoneNumber})`).join('\n');
+    const { notifyAdmin } = await import('../utils/notify-admin');
+    await notifyAdmin(
+        `⚠️ Giocatori senza genere impostato — sono ESCLUSI dagli inviti alle partite finché non lo specifichi a mano (Dashboard → Utenti):\n${lines}`,
+        `gender-unknown-${club.id}-${Date.now()}`,
+        club.adminPhone ?? undefined,
+        club.name ?? undefined,
+    ).catch(() => {});
+}
+
+// ─────────────────────────────────────────────
 // SELEZIONE RECOVERY — pool più ampio, ignora cap giornaliero
 // Usato da recovery.ts (sostituisce getPlayersForRecovery da matchmaker)
 // ─────────────────────────────────────────────
@@ -336,6 +383,8 @@ export async function getPlayersForRecovery(matchId: string): Promise<any[]> {
         skillLevel: { gt: 0, gte: skillMin, lte: skillMax },
         active: true,
         dormantSince: null,   // Punto 3: non contattare i giocatori dormienti
+        // Genere UNKNOWN = MAI invitato (vedi selectPlayersForWave)
+        gender: { in: ['MALE', 'FEMALE'] } as any,
         ...(isWeekday ? (isMorning ? { avoidMorning: false } : { avoidAfternoon: false }) : {}),
         id: { notIn: excludedIds },
     };
