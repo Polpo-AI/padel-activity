@@ -24,8 +24,14 @@ export interface RequestContext {
 
 export const requestContext = new AsyncLocalStorage<RequestContext>();
 
-export function runWithContext(ctx: RequestContext, fn: () => void | Promise<void>) {
-    return requestContext.run(ctx, fn);
+// Generica: il chiamante può passare solo { clubId } (correlationId viene generato) e il
+// valore di ritorno di fn è preservato (Promise inclusa → .then/.catch tipizzati).
+export function runWithContext<T>(
+    ctx: Partial<RequestContext>,
+    fn: () => T,
+): T {
+    const full: RequestContext = { correlationId: ctx.correlationId ?? `ctx-${Date.now()}`, ...ctx };
+    return requestContext.run(full, fn);
 }
 
 export function getCorrelationId(): string | undefined {

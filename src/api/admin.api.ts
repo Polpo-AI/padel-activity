@@ -237,7 +237,7 @@ router.get('/clubs', adminAuth, async (_req: Request, res: Response) => {
 router.get('/clubs/:id', adminAuth, async (req: Request, res: Response) => {
     try {
         const club = await prisma.club.findUnique({
-            where: { id: req.params.id },
+            where: { id: String(req.params.id) },
             include: {
                 courts: { where: { active: true } },
                 _count: { select: { players: true, matches: true } },
@@ -255,7 +255,7 @@ router.patch('/clubs/:id', adminAuth, async (req: Request, res: Response) => {
     try {
         const { name, city, address, botName, matchLowerRange, matchUpperRange, maxDailyMessages } = req.body;
         const updated = await prisma.club.update({
-            where: { id: req.params.id },
+            where: { id: String(req.params.id) },
             data: {
                 name:             name             ?? undefined,
                 city:             city             ?? undefined,
@@ -277,7 +277,7 @@ router.patch('/clubs/:id', adminAuth, async (req: Request, res: Response) => {
 router.post('/clubs/:id/reset-revenue', adminAuth, async (req: Request, res: Response) => {
     try {
         const updated = await prisma.club.update({
-            where: { id: req.params.id },
+            where: { id: String(req.params.id) },
             data: { revenueResetAt: new Date() },
             select: { id: true, revenueResetAt: true },
         });

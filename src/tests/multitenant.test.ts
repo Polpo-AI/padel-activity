@@ -243,6 +243,7 @@ describe('request-context: getClubId e runWithContext', () => {
 
         // Re-importa senza mock
         const { runWithContext: realRunWithContext, getClubId: realGetClubId } =
+            // @ts-ignore — suffisso ?real e un trucco Vitest per bypassare il mock, tsc non lo risolve
             await import('../utils/request-context?real');
 
         // Questo non funziona con Vitest normalmente — usiamo un test funzionale

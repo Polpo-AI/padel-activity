@@ -295,7 +295,7 @@ async function _doConnect(key: string, state: ClubSocketState): Promise<void> {
                             if (pendingIds.length > 0) {
                                 const items = (await Promise.all(
                                     pendingIds.map((id: string) => redis.get(`faq:pending:${clubId}:${id}`))
-                                )).filter(Boolean).map((raw: string) => JSON.parse(raw!));
+                                )).filter((raw): raw is string => Boolean(raw)).map(raw => JSON.parse(raw));
 
                                 if (items.length > 0) {
                                     const prefix = items.length > 1 ? `[${items.length} domande in sospeso]\n` : '';

@@ -392,7 +392,8 @@ describe('RESCHEDULE vs BOOK_FIELD — regola linguistica nel brain', () => {
         const ctx = await buildBrainContext(TEST_JID, TEST_PHONE);
         await callBrain(ctx, 'test');
 
-        const systemPrompt = mockAnthropicCreate.mock.calls[0][0].system as string;
+        // system e ora un array di blocchi (prompt caching): concatena i testi
+        const systemPrompt = (mockAnthropicCreate.mock.calls[0][0].system as { text: string }[]).map(b => b.text).join('\n');
         expect(systemPrompt).toContain('RESCHEDULE');
         expect(systemPrompt).toContain('BOOK_FIELD');
         expect(systemPrompt).toContain('correzione');
@@ -427,7 +428,8 @@ describe('RESCHEDULE vs BOOK_FIELD — regola linguistica nel brain', () => {
         expect(ctx.courts.some((c: any) => c.isCovered)).toBe(true);
 
         await callBrain(ctx, 'avete campi coperti?');
-        const systemPrompt = mockAnthropicCreate.mock.calls[0][0].system as string;
+        // system e ora un array di blocchi (prompt caching): concatena i testi
+        const systemPrompt = (mockAnthropicCreate.mock.calls[0][0].system as { text: string }[]).map(b => b.text).join('\n');
         expect(systemPrompt).toContain('Campo 2');
         expect(systemPrompt).toContain('coperto');
     });

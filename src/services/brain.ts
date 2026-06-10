@@ -1462,9 +1462,9 @@ export async function executeAction(
                 // Splitta domande multi-topic: "Hai il bar? C'è parcheggio?" → 2 FAQ separate
                 const subQuestions = rawQuestion
                     .split('?')
-                    .map(s => s.trim())
-                    .filter(s => s.length > 5)
-                    .map(s => s + '?');
+                    .map((s: string) => s.trim())
+                    .filter((s: string) => s.length > 5)
+                    .map((s: string) => s + '?');
 
                 // Dedup: controlla se questo player ha già FAQ pending con lo stesso testo
                 const existingIds = await redis.lrange(idsKey, 0, -1);

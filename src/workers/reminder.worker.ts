@@ -44,7 +44,7 @@ export const reminderWorker = new Worker<ReminderJobData>(
 
         try {
             // Contesto club: in multi-tenant serve il socket WA del circolo giusto
-            await runWithContext({ correlationId: `reminder-${matchId}`, clubId: match.clubId }, () =>
+            await runWithContext({ correlationId: `reminder-${matchId}`, clubId: match.clubId ?? undefined }, () =>
                 sendMessage(groupId, msg)
             );
         } catch (error) {

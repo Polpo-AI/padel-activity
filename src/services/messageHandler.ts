@@ -1022,7 +1022,6 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[], cor
         if (
             result.success &&
             action !== 'FAQ_REQUEST' &&
-            action !== 'NONE' &&
             action !== 'REGISTER_PLAYER' &&
             textMessages.length > 1
         ) {

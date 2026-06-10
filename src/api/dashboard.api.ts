@@ -685,7 +685,7 @@ router.get('/courts/:id/slots', authMiddleware, async (req: Request, res: Respon
 
     if (!date) return res.status(400).json({ error: 'date è richiesto (YYYY-MM-DD)' });
 
-    const court = await prisma.court.findFirst({ where: { id: req.params.id, clubId } });
+    const court = await prisma.court.findFirst({ where: { id: String(req.params.id), clubId } });
     if (!court) return res.status(404).json({ error: 'Campo non trovato' });
 
     const club = await prisma.club.findUnique({ where: { id: clubId } });
@@ -763,7 +763,7 @@ router.get('/courts/:id/slots', authMiddleware, async (req: Request, res: Respon
 
 router.get('/courts/:id/unavailability', authMiddleware, async (req: Request, res: Response) => {
     const clubId = (req as any).clubId;
-    const court = await prisma.court.findFirst({ where: { id: req.params.id, clubId } });
+    const court = await prisma.court.findFirst({ where: { id: String(req.params.id), clubId } });
     if (!court) return res.status(404).json({ error: 'Campo non trovato' });
 
     const items = await prisma.match.findMany({
@@ -781,7 +781,7 @@ router.get('/courts/:id/unavailability', authMiddleware, async (req: Request, re
 
 router.post('/courts/:id/unavailability', authMiddleware, async (req: Request, res: Response) => {
     const clubId = (req as any).clubId;
-    const court = await prisma.court.findFirst({ where: { id: req.params.id, clubId } });
+    const court = await prisma.court.findFirst({ where: { id: String(req.params.id), clubId } });
     if (!court) return res.status(404).json({ error: 'Campo non trovato' });
 
     const { startTime, endTime, reason, recurring } = req.body;
@@ -827,7 +827,7 @@ router.post('/courts/:id/unavailability', authMiddleware, async (req: Request, r
 router.delete('/courts/:id/unavailability/:uid', authMiddleware, async (req: Request, res: Response) => {
     const clubId = (req as any).clubId;
     const match = await prisma.match.findFirst({
-        where: { id: req.params.uid, courtId: req.params.id, clubId, type: 'UNAVAILABLE' },
+        where: { id: String(req.params.uid), courtId: String(req.params.id), clubId, type: 'UNAVAILABLE' },
     });
     if (!match) return res.status(404).json({ error: 'Chiusura non trovata' });
     await prisma.match.delete({ where: { id: match.id } });
@@ -1078,7 +1078,7 @@ router.get('/players', authMiddleware, async (req: Request, res: Response) => {
 
 router.get('/players/:id', authMiddleware, async (req: Request, res: Response) => {
     const clubId = (req as any).clubId as string;
-    const { id } = req.params;
+    const id = String(req.params.id);
 
     try {
         const player = await prisma.player.findFirst({
@@ -1164,7 +1164,7 @@ router.post('/players', authMiddleware, async (req: Request, res: Response) => {
 
 router.patch('/players/:id', authMiddleware, async (req: Request, res: Response) => {
     const clubId = (req as any).clubId as string;
-    const { id } = req.params;
+    const id = String(req.params.id);
     const { name, skillLevel, active, avoidMorning, avoidAfternoon, gender } = req.body;
 
     try {
@@ -1471,7 +1471,7 @@ router.post('/faqs/merge', authMiddleware, async (req: Request, res: Response) =
 
 router.put('/faqs/:id', authMiddleware, async (req: Request, res: Response) => {
     const clubId = (req as any).clubId as string;
-    const { id } = req.params;
+    const id = String(req.params.id);
     const { question, answer } = req.body || {};
 
     try {
@@ -1497,7 +1497,7 @@ router.put('/faqs/:id', authMiddleware, async (req: Request, res: Response) => {
 
 router.delete('/faqs/:id', authMiddleware, async (req: Request, res: Response) => {
     const clubId = (req as any).clubId as string;
-    const { id } = req.params;
+    const id = String(req.params.id);
 
     try {
         const faq = await prisma.faq.findFirst({ where: { id, clubId } });
@@ -1512,7 +1512,7 @@ router.delete('/faqs/:id', authMiddleware, async (req: Request, res: Response) =
 
 router.post('/faqs/:id/answer', authMiddleware, async (req: Request, res: Response) => {
     const clubId = (req as any).clubId as string;
-    const { id } = req.params;
+    const id = String(req.params.id);
     const { answer, notifyPlayer, question } = req.body || {};
 
     if (!answer) {

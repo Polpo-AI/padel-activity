@@ -1,13 +1,11 @@
 /**
  * SCORING SERVICE
  *
- * Metrica unica: tasso di risposta/presentazione ∈ [0, 1]
- * Media mobile esponenziale con α adattivo = max(0.08, 1/(n+2)), prior=0.33
- *   (n = osservazioni precedenti: impara in fretta da nuovo, stabile con storia lunga)
- * Bonus ×1.3 se viene con < 2h di preavviso
+ * Reliability v2: finestra di conversione sugli ultimi inviti con outcome osservabile
+ * (vedi computeWindowedReliability in fondo al file). Prior 0.33 con smoothing bayesiano.
  *
- * Soglia esclusione: < 0.05 SOLO dopo almeno 10 inviti.
- * Un giocatore nuovo (reliabilityScore = 0) NON viene escluso.
+ * Soglia esclusione dalle wave: < 0.05 SOLO dopo almeno 10 inviti.
+ * Un giocatore nuovo NON viene escluso.
  */
 
 import { prisma } from './db';
@@ -15,61 +13,9 @@ import pino from 'pino';
 
 const logger = pino({ level: 'info' });
 
-export const PRIOR = 0.33; // fallback EMA per giocatori legacy con reliabilityScore=0 nel DB
-// Alpha adattivo: alto con poche osservazioni (impara in fretta, no cold-start), basso con storia
-// lunga (stabile, un singolo evento non fa crollare un veterano). α = max(MIN_ALPHA, 1/(n+2)).
-const MIN_ALPHA = 0.08;
-const LAST_MINUTE_BONUS = 1.3;
-const LAST_MINUTE_THRESHOLD_MIN = 120;
+export const PRIOR = 0.33; // punteggio base per giocatori nuovi / senza storia
 const EXCLUSION_MIN_INVITES = 10;
 const EXCLUSION_THRESHOLD = 0.05;
-// Peso EMA per il "declina educato": penalità più lieve di un no-show/fantasma (peso 1.0).
-const DECLINE_WEIGHT = 0.4;
-
-// ─────────────────────────────────────────────
-// AGGIORNA SHOW UP RATE
-// ─────────────────────────────────────────────
-
-export async function updateShowUpRate(
-    playerId: string,
-    showed: boolean,
-    minutesUntilMatchWhenInvited: number,
-    weight: number = 1.0, // <1 = evento "leggero" (es. declina educato): passo EMA ridotto
-): Promise<void> {
-    const player = await prisma.player.findUnique({ where: { id: playerId } });
-    if (!player) return;
-
-    const currentRate = player.reliabilityScore || PRIOR; // PRIOR fallback for legacy players with score=0
-
-    let eventValue = showed ? 1.0 : 0.0;
-    if (showed && minutesUntilMatchWhenInvited <= LAST_MINUTE_THRESHOLD_MIN) {
-        eventValue = LAST_MINUTE_BONUS;
-    }
-
-    // n = osservazioni precedenti (inviti già processati, cioè non più PENDING).
-    // Alpha adattivo: con n piccolo impara in fretta (cold-start), con n grande è stabile.
-    const priorObservations = await prisma.invitation.count({
-        where: { playerId, status: { in: ['ACCEPTED', 'REJECTED', 'IGNORED', 'EXPIRED'] } },
-    });
-    // +2 a denominatore (smoothing): anche alla prima osservazione il prior pesa ancora (α=0.5),
-    // così un singolo evento non porta lo score a 0 o 1.
-    // weight scala il passo: un "declina educato" pesa meno di un no-show/fantasma (target=0.0 in entrambi,
-    // ma il declina muove meno → penalità più lieve, premia la comunicazione).
-    const alpha = Math.max(MIN_ALPHA, 1 / (priorObservations + 2)) * weight;
-
-    const newRate = Math.min(1.0, (1 - alpha) * currentRate + alpha * eventValue);
-
-    await prisma.player.update({
-        where: { id: playerId },
-        data: { reliabilityScore: newRate },
-    });
-
-    logger.info(
-        `Player ${playerId}: showUpRate ${currentRate.toFixed(3)} → ${newRate.toFixed(3)} ` +
-        `(showed=${showed}, n=${priorObservations}, α=${alpha.toFixed(3)}, preavviso=${minutesUntilMatchWhenInvited}min` +
-        `${showed && minutesUntilMatchWhenInvited <= LAST_MINUTE_THRESHOLD_MIN ? ' +LM bonus' : ''})`
-    );
-}
 
 // ─────────────────────────────────────────────
 // PROCESSA OUTCOME PARTITA
@@ -540,28 +486,6 @@ export async function getPlayerStats(playerId: string) {
         totalNoShow,
         showUpRate: player?.reliabilityScore ?? 0.33,
     };
-}
-
-// ─────────────────────────────────────────────
-// SHIM — per compatibilità con chiamate dirette nel codebase
-// recovery.ts e messageHandler.ts usano questi alias
-// ─────────────────────────────────────────────
-
-export async function increaseReliability(playerId: string): Promise<void> {
-    await updateShowUpRate(playerId, true, 360);
-}
-
-export async function decreaseReliability(playerId: string, _amount?: number): Promise<void> {
-    // _amount ignorato — scoring ora è relativo, non assoluto
-    await updateShowUpRate(playerId, false, 60); // penalità PIENA: no-show / fantasma
-}
-
-/**
- * Penalità LIEVE per chi declina educatamente ("non ci sono"): ha comunicato, possiamo
- * cercare un sostituto → pesa meno di un fantasma che non risponde affatto.
- */
-export async function declineReliability(playerId: string): Promise<void> {
-    await updateShowUpRate(playerId, false, 360, DECLINE_WEIGHT);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

@@ -341,7 +341,7 @@ async function main() {
     const notes: string[] = [];
     if (!match) notes.push('No match created');
     else {
-      notes.push(`Match: ${match.status}, private=${match.isPrivate}, court=${(match as any).court?.name}`);
+      notes.push(`Match: ${match.status}, private=${(match as any).isPrivateBooking}, court=${(match as any).court?.name}`);
       if (match.status !== 'LOCKED') notes.push('Expected LOCKED status for private booking');
     }
 
@@ -361,7 +361,7 @@ async function main() {
     const match = await getMatchForPlayer(phone);
     const notes: string[] = [];
     if (!match) notes.push('No match created');
-    else notes.push(`Match: ${match.status}, private=${match.isPrivate}, court=${(match as any).court?.name}`);
+    else notes.push(`Match: ${match.status}, private=${(match as any).isPrivateBooking}, court=${(match as any).court?.name}`);
 
     return { passed: !!match && conv.errors.length === 0, notes };
   });
@@ -377,7 +377,7 @@ async function main() {
     if (!match) {
       notes.push(`No match -- errorMsg: ${conv.turns[0]?.actionResult?.errorMessage}`);
     } else {
-      notes.push(`Match: ${match.status}, private=${match.isPrivate}`);
+      notes.push(`Match: ${match.status}, private=${(match as any).isPrivateBooking}`);
     }
 
     return { passed: !!match && match.status === 'LOCKED' && conv.errors.length === 0, notes };
@@ -399,7 +399,7 @@ async function main() {
     const match = await getMatchForPlayer(phone);
     const notes: string[] = [];
     if (!match) notes.push('No match created');
-    else notes.push(`Match: ${match.status}, private=${match.isPrivate}`);
+    else notes.push(`Match: ${match.status}, private=${(match as any).isPrivateBooking}`);
 
     // Match should be OPEN (matchmaking mode)
     return { passed: !!match && match.status === 'OPEN' && conv.errors.length === 0, notes };

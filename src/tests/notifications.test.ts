@@ -38,10 +38,11 @@ vi.mock('pino', () => ({
 
 // Prisma mock — configurato per-test con mockImplementation
 const { mockPrismaMatchFindUnique, mockPrismaMatchFindMany, mockPrismaMatchUpdate,
-    mockPrismaInvitationUpdateMany, mockPrismaMatchPlayerUpdateMany } = vi.hoisted(() => ({
+    mockPrismaMatchUpdateMany, mockPrismaInvitationUpdateMany, mockPrismaMatchPlayerUpdateMany } = vi.hoisted(() => ({
     mockPrismaMatchFindUnique: vi.fn(),
     mockPrismaMatchFindMany: vi.fn(),
     mockPrismaMatchUpdate: vi.fn(),
+    mockPrismaMatchUpdateMany: vi.fn(),
     mockPrismaInvitationUpdateMany: vi.fn(),
     mockPrismaMatchPlayerUpdateMany: vi.fn().mockResolvedValue({ count: 0 }),
 }));
@@ -52,6 +53,7 @@ vi.mock('../services/db', () => ({
             findUnique: (...args: any[]) => mockPrismaMatchFindUnique(...args),
             findMany: (...args: any[]) => mockPrismaMatchFindMany(...args),
             update: (...args: any[]) => mockPrismaMatchUpdate(...args),
+            updateMany: (...args: any[]) => mockPrismaMatchUpdateMany(...args),
         },
         invitation: {
             updateMany: (...args: any[]) => mockPrismaInvitationUpdateMany(...args),
@@ -165,9 +167,10 @@ describe('notifyMatchCancelled', () => {
 
         await notifyMatchCancelled('match-1', 'club-1');
 
+        // Reliability v2: l'annullamento tagga outcome MATCH_CANCELLED (escluso dalla finestra)
         expect(mockPrismaInvitationUpdateMany).toHaveBeenCalledWith({
             where: { matchId: 'match-1', status: 'PENDING' },
-            data: { status: 'IGNORED' },
+            data: { status: 'IGNORED', outcome: 'MATCH_CANCELLED' },
         });
     });
 });
@@ -330,19 +333,20 @@ describe('findMatchesOutsideHours', () => {
 describe('cancelMatchesWithNotification', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        mockPrismaMatchUpdate.mockResolvedValue({});
+        // Il servizio usa updateMany scopato per club (difesa multi-tenant): count=1 = match trovato
+        mockPrismaMatchUpdateMany.mockResolvedValue({ count: 1 });
         mockPrismaInvitationUpdateMany.mockResolvedValue({ count: 0 });
         // Match senza giocatori confermati → notifyMatchCancelled termina subito
         mockPrismaMatchFindUnique.mockResolvedValue(makeMatch({ MatchPlayer: [] }));
     });
 
-    it('aggiorna lo status di tutti i match a CANCELLED', async () => {
+    it('aggiorna lo status di tutti i match a CANCELLED (scopato per club)', async () => {
         await cancelMatchesWithNotification(['match-1', 'match-2'], 'club-1', 'campo disattivato');
 
-        expect(mockPrismaMatchUpdate).toHaveBeenCalledTimes(2);
-        expect(mockPrismaMatchUpdate).toHaveBeenCalledWith(
+        expect(mockPrismaMatchUpdateMany).toHaveBeenCalledTimes(2);
+        expect(mockPrismaMatchUpdateMany).toHaveBeenCalledWith(
             expect.objectContaining({
-                where: { id: 'match-1' },
+                where: { id: 'match-1', clubId: 'club-1' },
                 data: expect.objectContaining({ status: 'CANCELLED', cancelledReason: 'campo disattivato' }),
             }),
         );
@@ -353,11 +357,21 @@ describe('cancelMatchesWithNotification', () => {
         expect(count).toBe(3);
     });
 
+    it('match di un altro club (updateMany count=0) → skippato senza notifica', async () => {
+        mockPrismaMatchUpdateMany
+            .mockResolvedValueOnce({ count: 1 })  // m1 ok
+            .mockResolvedValueOnce({ count: 0 })  // m2 di un altro club
+            .mockResolvedValueOnce({ count: 1 }); // m3 ok
+
+        const count = await cancelMatchesWithNotification(['m1', 'm2', 'm3'], 'club-1', 'test');
+        expect(count).toBe(2);
+    });
+
     it('salta silenziosamente i match che falliscono e continua con gli altri', async () => {
-        mockPrismaMatchUpdate
-            .mockResolvedValueOnce({})    // m1 ok
+        mockPrismaMatchUpdateMany
+            .mockResolvedValueOnce({ count: 1 })    // m1 ok
             .mockRejectedValueOnce(new Error('DB error')) // m2 fallisce
-            .mockResolvedValueOnce({});   // m3 ok
+            .mockResolvedValueOnce({ count: 1 });   // m3 ok
 
         const count = await cancelMatchesWithNotification(['m1', 'm2', 'm3'], 'club-1', 'test');
         expect(count).toBe(2); // m2 skippato

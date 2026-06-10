@@ -188,7 +188,6 @@ let executeAction: any;
 let buildBrainContext: any;
 let callBrain: any;
 let selectPlayersForWave: any;
-let updateShowUpRate: any;
 let computeNextWaveDelayMs: any;
 let isNightInRome: any;
 let isWeekdayInRome: any;
@@ -205,7 +204,6 @@ async function importServices() {
 
     const scoring = await import('../services/scoring');
     selectPlayersForWave = scoring.selectPlayersForWave;
-    updateShowUpRate = scoring.updateShowUpRate;
     computeNextWaveDelayMs = scoring.computeNextWaveDelayMs;
     isNightInRome = scoring.isNightInRome;
     isWeekdayInRome = scoring.isWeekdayInRome;
@@ -674,22 +672,8 @@ async function runScoringTests() {
         assert(!isWeekdayInRome(d), 'Domenica non deve essere weekday');
     });
 
-    await test('updateShowUpRate EMA: showed=true da prior 0.33', async () => {
-        const before = await getPlayerStats(playerSkilled.id);
-        await updateShowUpRate(playerSkilled.id, true, 180);
-        const after = await getPlayerStats(playerSkilled.id);
-        // EMA: new = (1 - 0.15) × 0.33 + 0.15 × 1.0 = 0.8505 × 0.33 + 0.15 = 0.4307 (prima inv)
-        // Il valore esatto dipende da quante invitazioni ci sono già state
-        // Verifichiamo solo che il tasso sia ≥ quello precedente (showed=true aumenta)
-        assert(after.showUpRate >= before.showUpRate * 0.9, `showUpRate non è aumentato: before=${before.showUpRate} after=${after.showUpRate}`);
-    });
-
-    await test('updateShowUpRate EMA: showed=false → tasso diminuisce', async () => {
-        const before = await getPlayerStats(playerSkilled.id);
-        await updateShowUpRate(playerSkilled.id, false, 180);
-        const after = await getPlayerStats(playerSkilled.id);
-        assert(after.showUpRate < before.showUpRate, `showUpRate non è diminuito: before=${before.showUpRate} after=${after.showUpRate}`);
-    });
+    // (test EMA updateShowUpRate rimossi: la reliability v2 usa la finestra outcome,
+    //  vedi computeWindowedReliability in scoring.ts e src/tests/scoring.test.ts)
 }
 
 // ─────────────────────────────────────────────

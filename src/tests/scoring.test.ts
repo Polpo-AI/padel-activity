@@ -47,8 +47,9 @@ describe('computeNextWaveDelayMs', () => {
 });
 
 // ─────────────────────────────────────────────
-// Formula EMA updateShowUpRate — logica matematica
-// Testiamo isolando Prisma con un mock
+// Reliability v2 — computeWindowedReliability
+// Finestra sugli ultimi RELIAB_WINDOW inviti con outcome osservabile,
+// smoothing bayesiano: (somma + PRIOR*3) / (validi + 3)
 // ─────────────────────────────────────────────
 
 vi.mock('../services/db', () => ({
@@ -58,87 +59,77 @@ vi.mock('../services/db', () => ({
             update: vi.fn(),
         },
         invitation: {
+            findMany: vi.fn(),
             count: vi.fn(),
+        },
+        matchPlayer: {
+            findMany: vi.fn(),
         },
     },
 }));
 
 import { prisma } from '../services/db';
-import { updateShowUpRate, increaseReliability, decreaseReliability } from '../services/scoring';
+import { computeWindowedReliability, RELIAB_WINDOW } from '../services/scoring';
 
-const ALPHA = 0.15;
+const SMOOTH = 3; // RELIAB_PRIOR_SMOOTH in scoring.ts
 
-describe('updateShowUpRate — formula EMA', () => {
+const matchAt = (iso: string) => ({ startTime: new Date(iso) });
+const inv = (outcome: string | null, status = 'ACCEPTED', matchIso = '2026-06-01T18:00:00Z', respondedAt: Date | null = new Date()) =>
+    ({ status, respondedAt, outcome, sentAt: new Date(), match: matchAt(matchIso) });
+
+describe('computeWindowedReliability — finestra outcome v2', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        (prisma.player.update as any).mockResolvedValue({});
+        (prisma.matchPlayer.findMany as any).mockResolvedValue([]); // nessuna partita vicina di default
     });
 
-    it('giocatore legacy (score=0 nel DB): usa PRIOR come base', async () => {
-        (prisma.player.findUnique as any).mockResolvedValue({ id: 'p1', reliabilityScore: 0 });
-
-        await updateShowUpRate('p1', true, 360);
-
-        const expectedRate = Math.min(1.0, (1 - ALPHA) * PRIOR + ALPHA * 1.0);
-        expect(prisma.player.update).toHaveBeenCalledWith({
-            where: { id: 'p1' },
-            data: { reliabilityScore: expect.closeTo(expectedRate, 5) },
-        });
+    it('nessun invito → PRIOR', async () => {
+        (prisma.invitation.findMany as any).mockResolvedValue([]);
+        expect(await computeWindowedReliability('p1')).toBeCloseTo(PRIOR, 5);
     });
 
-    it('giocatore esistente (score=0.8) che si presenta → score aumenta', async () => {
-        (prisma.player.findUnique as any).mockResolvedValue({ id: 'p2', reliabilityScore: 0.8 });
-
-        await updateShowUpRate('p2', true, 360);
-
-        const expected = Math.min(1.0, (1 - ALPHA) * 0.8 + ALPHA * 1.0);
-        expect(prisma.player.update).toHaveBeenCalledWith({
-            where: { id: 'p2' },
-            data: { reliabilityScore: expect.closeTo(expected, 5) },
-        });
+    it('solo ACCEPTED → score alto ma temperato dallo smoothing', async () => {
+        (prisma.invitation.findMany as any).mockResolvedValue([inv('ACCEPTED'), inv('ACCEPTED')]);
+        // (1+1 + 0.33*3) / (2+3)
+        expect(await computeWindowedReliability('p2')).toBeCloseTo((2 + PRIOR * SMOOTH) / (2 + SMOOTH), 5);
     });
 
-    it('giocatore che non si presenta → score scende', async () => {
-        (prisma.player.findUnique as any).mockResolvedValue({ id: 'p3', reliabilityScore: 0.5 });
-
-        await updateShowUpRate('p3', false, 360);
-
-        const expected = (1 - ALPHA) * 0.5 + ALPHA * 0.0;
-        expect(prisma.player.update).toHaveBeenCalledWith({
-            where: { id: 'p3' },
-            data: { reliabilityScore: expect.closeTo(expected, 5) },
-        });
+    it('GHOST senza partite vicine → conta 0', async () => {
+        (prisma.invitation.findMany as any).mockResolvedValue([inv('GHOST')]);
+        expect(await computeWindowedReliability('p3')).toBeCloseTo((0 + PRIOR * SMOOTH) / (1 + SMOOTH), 5);
     });
 
-    it('bonus last-minute: presentarsi con < 2h di preavviso non supera 1.0', async () => {
-        (prisma.player.findUnique as any).mockResolvedValue({ id: 'p4', reliabilityScore: 0.95 });
-
-        await updateShowUpRate('p4', true, 60); // 60 min < 120 → last-minute
-
-        // Con bonus: eventValue = min(1.0, 1.0 * 1.3) = 1.0
-        // Risultato non può superare 1.0
-        const call = (prisma.player.update as any).mock.calls[0][0];
-        expect(call.data.reliabilityScore).toBeLessThanOrEqual(1.0);
+    it('GHOST con partita confermata entro 7 giorni → scontato a 0.5', async () => {
+        (prisma.invitation.findMany as any).mockResolvedValue([inv('GHOST', 'EXPIRED', '2026-06-01T18:00:00Z')]);
+        (prisma.matchPlayer.findMany as any).mockResolvedValue([{ match: matchAt('2026-06-03T18:00:00Z') }]);
+        expect(await computeWindowedReliability('p4')).toBeCloseTo((0.5 + PRIOR * SMOOTH) / (1 + SMOOTH), 5);
     });
 
-    it('increaseReliability è un alias di updateShowUpRate(showed=true, 360min)', async () => {
-        (prisma.player.findUnique as any).mockResolvedValue({ id: 'p5', reliabilityScore: 0.5 });
-        await increaseReliability('p5');
-        expect(prisma.player.findUnique).toHaveBeenCalledWith({ where: { id: 'p5' } });
+    it('CANCELLED_AFTER_ACCEPT e NO_SHOW → contano 0 anche con partita vicina', async () => {
+        (prisma.invitation.findMany as any).mockResolvedValue([inv('CANCELLED_AFTER_ACCEPT'), inv('NO_SHOW')]);
+        (prisma.matchPlayer.findMany as any).mockResolvedValue([{ match: matchAt('2026-06-01T18:00:00Z') }]);
+        expect(await computeWindowedReliability('p5')).toBeCloseTo((0 + PRIOR * SMOOTH) / (2 + SMOOTH), 5);
     });
 
-    it('decreaseReliability è un alias di updateShowUpRate(showed=false)', async () => {
-        (prisma.player.findUnique as any).mockResolvedValue({ id: 'p6', reliabilityScore: 0.5 });
-        await decreaseReliability('p6');
-        const call = (prisma.player.update as any).mock.calls[0][0];
-        // showed=false → score deve scendere
-        expect(call.data.reliabilityScore).toBeLessThan(0.5);
+    it('WILLING_FULL e MATCH_CANCELLED → esclusi dalla finestra (score resta PRIOR)', async () => {
+        (prisma.invitation.findMany as any).mockResolvedValue([inv('WILLING_FULL'), inv('MATCH_CANCELLED')]);
+        expect(await computeWindowedReliability('p6')).toBeCloseTo(PRIOR, 5);
     });
 
-    it('giocatore non trovato → nessun aggiornamento', async () => {
-        (prisma.player.findUnique as any).mockResolvedValue(null);
-        await updateShowUpRate('ghost', true, 360);
-        expect(prisma.player.update).not.toHaveBeenCalled();
+    it('invito storico senza outcome: inferenza da status (REJECTED → DECLINED → 0)', async () => {
+        (prisma.invitation.findMany as any).mockResolvedValue([inv(null, 'REJECTED')]);
+        expect(await computeWindowedReliability('p7')).toBeCloseTo((0 + PRIOR * SMOOTH) / (1 + SMOOTH), 5);
+    });
+
+    it('finestra mobile: considera solo gli ultimi RELIAB_WINDOW inviti validi', async () => {
+        // 25 ACCEPTED recenti + 5 GHOST più vecchi: i GHOST cadono fuori finestra
+        const invitations = [
+            ...Array.from({ length: 25 }, () => inv('ACCEPTED')),
+            ...Array.from({ length: 5 }, () => inv('GHOST')),
+        ];
+        (prisma.invitation.findMany as any).mockResolvedValue(invitations);
+        const expected = (RELIAB_WINDOW * 1 + PRIOR * SMOOTH) / (RELIAB_WINDOW + SMOOTH);
+        expect(await computeWindowedReliability('p8')).toBeCloseTo(expected, 5);
     });
 });
 
