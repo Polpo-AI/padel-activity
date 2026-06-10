@@ -1,7 +1,7 @@
 /**
  * MESSAGE HANDLER
  *
- * Riceve batch dalla inbound-queue (debounce per JID — vedi DEBOUNCE_MS in inbound-queue.ts).
+ * Riceve batch dalla inbound-queue (debounce 10s per JID).
  * Flow:
  * 1. Deduplication + trascrizione audio
  * 2. Onboarding attivo → continueOnboarding
