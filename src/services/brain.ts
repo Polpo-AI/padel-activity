@@ -987,6 +987,9 @@ export async function executeAction(
                 where: { id: params.invitationId },
             });
             if (!inv) return { success: false, errorMessage: 'Invito non trovato.' };
+            // Ownership: l'ID arriva dal brain (può essere allucinato o incollato dall'utente) —
+            // mai operare su un invito che non appartiene a questo giocatore.
+            if (inv.playerId !== player?.id) return { success: false, errorMessage: 'Invito non trovato.' };
 
             try {
             await prisma.$transaction(async (tx: any) => {
@@ -1069,10 +1072,12 @@ export async function executeAction(
         }
 
         if (action === 'REJECT_INVITATION') {
-            await prisma.invitation.update({
-                where: { id: params.invitationId },
+            // updateMany con filtro playerId = ownership check (vedi ACCEPT_INVITATION)
+            const rejUpd = await prisma.invitation.updateMany({
+                where: { id: params.invitationId, playerId: player?.id },
                 data: { status: 'REJECTED', respondedAt: new Date() },
             });
+            if (rejUpd.count === 0) return { success: false, errorMessage: 'Invito non trovato.' };
             // Reliability v2: outcome DECLINED → conta come "non convertito" nella finestra
             // (scontato se ha una partita vicina). setInvitationOutcome ricalcola.
             const { setInvitationOutcome } = await import('./scoring');
@@ -1086,6 +1091,7 @@ export async function executeAction(
             }
             const mp = await prisma.matchPlayer.findUnique({ where: { id: params.matchPlayerId } });
             if (!mp) return { success: false, errorMessage: 'Partecipazione non trovata.' };
+            if (mp.playerId !== player?.id) return { success: false, errorMessage: 'Partecipazione non trovata.' };
 
             const leavingGender: string = (player as any).gender ?? 'UNKNOWN';
             await prisma.matchPlayer.update({ where: { id: mp.id }, data: { leftAt: new Date() } });
@@ -1126,36 +1132,87 @@ export async function executeAction(
                         data: { status: 'CANCELLED', cancelledAt: new Date(), cancelledReason: 'PLAYER_CANCELLED' },
                     });
                 } else {
-                    // Matchmaking LOCKED: manca 1 giocatore → riapri e rilancia wave con urgenza
                     const matchTimeStr = match.startTime.toLocaleString('it-IT', {
                         timeZone: 'Europe/Rome', weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit',
                     });
                     const leavingName = (player as any).name?.split(' ')[0] || 'Un giocatore';
-                    const matchUpdate: any = { status: 'OPEN' };
+                    const remaining = ((match as any).MatchPlayer as any[]).filter((rmp: any) => rmp.player?.phoneNumber);
 
-                    // Se esiste un gruppo WA: scioglilo (messaggio finale + rimozione partecipanti) e azzera groupId
-                    if ((match as any).groupId) {
-                        dissolveGroup(
-                            (match as any).groupId,
-                            `${leavingName} non può più venire alla partita di ${matchTimeStr}. Sciogliamo il gruppo — appena troviamo un sostituto ve ne creo uno nuovo 🎾`,
-                            club?.id,
-                        ).catch(err => logger.warn({ err, matchId: mp.matchId }, 'dissolveGroup failed'));
-                        matchUpdate.groupId = null;
-                    }
+                    // Sotto deadline le wave sono comunque soppresse (processWave: <60min → stop):
+                    // riaprire significherebbe promettere un sostituto che non arriverà mai e poi
+                    // far cancellare la partita da checkMatchTimeouts. Niente partite in 3: si
+                    // cancella subito, con messaggio onesto. Stesso esito se i recovery sono già
+                    // stati tentati troppe volte (gruppo instabile).
+                    const MAX_RECOVERY_WAVES = 3;
+                    const minutesUntilStart = (match.startTime.getTime() - Date.now()) / 60000;
+                    const deadlineMin = Math.max(60, club?.deadlineMinutesBeforeMatch ?? 60);
+                    const tooLate = minutesUntilStart < deadlineMin
+                        || ((match as any).recoveryWaveCount ?? 0) >= MAX_RECOVERY_WAVES;
 
-                    await prisma.match.update({ where: { id: mp.matchId }, data: matchUpdate });
-                    waveQueue.add('process-wave', {
-                        matchId: mp.matchId,
-                        waveNumber: 1,
-                        urgencyMultiplier: 2,
-                        scheduledAt: Date.now(),
-                    }, { delay: 0 }).catch(err => logger.warn({ err, matchId: mp.matchId }, 'Wave scheduling failed'));
+                    if (tooLate) {
+                        await prisma.match.update({
+                            where: { id: mp.matchId },
+                            data: { status: 'CANCELLED', cancelledAt: new Date(), cancelledReason: 'PLAYER_CANCELLED' },
+                        });
+                        await prisma.invitation.updateMany({
+                            where: { matchId: mp.matchId, status: 'PENDING' },
+                            data: { status: 'IGNORED' },
+                        });
+                        if ((match as any).groupId) {
+                            dissolveGroup(
+                                (match as any).groupId,
+                                `${leavingName} ha disdetto all'ultimo e non c'è il tempo per trovare un sostituto: la partita di ${matchTimeStr} è annullata 😔 Vi scrivo in privato con le alternative.`,
+                                club?.id,
+                            ).catch(err => logger.warn({ err, matchId: mp.matchId }, 'dissolveGroup failed'));
+                        }
+                        // Redirect dei rimasti: il referente riceve motivo + opzioni reali, gli altri l'avviso
+                        if (remaining.length > 0 && club?.id) {
+                            const { redirectGroup } = await import('./redirect');
+                            redirectGroup({
+                                clubId: club.id,
+                                referentPhone: remaining[0].player.phoneNumber,
+                                referentJid: `${remaining[0].player.phoneNumber}@s.whatsapp.net`,
+                                playerPhones: remaining.map((r: any) => r.player.phoneNumber),
+                                playerCount: remaining.length,
+                                originalMatchId: mp.matchId,
+                                originalStartTime: match.startTime,
+                                originalSkillLevel: (match as any).skillLevel ?? 0,
+                                originalCourtIsCovered: (match as any).court?.isCovered ?? null,
+                                originalCourtName: (match as any).court?.name,
+                                reason: 'CANCELLATION',
+                                intent: 'MATCHMAKING',
+                            }).catch(err => logger.error({ err, matchId: mp.matchId }, 'CANCEL_MATCH last-minute redirectGroup failed'));
+                        }
+                        const { notifyAdmin } = await import('../utils/notify-admin');
+                        notifyAdmin(
+                            `❌ Disdetta last-minute di ${leavingName}: partita di ${matchTimeStr} annullata (${remaining.length} giocatori reindirizzati).`,
+                            `lastminute-cancel-${mp.matchId}`,
+                        ).catch(() => {});
+                    } else {
+                        // Matchmaking LOCKED con margine: riapri e rilancia wave con urgenza
+                        const matchUpdate: any = { status: 'OPEN', recoveryWaveCount: { increment: 1 } };
 
-                    // Notifica 1-a-1 i co-giocatori rimasti
-                    for (const rmp of (match as any).MatchPlayer) {
-                        const phone = rmp.player?.phoneNumber;
-                        if (phone) {
-                            simulateTypingAndSend(`${phone}@s.whatsapp.net`,
+                        // Se esiste un gruppo WA: scioglilo (messaggio finale + rimozione partecipanti) e azzera groupId
+                        if ((match as any).groupId) {
+                            dissolveGroup(
+                                (match as any).groupId,
+                                `${leavingName} non può più venire alla partita di ${matchTimeStr}. Sciogliamo il gruppo — appena troviamo un sostituto ve ne creo uno nuovo 🎾`,
+                                club?.id,
+                            ).catch(err => logger.warn({ err, matchId: mp.matchId }, 'dissolveGroup failed'));
+                            matchUpdate.groupId = null;
+                        }
+
+                        await prisma.match.update({ where: { id: mp.matchId }, data: matchUpdate });
+                        waveQueue.add('process-wave', {
+                            matchId: mp.matchId,
+                            waveNumber: 1,
+                            urgencyMultiplier: 2,
+                            scheduledAt: Date.now(),
+                        }, { delay: 0 }).catch(err => logger.warn({ err, matchId: mp.matchId }, 'Wave scheduling failed'));
+
+                        // Notifica 1-a-1 i co-giocatori rimasti
+                        for (const rmp of remaining) {
+                            simulateTypingAndSend(`${rmp.player.phoneNumber}@s.whatsapp.net`,
                                 `${leavingName} non può più venire alla partita di ${matchTimeStr}. Tu resti dentro, al sostituto ci pensiamo noi — non devi fare nulla 🎾`
                             ).catch(() => {});
                         }
@@ -1195,9 +1252,12 @@ export async function executeAction(
             }
             const startTime = parseBookingDateTime(params.newDay, params.newTime);
             if (!startTime) return { success: false, errorMessage: 'Orario non valido.' };
+            const pastErr = checkNotInPast(startTime);
+            if (pastErr) return { success: false, errorMessage: pastErr };
 
             const mp = await prisma.matchPlayer.findUnique({ where: { id: params.matchPlayerId } });
             if (!mp) return { success: false, errorMessage: 'Partecipazione non trovata.' };
+            if (mp.playerId !== player?.id) return { success: false, errorMessage: 'Partecipazione non trovata.' };
 
             // Tipo del vecchio match (privata vs matchmaking) — serve per propagarlo al nuovo slot
             const oldMatchPre = await prisma.match.findUnique({
@@ -1276,6 +1336,8 @@ export async function executeAction(
         if (action === 'BOOK_FIELD') {
             const startTime = parseBookingDateTime(params.day, params.time);
             if (!startTime) return { success: false, errorMessage: 'Orario non valido.' };
+            const pastErr = checkNotInPast(startTime);
+            if (pastErr) return { success: false, errorMessage: pastErr };
 
             if (params.joinMatchId) {
                 const joinResult = await joinExistingMatch(params.joinMatchId, player);
@@ -1652,7 +1714,7 @@ function isMatchGenderCompatible(
     }
 }
 
-async function joinExistingMatch(matchId: string, player: any): Promise<{ success: boolean; errorMessage?: string }> {
+export async function joinExistingMatch(matchId: string, player: any): Promise<{ success: boolean; errorMessage?: string }> {
     try {
         await prisma.$transaction(async (tx: any) => {
             await tx.$executeRaw`SELECT 1 FROM "Match" WHERE id = ${matchId} FOR UPDATE`;
@@ -2098,50 +2160,79 @@ async function createNewMatchAction(
 }
 
 function buildRomeTime(baseDate: Date, h: number, m: number): Date {
-    const noon = new Date(Date.UTC(baseDate.getFullYear(), baseDate.getMonth(), baseDate.getDate(), 12, 0, 0));
+    // Getter UTC: il risultato non deve dipendere dal timezone del server
+    // (le baseDate sono costruite a mezzogiorno/mezzanotte UTC del giorno-calendario di Roma)
+    const noon = new Date(Date.UTC(baseDate.getUTCFullYear(), baseDate.getUTCMonth(), baseDate.getUTCDate(), 12, 0, 0));
     const noonRomeHour = Number(noon.toLocaleString('en-US', { timeZone: 'Europe/Rome', hour: '2-digit', hour12: false }));
     const offsetH = noonRomeHour - 12;
     let utcH = h - offsetH;
     let dayOffset = 0;
     if (utcH < 0) { utcH += 24; dayOffset = -1; }
     if (utcH >= 24) { utcH -= 24; dayOffset = 1; }
-    return new Date(Date.UTC(baseDate.getFullYear(), baseDate.getMonth(), baseDate.getDate() + dayOffset, utcH, m, 0));
+    return new Date(Date.UTC(baseDate.getUTCFullYear(), baseDate.getUTCMonth(), baseDate.getUTCDate() + dayOffset, utcH, m, 0));
+}
+
+/** Ritorna un messaggio d'errore (già user-friendly) se l'orario è nel passato, altrimenti null. */
+function checkNotInPast(startTime: Date): string | null {
+    if (startTime.getTime() >= Date.now() - 5 * 60 * 1000) return null;
+    const _pastMsgs = [
+        `Quell'orario è già passato! Dimmi un altro orario e ci penso io 🎾`,
+        `Quell'orario è ormai andato 😅 Dimmi quando vuoi giocare e prenoto subito!`,
+        `Siamo già oltre quell'orario! Scrivimi un orario futuro e procedo 🎾`,
+    ];
+    return _pastMsgs[Math.floor(Math.random() * _pastMsgs.length)];
 }
 
 function parseBookingDateTime(day: string, time: string): Date | null {
     if (!time) return null;
-    const [h, m] = time.split(':').map(Number);
+    const [h, m] = String(time).split(':').map(Number);
     if (isNaN(h) || isNaN(m)) return null;
 
     const now = new Date();
-    let targetDate = new Date(now);
+    // Base = giorno-calendario di ROMA (non del server, che gira in UTC): tra mezzanotte
+    // e le 2 ora di Roma il giorno UTC è ancora quello precedente → "domani"/giorni
+    // della settimana calcolati col tz del server sbagliavano di un giorno.
+    const romeDateStr = now.toLocaleString('sv-SE', { timeZone: 'Europe/Rome' }).split(' ')[0]; // "YYYY-MM-DD"
+    const [ry, rmo, rd] = romeDateStr.split('-').map(Number);
+    let targetDate = new Date(Date.UTC(ry, rmo - 1, rd, 12, 0));
+    const addDays = (n: number) => { targetDate = new Date(targetDate.getTime() + n * 86_400_000); };
 
-    if (!day || day === 'oggi') {
+    // Normalizza: minuscole + senza accenti, così "lunedi"/"Lunedì"/"il lunedì" si equivalgono
+    const dayNorm = (day || '').toLowerCase().trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+
+    if (!dayNorm || dayNorm === 'oggi' || dayNorm === 'stasera' || dayNorm === 'stamattina' || dayNorm === 'oggi pomeriggio') {
         // keep today
-    } else if (day === 'domani') {
-        targetDate.setDate(targetDate.getDate() + 1);
-    } else if (/^\d{4}-\d{2}-\d{2}$/.test(day)) {
-        const [y, mo, d] = day.split('-').map(Number);
+    } else if (dayNorm === 'domani') {
+        addDays(1);
+    } else if (dayNorm === 'dopodomani') {
+        addDays(2);
+    } else if (/^\d{4}-\d{2}-\d{2}$/.test(dayNorm)) {
+        const [y, mo, d] = dayNorm.split('-').map(Number);
         targetDate = new Date(Date.UTC(y, mo - 1, d, 12, 0));
         // safety: se il brain ha passato una data ISO già passata (es. ha risolto
         // "martedì" a oggi invece di passare il nome del giorno), avanza di 7 giorni
         const candidate = buildRomeTime(targetDate, h, m);
         if (candidate && candidate.getTime() < now.getTime() - 5 * 60 * 1000) {
             logger.warn({ day, time }, 'parseBookingDateTime: ISO date in the past, advancing 7 days');
-            targetDate.setDate(targetDate.getDate() + 7);
+            addDays(7);
         }
     } else {
         const dayMap: Record<string, number> = {
-            domenica: 0, lunedì: 1, martedì: 2, mercoledì: 3,
-            giovedì: 4, venerdì: 5, sabato: 6,
+            domenica: 0, lunedi: 1, martedi: 2, mercoledi: 3,
+            giovedi: 4, venerdi: 5, sabato: 6,
         };
-        const target = dayMap[day.toLowerCase()];
-        if (target !== undefined) {
-            const current = now.getDay();
-            let diff = target - current;
-            if (diff <= 0) diff += 7;
-            targetDate.setDate(targetDate.getDate() + diff);
+        // includes() tollera prefissi/suffissi tipo "sabato prossimo", "il sabato"
+        const foundKey = Object.keys(dayMap).find(k => dayNorm.includes(k));
+        if (foundKey === undefined) {
+            // Giorno non riconosciuto: meglio fallire (il bot ri-chiede) che prenotare
+            // silenziosamente OGGI come faceva prima.
+            logger.warn({ day, time }, 'parseBookingDateTime: giorno non riconosciuto');
+            return null;
         }
+        const currentRomeDow = new Date(Date.UTC(ry, rmo - 1, rd)).getUTCDay();
+        let diff = dayMap[foundKey] - currentRomeDow;
+        if (diff <= 0) diff += 7;
+        addDays(diff);
     }
 
     return buildRomeTime(targetDate, h, m);

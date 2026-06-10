@@ -1,6 +1,8 @@
 import { Worker, Job } from 'bullmq';
-import { getRedis } from '../services/queue';
+import { connection } from '../services/queue';
+import { prisma } from '../services/db';
 import { sendMessage } from '../services/whatsapp';
+import { runWithContext } from '../utils/request-context';
 import pino from 'pino';
 
 const logger = pino({ level: 'info' });
@@ -17,6 +19,18 @@ export const reminderWorker = new Worker<ReminderJobData>(
     `${prefix}reminder`,
     async (job: Job<ReminderJobData>) => {
         const { matchId, groupId, timeStr } = job.data;
+
+        // Il reminder è schedulato ore prima: nel frattempo la partita può essere stata
+        // cancellata o il gruppo sciolto/ricreato. Ricontrolla lo stato prima di inviare.
+        const match = await prisma.match.findUnique({
+            where: { id: matchId },
+            select: { status: true, groupId: true, clubId: true },
+        });
+        if (!match || match.status !== 'LOCKED' || match.groupId !== groupId) {
+            logger.info({ matchId, groupId, status: match?.status }, 'Reminder skipped — match cancelled or group changed');
+            return;
+        }
+
         logger.info(`Sending Reminder for Match ${matchId} to Group ${groupId}`);
 
         const variants = [
@@ -29,12 +43,15 @@ export const reminderWorker = new Worker<ReminderJobData>(
         const msg = variants[Math.floor(Math.random() * variants.length)];
 
         try {
-            await sendMessage(groupId, msg);
+            // Contesto club: in multi-tenant serve il socket WA del circolo giusto
+            await runWithContext({ correlationId: `reminder-${matchId}`, clubId: match.clubId }, () =>
+                sendMessage(groupId, msg)
+            );
         } catch (error) {
             logger.error({ error }, `Failed to send reminder to ${groupId}`);
         }
     },
-    { connection: getRedis() as any }
+    { connection }
 );
 
 reminderWorker.on('failed', (job, err) => {

@@ -112,16 +112,29 @@ export async function processMatchOutcomes(matchId: string): Promise<void> {
         const showed = !!mp && !mp.noShow;
 
         if (inv.status === 'PENDING') {
-            // Reliability v2: invitato che non ha MAI risposto.
-            //  · partita GIOCATA (LOCKED) → outcome GHOST (conta come mancata conversione)
-            //  · partita non giocata (cancellata/non riempita) → MATCH_CANCELLED (escluso, nessuna chance)
-            const outcome = match.status === 'LOCKED' ? 'GHOST' : 'MATCH_CANCELLED';
-            await prisma.invitation.update({
-                where: { id: inv.id },
-                data: { status: 'EXPIRED', outcome } as any,
-            });
-            touched.add(inv.playerId);
-            continue; // nessun feedback a chi non ha risposto
+            if (mp) {
+                // Invito rimasto PENDING ma il giocatore è di fatto IN partita (entrato per
+                // un'altra via: redirect, aggiunta manuale, join diretto). Non è un fantasma:
+                // conta come conversione (o NO_SHOW se l'admin l'ha marcato assente).
+                const outcome = mp.noShow ? 'NO_SHOW' : 'ACCEPTED';
+                await prisma.invitation.update({
+                    where: { id: inv.id },
+                    data: { status: 'ACCEPTED', respondedAt: new Date(), outcome } as any,
+                });
+                touched.add(inv.playerId);
+                // niente continue: se presente (showed) riceve la richiesta feedback qui sotto
+            } else {
+                // Reliability v2: invitato che non ha MAI risposto.
+                //  · partita GIOCATA (LOCKED) → outcome GHOST (conta come mancata conversione)
+                //  · partita non giocata (cancellata/non riempita) → MATCH_CANCELLED (escluso, nessuna chance)
+                const outcome = match.status === 'LOCKED' ? 'GHOST' : 'MATCH_CANCELLED';
+                await prisma.invitation.update({
+                    where: { id: inv.id },
+                    data: { status: 'EXPIRED', outcome } as any,
+                });
+                touched.add(inv.playerId);
+                continue; // nessun feedback a chi non ha risposto
+            }
         }
 
         // ACCEPTED+presente: l'outcome ACCEPTED è già taggato all'accept → qui solo il feedback.
@@ -515,12 +528,13 @@ const RELIAB_PRIOR_SMOOTH = 3;       // osservazioni-prior virtuali (smoothing):
 // Outcome possibili (campo Invitation.outcome). Valore nella finestra; null = ESCLUSO.
 export type InvOutcome =
     | 'ACCEPTED' | 'DECLINED' | 'GHOST' | 'CANCELLED_AFTER_ACCEPT'
-    | 'WILLING_FULL' | 'MATCH_CANCELLED' | 'SLOT_FILLED';
+    | 'WILLING_FULL' | 'MATCH_CANCELLED' | 'SLOT_FILLED' | 'NO_SHOW';
 
 function outcomeValue(outcome: string, nearby: boolean): number | null {
     switch (outcome) {
         case 'ACCEPTED': return 1;                    // conversione riuscita
         case 'CANCELLED_AFTER_ACCEPT': return 0;      // ha accettato e si è tirato indietro
+        case 'NO_SHOW': return 0;                     // confermato ma non presentato (marcato dall'admin)
         case 'DECLINED':
         case 'GHOST': return nearby ? NEARBY_DISCOUNT : 0; // non convertito (scontato se ha partita vicina)
         case 'WILLING_FULL':                          // voleva ma era pieno → nessuna colpa

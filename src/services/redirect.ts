@@ -726,31 +726,53 @@ async function addGroupToMatch(matchId: string, group: RedirectGroup): Promise<v
         return;
     }
 
+    // Riusa joinExistingMatch (brain.ts): transazione con FOR UPDATE, check genere,
+    // lock gender-aware per i misti, upsert invitation (aggiorna eventuali PENDING →
+    // niente falsi GHOST a fine partita). Import dinamico per evitare cicli di modulo.
+    const { joinExistingMatch } = await import('./brain');
+    let joinedAny = false;
+    let lastError: string | null = null;
     for (const phone of group.playerPhones) {
-        const player = await prisma.player.findFirst({ where: { phoneNumber: phone } });
+        const player = await prisma.player.findFirst({ where: { phoneNumber: phone, clubId: group.clubId } });
         if (!player) continue;
+        try {
+            const res = await joinExistingMatch(matchId, player);
+            if (res.success || res.errorMessage === 'ALREADY_JOINED') joinedAny = true;
+            else lastError = res.errorMessage ?? null;
+        } catch (err) {
+            logger.error({ err, phone, matchId }, 'addGroupToMatch: joinExistingMatch failed');
+        }
+    }
 
-        const alreadyIn = await prisma.matchPlayer.findUnique({
-            where: { matchId_playerId: { matchId, playerId: player.id } },
-        });
-        if (alreadyIn) continue;
-
-        await prisma.matchPlayer.create({ data: { matchId, playerId: player.id } });
-        await prisma.invitation.create({
-            data: { matchId, playerId: player.id, status: 'ACCEPTED' },
-        });
+    if (!joinedAny) {
+        const _failMsgs: Record<string, string[]> = {
+            GENDER_MISMATCH: [
+                'Quella partita è riservata a giocatori di un altro genere, non posso aggiungerti 😔 Vuoi un\'altra opzione?',
+            ],
+            GENDER_SLOT_FULL: [
+                'I posti per il tuo genere in quella partita si sono appena esauriti 😕 Vuoi scegliere un\'altra opzione?',
+            ],
+            DEFAULT: [
+                'Mi dispiace, i posti disponibili sono cambiati! Vuoi scegliere un\'altra opzione?',
+                'Quella si è riempita appena prima di te, scegliene un\'altra 😅',
+                'Qualcuno ha appena preso l\'ultimo posto, quale altra opzione ti va? 😔',
+            ],
+        };
+        const pool = _failMsgs[lastError ?? ''] ?? _failMsgs.DEFAULT;
+        await simulateTypingAndSend(group.referentJid, pool[Math.floor(Math.random() * pool.length)]);
+        return;
     }
 
     const updatedMatch = await prisma.match.findUnique({
         where: { id: matchId },
-        include: { MatchPlayer: true, court: true },
+        include: { MatchPlayer: { where: { leftAt: null } }, court: true },
     });
-    const newCount = updatedMatch!.MatchPlayer.filter((mp: any) => !mp.leftAt).length;
+    const newCount = updatedMatch!.MatchPlayer.length;
+    const nowLocked = updatedMatch!.status === 'LOCKED';
 
-    if (newCount >= match.playersNeeded) {
-        await prisma.match.update({ where: { id: matchId }, data: { status: 'LOCKED' } });
-
+    if (nowLocked) {
         if (match.groupId) {
+            // Gruppo già esistente: aggiungi i nuovi e dai il benvenuto
             const { getSock } = await import('./whatsapp');
             const sock = getSock();
             if (sock) {
@@ -758,7 +780,7 @@ async function addGroupToMatch(matchId: string, group: RedirectGroup): Promise<v
                     await sock.groupParticipantsUpdate(match.groupId, [`${phone}@s.whatsapp.net`], 'add');
                 }
                 const newPlayers = await prisma.player.findMany({
-                    where: { phoneNumber: { in: group.playerPhones } },
+                    where: { phoneNumber: { in: group.playerPhones }, clubId: group.clubId },
                     select: { name: true },
                 });
                 const newNames = newPlayers.map(p => (p.name || '').split(' ')[0]).filter(Boolean).join(', ') || 'i nuovi arrivati';
@@ -771,13 +793,19 @@ async function addGroupToMatch(matchId: string, group: RedirectGroup): Promise<v
                 ];
                 await sendMessage(match.groupId, welcomeVariants[Math.floor(Math.random() * welcomeVariants.length)]);
             }
+        } else {
+            // Nessun gruppo ancora: la partita si è riempita proprio con questo join →
+            // crea gruppo WA + scheda riepilogo + reminder (come ogni altro path di riempimento)
+            const { handleMatchFilled } = await import('./messageHandler');
+            await handleMatchFilled(matchId, updatedMatch!.startTime).catch(err =>
+                logger.error({ err, matchId }, 'addGroupToMatch: handleMatchFilled failed'));
         }
     }
 
-    const timeStr = match.startTime.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
+    const timeStr = match.startTime.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Rome' });
     await simulateTypingAndSend(
         group.referentJid,
-        `Perfetto! Vi ho segnati per le ${timeStr} al ${(updatedMatch as any).court?.name || 'Campo'} 🎾${newCount >= match.playersNeeded ? ' Siamo al completo!' : ' Aspettiamo gli altri.'}`
+        `Perfetto! Vi ho segnati per le ${timeStr} al ${(updatedMatch as any).court?.name || 'Campo'} 🎾${nowLocked ? ' Siamo al completo!' : ' Aspettiamo gli altri.'}`
     );
 }
 
@@ -790,7 +818,7 @@ async function createMatchForGroup(option: RedirectOption, group: RedirectGroup)
     // MATCHMAKING redirect → match OPEN (cercano altri giocatori) — caso raro, di solito si sceglie un match esistente
     const isBookField = group.intent === 'BOOK_FIELD' || group.originalSkillLevel <= 0;
 
-    const referent = await prisma.player.findFirst({ where: { phoneNumber: group.referentPhone } });
+    const referent = await prisma.player.findFirst({ where: { phoneNumber: group.referentPhone, clubId: group.clubId } });
     // Priorità: originalSkillLevel del match displacato → skill attuale referente → default 3.5
     // Non usare la skill corrente del referente come prima scelta: potrebbe essere cambiata dopo il displacement
     const skillLevel = group.originalSkillLevel > 0
@@ -840,7 +868,7 @@ async function createMatchForGroup(option: RedirectOption, group: RedirectGroup)
     });
 
     for (const phone of group.playerPhones) {
-        const player = await prisma.player.findFirst({ where: { phoneNumber: phone } });
+        const player = await prisma.player.findFirst({ where: { phoneNumber: phone, clubId: group.clubId } });
         if (!player) continue;
         await prisma.matchPlayer.create({ data: { matchId: match.id, playerId: player.id } });
         await prisma.invitation.create({

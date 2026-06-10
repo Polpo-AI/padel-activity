@@ -101,16 +101,6 @@ export const maintenanceQueue = new Queue(`${prefix}maintenance`, {
     },
 });
 
-export const recoveryQueue = new Queue(`${prefix}recovery`, {
-    connection,
-    defaultJobOptions: {
-        attempts: 3,
-        backoff: { type: 'exponential', delay: 3000 },
-        removeOnComplete: { count: 50 },
-        removeOnFail: { count: 100 },
-    },
-});
-
 // ─────────────────────────────────────────────
 // QUEUE EVENTS — notifica admin su fallimenti
 // ─────────────────────────────────────────────
@@ -143,7 +133,6 @@ function setupQueueEvents(name: string) {
 }
 
 export const waveQueueEvents       = setupQueueEvents('wave');
-export const recoveryQueueEvents   = setupQueueEvents('recovery');
 export const maintenanceQueueEvents = setupQueueEvents('maintenance');
 
 // ─────────────────────────────────────────────

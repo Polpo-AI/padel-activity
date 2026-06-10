@@ -523,7 +523,8 @@ router.post('/matches/:id/cancel', authMiddleware, async (req: Request, res: Res
 // LESSON 36: rotta specifica PRIMA di /:id generica
 router.post('/matches/:id/no-show/:playerId', authMiddleware, async (req: Request, res: Response) => {
     const clubId = (req as any).clubId;
-    const { id: matchId, playerId } = req.params;
+    const matchId = String(req.params.id);
+    const playerId = String(req.params.playerId);
 
     try {
         const mp = await prisma.matchPlayer.findFirst({
@@ -536,8 +537,23 @@ router.post('/matches/:id/no-show/:playerId', authMiddleware, async (req: Reques
             data: { noShow: true },
         });
 
-        const { decreaseReliability } = await import('../services/scoring');
-        await decreaseReliability(playerId).catch((err: any) => logger.error({ err }, 'decreaseReliability failed'));
+        // Reliability v2: la penalità va taggata come outcome sull'invito, non scritta con
+        // l'EMA legacy (qualsiasi recomputeReliability successivo la sovrascriverebbe).
+        const { setInvitationOutcome, recomputeReliability } = await import('../services/scoring');
+        const inv = await prisma.invitation.findFirst({
+            where: { matchId, playerId },
+            orderBy: { sentAt: 'desc' },
+            select: { id: true },
+        });
+        if (inv) {
+            await setInvitationOutcome(inv.id, 'NO_SHOW').catch((err: any) => logger.error({ err }, 'setInvitationOutcome NO_SHOW failed'));
+        } else {
+            // Entrato senza invito (redirect/manuale): crea il record così il NO_SHOW entra nella finestra
+            await prisma.invitation.create({
+                data: { matchId, playerId, status: 'ACCEPTED', respondedAt: new Date(), outcome: 'NO_SHOW' } as any,
+            }).catch((err: any) => logger.error({ err }, 'NO_SHOW invitation create failed'));
+            await recomputeReliability(playerId).catch((err: any) => logger.error({ err }, 'recomputeReliability failed'));
+        }
 
         logger.info({ matchId, playerId, clubId }, 'No-show marked by admin');
         res.json({ success: true });

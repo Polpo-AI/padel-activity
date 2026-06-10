@@ -1,18 +1,14 @@
 /**
  * RECOVERY SERVICE
  *
- * Gestisce disdette, recovery wave e match non riempibili.
- * Fix:
- * - getPlayersForRecovery importato da scoring (non più da matchmaker)
- * - notifyAdmin importato da utils/notify-admin (non da onboarding)
- * - decreaseReliability importato da scoring (non reliability.ts — eliminato)
- * - match.court → match.court?.name
+ * Gestisce match non riempibili e timeout pre-partita.
+ * Le disdette passano da CANCEL_MATCH in brain.ts (handleCancellation/launchRecoveryWave
+ * erano codice morto e sono stati rimossi: la recovery post-disdetta è la wave urgente
+ * lanciata da CANCEL_MATCH, con cap recoveryWaveCount gestito lì).
  */
 
 import { prisma } from './db';
 import { simulateTypingAndSend } from './whatsapp';
-import { generateInvitation } from './ai';
-import { getPlayersForRecovery, setInvitationOutcome } from './scoring';
 import { notifyAdmin } from '../utils/notify-admin';
 import { formatMatchSlot } from '../utils/format-match';
 import pino from 'pino';
@@ -20,223 +16,6 @@ import pino from 'pino';
 const logger = pino({ level: 'info' });
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 const randomInt = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1)) + min;
-
-// Tetto al numero di cicli di recovery per una stessa partita: oltre questo la consideriamo
-// non riempibile invece di rilanciare all'infinito (gruppi instabili che entrano/escono).
-const MAX_RECOVERY_WAVES = 3;
-
-// ─────────────────────────────────────────────
-// GESTIONE DISDETTA DA MATCH LOCKED
-// ─────────────────────────────────────────────
-
-export async function handleCancellation(
-    senderJid: string,
-    senderPhone: string,
-    matchId: string,
-    matchPlayerId: string,
-    messageKey?: any
-): Promise<void> {
-    const match = await prisma.match.findUnique({
-        where: { id: matchId },
-        include: {
-            MatchPlayer: { include: { player: true } },
-            club: true,
-            court: true,
-        },
-    });
-
-    if (!match) return;
-
-    const now = new Date();
-    const minutesUntilMatch = (match.startTime.getTime() - now.getTime()) / 60000;
-    const isLastMinute = minutesUntilMatch < 60;
-    const courtName = (match.court?.name ?? 'il campo') + (match.court ? (match.court.isCovered ? ' 🏠' : ' ☀️') : '');
-    const timeStr = match.startTime.toLocaleTimeString('it-IT', { timeZone: 'Europe/Rome', hour: '2-digit', minute: '2-digit' });
-
-    // ✅ FIX N: transazione atomica — segna uscita + ricalcola posti in un'unica operazione
-    // Previene race condition se due giocatori disdettano simultaneamente.
-    const { spotsLeft, playerId } = await prisma.$transaction(async (tx) => {
-        // Segna il giocatore come uscito
-        const updated = await tx.matchPlayer.update({
-            where: { id: matchPlayerId },
-            data: { leftAt: now },
-            select: { playerId: true },
-        });
-
-        // Ricalcola i posti rimanenti all'interno della stessa transazione
-        const current = await tx.match.findUnique({
-            where: { id: matchId },
-            include: { MatchPlayer: { where: { leftAt: null } } },
-        });
-        const remaining = current ? current.MatchPlayer.length : 0;
-        const spots = match.playersNeeded - remaining;
-
-        return { spotsLeft: spots, playerId: updated.playerId };
-    });
-
-    // Reliability v2: si è tirato indietro dopo aver accettato → tagga l'invito
-    // CANCELLED_AFTER_ACCEPT (best-effort, fuori transazione).
-    const recInv = await prisma.invitation.findFirst({ where: { matchId, playerId }, select: { id: true } });
-    if (recInv) await setInvitationOutcome(recInv.id, 'CANCELLED_AFTER_ACCEPT').catch(() => {});
-
-    await simulateTypingAndSend(
-        senderJid,
-        isLastMinute
-            ? ["Ok, mi dispiace per la disdetta last-minute 😕 Gli altri giocatori verranno avvisati. Cerca di avvisare prima la prossima volta!", "Capito, mi dispiace per il preavviso così breve 😕 Avviso subito gli altri. La prossima volta cerca di dirlo prima!", "Preso nota, anche se un po' tardi 😕 Avviso il gruppo. Per il futuro cerca di avvisare con più anticipo!"][Math.floor(Math.random() * 3)]
-            : ["Ok, capito! Cerco subito un sostituto e avviso gli altri 👍", "Tranquillo! Mi metto subito a cercare qualcuno 🔍", "Preso! Avviso il gruppo e cerco un sostituto 💪", "Ok, mi metto in moto! Cerco qualcuno per il tuo posto 🎾"][Math.floor(Math.random() * 4)],
-        messageKey
-    );
-
-    if (spotsLeft <= 0) return; // ✅ FIX N: già calcolato atomicamente sopra
-
-    // Tetto recovery: se abbiamo già rilanciato MAX_RECOVERY_WAVES volte, non insistere all'infinito
-    // → tratta la partita come non riempibile (cancella + notifica) invece di riaprirla di nuovo.
-    if (match.recoveryWaveCount >= MAX_RECOVERY_WAVES) {
-        logger.warn({ matchId, recoveryWaveCount: match.recoveryWaveCount }, `Recovery cap (${MAX_RECOVERY_WAVES}) raggiunto — match non riempibile`);
-        await handleMatchUnfillable(matchId);
-        return;
-    }
-
-    // Rimetti in OPEN
-    await prisma.match.update({
-        where: { id: matchId },
-        data: { status: 'OPEN', recoveryWaveCount: { increment: 1 } },
-    });
-
-    // Notifica gruppo WhatsApp
-    if (match.groupId && !match.groupId.startsWith('WHOLE_COURT_')) {
-        const urgencyMsg = isLastMinute
-            ? [
-                `⚠️ Disdetta dell'ultimo minuto! Stiamo cercando un sostituto in corsa, tenetevi pronti!`,
-                `⚠️ Un giocatore ha appena disdetto. Ci stiamo muovendo subito per trovare qualcuno!`,
-                `⚠️ Disdetta last-minute! Sto cercando un sostituto urgentemente 🔍`,
-                `⚠️ Disdetta all'ultimo! Mi sto muovendo subito per trovare qualcuno 🔍`,
-                `⚠️ Un posto si è liberato all'improvviso, cerco subito un sostituto!`,
-              ][Math.floor(Math.random() * 5)]
-            : [
-                `Un giocatore ha disdetto. Sto cercando qualcuno per completare la squadra 🔍`,
-                `Aggiornamento: una disdetta, cerco subito qualcuno per completare la squadra 🎾`,
-                `Ci manca un giocatore. Sto già cercando qualcuno, a breve aggiornamenti!`,
-                `Disdetta nel gruppo, mi metto subito a cercare qualcuno 🔍`,
-                `Un posto si è liberato. Sto cercando qualcuno, vi aggiorno presto!`,
-              ][Math.floor(Math.random() * 5)];
-        try {
-            const { sendMessage } = await import('./whatsapp');
-            await sendMessage(match.groupId, urgencyMsg);
-        } catch (err) {
-            logger.error({ err }, 'Failed to notify group about cancellation');
-        }
-    }
-
-    await notifyAdmin(
-        `⚠️ Disdetta${isLastMinute ? ' LAST-MINUTE' : ''}\n` +
-        `${courtName} alle ${timeStr}\n` +
-        `Da: ${senderPhone} — Posti da recuperare: ${spotsLeft}`,
-        `cancellation-${matchId}`
-    );
-
-    await launchRecoveryWave(matchId, spotsLeft, isLastMinute);
-}
-
-// ─────────────────────────────────────────────
-// RECOVERY WAVE
-// ─────────────────────────────────────────────
-
-export async function launchRecoveryWave(
-    matchId: string,
-    spotsNeeded: number,
-    isUrgent: boolean = false
-): Promise<void> {
-    logger.info(`Recovery wave for ${matchId}, spots=${spotsNeeded}, urgent=${isUrgent}`);
-
-    const match = await prisma.match.findUnique({
-        where: { id: matchId },
-        include: { club: true, court: true },
-    });
-
-    if (!match || match.status !== 'OPEN') {
-        logger.info(`Match ${matchId} not OPEN, aborting recovery`);
-        return;
-    }
-
-    const targets = await getPlayersForRecovery(matchId);
-
-    if (targets.length === 0) {
-        logger.warn(`Recovery: no players available for ${matchId}`);
-        await handleMatchUnfillable(matchId);
-        return;
-    }
-
-    // Stato match prima del loop — aggiornato ogni 3 invii
-    let currentSpots = spotsNeeded;
-    let currentStatus = 'OPEN';
-
-    for (let i = 0; i < targets.length; i++) {
-        if (currentStatus !== 'OPEN' || currentSpots <= 0) break;
-
-        if (i % 3 === 0) {
-            const snapshot = await prisma.match.findUnique({
-                where: { id: matchId },
-                include: { MatchPlayer: true },
-            });
-            if (!snapshot) break;
-            currentStatus = snapshot.status;
-            currentSpots = snapshot.playersNeeded - snapshot.MatchPlayer.filter(mp => !mp.leftAt).length;
-            if (currentStatus !== 'OPEN' || currentSpots <= 0) break;
-        }
-
-        const player = targets[i];
-
-        await prisma.invitation.create({
-            data: { matchId, playerId: player.id, status: 'PENDING' },
-        });
-
-        const text = await generateInvitation(
-            player.name || 'Amico',
-            match.startTime,
-            match.courtId,
-            match.clubId ?? undefined,
-            false
-        );
-
-        const delayMs = isUrgent ? randomInt(10, 25) * 1000 : randomInt(20, 45) * 1000;
-        if (i > 0) await sleep(delayMs);
-
-        try {
-            await simulateTypingAndSend(player.phoneNumber, text);
-            await prisma.player.update({
-                where: { id: player.id },
-                data: {
-                    lastContactedAt: new Date(),
-                    dailyMessagesCount: { increment: 1 },
-                },
-            });
-        } catch (err) {
-            logger.error({ err }, `Failed to send recovery message to ${player.phoneNumber}`);
-        }
-    }
-
-    // Follow-up: se dopo questo giro restano posti e la partita è ancora OPEN, programma una wave
-    // normale (candidati freschi, esclude chi ha già un invito pendente) con un breve delay.
-    // Senza questo, una recovery in cui tutti ignorano resterebbe ferma fino al cron checkSilentMatches.
-    try {
-        const after = await prisma.match.findUnique({
-            where: { id: matchId },
-            include: { MatchPlayer: { where: { leftAt: null } } },
-        });
-        if (after && after.status === 'OPEN' && after.MatchPlayer.length < after.playersNeeded) {
-            const { waveQueue } = await import('./queue');
-            const followUpDelayMs = isUrgent ? 5 * 60 * 1000 : 15 * 60 * 1000;
-            waveQueue.add('process-wave', {
-                matchId,
-                waveNumber: after.recoveryWaveCount + 1,
-                scheduledAt: Date.now() + followUpDelayMs,
-            }, { delay: followUpDelayMs }).catch(err => logger.warn({ err, matchId }, 'Recovery follow-up wave scheduling failed'));
-        }
-    } catch (err) {
-        logger.warn({ err, matchId }, 'Recovery follow-up check failed');
-    }
-}
 
 // ─────────────────────────────────────────────
 // MATCH NON RIEMPIBILE
@@ -456,16 +235,20 @@ export async function checkMatchTimeouts(): Promise<void> {
         }
     }
 
-    // Scadi invitation pendenti di match già terminati
+    // Scadi invitation pendenti di match già terminati e MAI giocati (non-LOCKED):
+    // outcome esplicito MATCH_CANCELLED = neutro nella finestra reliability.
+    // I PENDING su match LOCKED (giocati) NON vanno toccati qui: li processa
+    // processMatchOutcomes che li tagga GHOST (penalità). Marcarli EXPIRED senza
+    // outcome faceva scattare l'inferenza GHOST anche per partite cancellate.
     const expired = await prisma.invitation.updateMany({
         where: {
             status: 'PENDING',
-            match: { startTime: { lt: now } },
+            match: { startTime: { lt: now }, status: { not: 'LOCKED' } },
         },
-        data: { status: 'EXPIRED' },
+        data: { status: 'EXPIRED', outcome: 'MATCH_CANCELLED' } as any,
     });
 
     if (expired.count > 0) {
-        logger.info(`Expired ${expired.count} stale PENDING invitations`);
+        logger.info(`Expired ${expired.count} stale PENDING invitations (outcome=MATCH_CANCELLED)`);
     }
 }

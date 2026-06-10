@@ -18,7 +18,7 @@ import { Router, Request, Response, NextFunction } from 'express';
 import { prisma } from '../services/db';
 import { getAllClubStatuses } from '../services/whatsapp';
 import { checkDbHealth } from '../services/db';
-import { checkRedisHealth, waveQueue, recoveryQueue, reminderQueue, maintenanceQueue } from '../services/queue';
+import { checkRedisHealth, waveQueue, reminderQueue, maintenanceQueue } from '../services/queue';
 import { calculateCostFromPrices } from '../services/pricing';
 import * as jwt from 'jsonwebtoken';
 import pino from 'pino';
@@ -491,7 +491,7 @@ router.get('/system', adminAuth, async (_req: Request, res: Response) => {
         // Conteggi code BullMQ (best-effort: se Redis è giù, fallback a null)
         let queues: Record<string, any> | null = null;
         try {
-            const defs: [string, any][] = [['wave', waveQueue], ['recovery', recoveryQueue], ['reminder', reminderQueue], ['maintenance', maintenanceQueue]];
+            const defs: [string, any][] = [['wave', waveQueue], ['reminder', reminderQueue], ['maintenance', maintenanceQueue]];
             const counts = await Promise.all(defs.map(([, q]) => q.getJobCounts('waiting', 'active', 'delayed', 'failed')));
             queues = {};
             defs.forEach(([name], i) => { queues![name] = counts[i]; });
