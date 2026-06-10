@@ -1,7 +1,7 @@
 /**
  * MESSAGE HANDLER
  *
- * Riceve batch dalla inbound-queue (debounce 10s per JID).
+ * Riceve batch dalla inbound-queue (debounce per JID — vedi DEBOUNCE_MS in inbound-queue.ts).
  * Flow:
  * 1. Deduplication + trascrizione audio
  * 2. Onboarding attivo → continueOnboarding
@@ -581,6 +581,24 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[], cor
                         await simulateTypingAndSend(jid, _notFoundMsgs[Math.floor(Math.random() * _notFoundMsgs.length)]);
                     }
                 }
+            } else if (result.errorMessage.startsWith('PLAYER_AMBIGUOUS:')) {
+                // Più giocatori corrispondono al nome: chiedi quale, mai invitare a caso
+                const names = result.errorMessage.split(':').slice(1).join(':').split('|').filter(Boolean);
+                const _ambiguousMsgs = [
+                    `Ho trovato più giocatori con quel nome: ${names.join(', ')}. Quale intendi? Dimmi nome e cognome e lo invito 🎾`,
+                    `Ce n'è più d'uno con quel nome (${names.join(', ')}) — dimmi nome e cognome esatti così non sbaglio persona 😊`,
+                    `Nel circolo risultano: ${names.join(', ')}. Chi di loro? Scrivimi nome e cognome e procedo 🎾`,
+                ];
+                await simulateTypingAndSend(jid, _ambiguousMsgs[Math.floor(Math.random() * _ambiguousMsgs.length)]);
+            } else if (result.errorMessage.startsWith('NO_ACTIVE_MATCH_FOR_INVITE:')) {
+                // L'amico esiste ma non c'è una partita aperta a cui agganciarlo
+                const friendName = result.errorMessage.split(':').slice(1).join(':').trim() || 'il tuo amico';
+                const _noMatchMsgs = [
+                    `${friendName} è iscritto, ma al momento non hai una partita aperta a cui aggiungerlo. Dimmi giorno e orario, apro la partita e lo invito per primo 🎾`,
+                    `Ho trovato ${friendName}! Però non hai partite in cerca di giocatori adesso — prenota prima un campo e lo coinvolgo subito 🎾`,
+                    `${friendName} c'è nella lista! Mi serve solo una partita aperta: dimmi quando volete giocare e lo invito per primo 🎾`,
+                ];
+                await simulateTypingAndSend(jid, _noMatchMsgs[Math.floor(Math.random() * _noMatchMsgs.length)]);
             } else if (result.errorMessage === 'ALREADY_JOINED') {
                 const _alreadyMsgs = [
                     "Sei già dentro a questa partita! Non devi fare altro, ci vediamo in campo 🎾",
@@ -935,6 +953,15 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[], cor
                 if ((result as any).preferredNotFound) {
                     const notFoundName = (result as any).preferredNotFound;
                     await simulateTypingAndSend(jid, `${notFoundName} non risulta iscritto al circolo — ho aperto la partita per te e sto cercando altri giocatori compatibili.`);
+                }
+
+                // Nome del preferito ambiguo (più iscritti corrispondono): la partita è aperta,
+                // ma per la priorità all'amico serve il nome esatto
+                if ((result as any).preferredAmbiguous) {
+                    const pa = (result as any).preferredAmbiguous as { name: string; candidates: string[] };
+                    await simulateTypingAndSend(jid,
+                        `Ho trovato più giocatori che corrispondono a "${pa.name}": ${pa.candidates.join(', ')}. La partita è aperta — dimmi nome e cognome esatti e gli do la priorità 🎾`
+                    );
                 }
 
                 // Bug fix: se il player è diventato il 4° (match ora LOCKED, matchmaking) → crea gruppo WA.

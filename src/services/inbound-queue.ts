@@ -1,7 +1,10 @@
 /**
  * INBOUND QUEUE
  *
- * Debounce 20s per JID: accumula messaggi in arrivo e li processa in batch.
+ * Debounce per JID (default 60s, override con INBOUND_DEBOUNCE_MS): accumula i
+ * messaggi in arrivo e li processa in batch — ogni nuovo messaggio resetta il timer.
+ * NB: questo è il ritardo minimo di OGNI risposta del bot. 60s è prudente (anti-ban);
+ * per una reattività maggiore abbassare via env, es. INBOUND_DEBOUNCE_MS=15000.
  * Persistenza su Redis: se il processo cade i batch pendenti sopravvivono
  * e vengono recuperati al restart dopo 30s.
  */
@@ -12,7 +15,7 @@ import { getRedis } from './queue';
 
 const logger = pino({ level: 'info' });
 
-const DEBOUNCE_MS = 60000;
+const DEBOUNCE_MS = parseInt(process.env.INBOUND_DEBOUNCE_MS || '60000', 10);
 const REDIS_TTL_S = 600;         // 10 minuti
 const RECOVERY_DELAY_MS = 30000; // 30s dopo startup
 

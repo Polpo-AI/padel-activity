@@ -919,7 +919,14 @@ export async function executeAction(
     player: any,
     club: any,
     phoneNumber?: string,
-): Promise<{ success: boolean; errorMessage?: string; matchId?: string; requestedTime?: Date }> {
+): Promise<{
+    success: boolean;
+    errorMessage?: string;
+    matchId?: string;
+    requestedTime?: Date;
+    preferredNotFound?: string;
+    preferredAmbiguous?: { name: string; candidates: string[] };
+}> {
     if (action === 'NONE') return { success: true };
 
     if (action === 'REGISTER_PLAYER') {
@@ -1354,7 +1361,11 @@ export async function executeAction(
             // Se il brain ha indicato un giocatore preferito (es. "io e Fabio"), prova ad aggiungerlo
             const preferredName = (params.preferredPlayerName || '').trim();
             if (bookResult.success && bookResult.matchId && preferredName) {
-                const preferred = await findPlayerFuzzy(preferredName, player.clubId);
+                const { player: preferred, ambiguous } = await findPlayerFuzzy(preferredName, player.clubId);
+                if (ambiguous) {
+                    // Booking OK ma più giocatori corrispondono al nome: chiedi, non scegliere a caso
+                    return { ...bookResult, preferredAmbiguous: { name: preferredName, candidates: ambiguous } };
+                }
                 if (preferred) {
                     const matchRow = await prisma.match.findUnique({ where: { id: bookResult.matchId }, select: { preferredPlayerIds: true, isMixed: true } });
                     const currentPreferred: string[] = (matchRow as any)?.preferredPlayerIds ?? [];
@@ -1397,7 +1408,8 @@ export async function executeAction(
         if (action === 'INVITE_PREFERRED') {
             const playerName = (params.playerName || '').trim();
             if (!playerName) return { success: false, errorMessage: 'PLAYER_NOT_FOUND:' };
-            const preferred = await findPlayerFuzzy(playerName, player.clubId);
+            const { player: preferred, ambiguous } = await findPlayerFuzzy(playerName, player.clubId);
+            if (ambiguous) return { success: false, errorMessage: `PLAYER_AMBIGUOUS:${ambiguous.join('|')}` };
             if (!preferred) return { success: false, errorMessage: `PLAYER_NOT_FOUND:${playerName}` };
 
             // Trova il match OPEN corrente del richiedente e aggiunge il player preferito
@@ -1417,7 +1429,14 @@ export async function executeAction(
                     logger.info({ matchId: activeMatch.matchId, preferredId: preferred.id }, 'INVITE_PREFERRED: added to preferredPlayerIds');
                 }
             } else {
-                logger.info({ playerId: player.id }, 'INVITE_PREFERRED: no active OPEN match found — preferred stored only in conversation');
+                // Niente partita OPEN a cui agganciare il preferito: dirlo chiaramente.
+                // Prima ritornava success silenzioso → l'utente credeva che l'amico
+                // sarebbe stato invitato, ma l'informazione moriva qui.
+                logger.info({ playerId: player.id }, 'INVITE_PREFERRED: no active OPEN match found');
+                return {
+                    success: false,
+                    errorMessage: `NO_ACTIVE_MATCH_FOR_INVITE:${(preferred.name || playerName).split(' ')[0]}`,
+                };
             }
 
             return { success: true };
@@ -1639,14 +1658,30 @@ function levenshtein(a: string, b: string): number {
     return dp[a.length][b.length];
 }
 
-async function findPlayerFuzzy(name: string, clubId: string): Promise<any | null> {
-    if (!name || !clubId) return null;
+/**
+ * Cerca un giocatore per nome (contains case-insensitive, poi fuzzy Levenshtein).
+ * Ritorna { player } se il match è univoco, { ambiguous: [nomi] } se più giocatori
+ * corrispondono ugualmente bene (es. "Marco" con 3 Marco iscritti): in quel caso
+ * il chiamante deve chiedere all'utente nome e cognome — MAI scegliere a caso chi
+ * invitare via WhatsApp.
+ */
+async function findPlayerFuzzy(name: string, clubId: string): Promise<{ player: any | null; ambiguous: string[] | null }> {
+    if (!name || !clubId) return { player: null, ambiguous: null };
 
-    // Prima prova: contains esatto (case-insensitive)
-    const exact = await prisma.player.findFirst({
+    const nameLower = name.toLowerCase().trim();
+
+    // Prima prova: contains (case-insensitive). Con più risultati, vince solo il
+    // full-name esatto; altrimenti è ambiguo.
+    const containsMatches = await prisma.player.findMany({
         where: { clubId, name: { contains: name, mode: 'insensitive' } },
+        take: 6,
     });
-    if (exact) return exact;
+    if (containsMatches.length === 1) return { player: containsMatches[0], ambiguous: null };
+    if (containsMatches.length > 1) {
+        const exactFull = containsMatches.find(p => (p.name || '').toLowerCase().trim() === nameLower);
+        if (exactFull) return { player: exactFull, ambiguous: null };
+        return { player: null, ambiguous: containsMatches.map(p => p.name).filter(Boolean) as string[] };
+    }
 
     // Seconda prova: fuzzy su tutti i giocatori attivi (Levenshtein per cognome)
     const all = await prisma.player.findMany({
@@ -1654,31 +1689,27 @@ async function findPlayerFuzzy(name: string, clubId: string): Promise<any | null
         select: { id: true, name: true, phoneNumber: true },
     });
 
-    const nameLower = name.toLowerCase().trim();
     const targetSurname = nameLower.split(' ').pop() || nameLower;
 
-    let bestMatch: any = null;
+    let bestMatches: any[] = [];
     let bestDistance = Infinity;
+    const consider = (p: any, dist: number) => {
+        if (dist > 2 || dist > bestDistance) return;
+        if (dist < bestDistance) { bestDistance = dist; bestMatches = [p]; }
+        else if (!bestMatches.some(b => b.id === p.id)) bestMatches.push(p);
+    };
 
     for (const p of all) {
         if (!p.name) continue;
         const pLower = p.name.toLowerCase();
         const pSurname = pLower.split(' ').pop() || pLower;
-
-        const surnameDist = levenshtein(targetSurname, pSurname);
-        if (surnameDist <= 2 && surnameDist < bestDistance) {
-            bestDistance = surnameDist;
-            bestMatch = p;
-        }
-
-        const fullDist = levenshtein(nameLower, pLower);
-        if (fullDist <= 2 && fullDist < bestDistance) {
-            bestDistance = fullDist;
-            bestMatch = p;
-        }
+        consider(p, levenshtein(targetSurname, pSurname));
+        consider(p, levenshtein(nameLower, pLower));
     }
 
-    return bestMatch;
+    if (bestMatches.length === 1) return { player: bestMatches[0], ambiguous: null };
+    if (bestMatches.length > 1) return { player: null, ambiguous: bestMatches.map(p => p.name).filter(Boolean) as string[] };
+    return { player: null, ambiguous: null };
 }
 
 /**
@@ -1841,32 +1872,44 @@ async function bookSlotForPlayer(
         }
     }
 
-    // Cerca match aperto compatibile nella finestra ±30min
+    // Finestra di ricerca match aperti da joinare: ±30min
     const from = new Date(startTime.getTime() - 30 * 60 * 1000);
     const to = new Date(startTime.getTime() + 30 * 60 * 1000);
 
-    // Fix #6: impedisci doppia prenotazione nella stessa fascia oraria
-    const alreadyBooked = await prisma.matchPlayer.findFirst({
+    // Fix #6: impedisci doppia prenotazione su slot SOVRAPPOSTI. Le partite durano
+    // `matchDuration` (default 90min): "18:00" e "19:00" si sovrappongono anche se
+    // distano più di 30min — il check va fatto sulla durata, non su una finestra fissa.
+    const bookDurMin = club?.matchDuration || 90;
+    const overlapFrom = new Date(startTime.getTime() - bookDurMin * 60 * 1000);
+    const overlapTo = new Date(startTime.getTime() + bookDurMin * 60 * 1000);
+    const bookedCandidates = await prisma.matchPlayer.findMany({
         where: {
             playerId: player.id,
             leftAt: null,
             match: {
                 status: { in: ['OPEN', 'LOCKED'] },
-                startTime: { gte: from, lte: to },
+                startTime: { gte: overlapFrom, lte: overlapTo },
                 // Durante un reschedule la vecchia partita va ignorata: la stiamo spostando, non duplicando
                 ...(excludeMatchId ? { id: { not: excludeMatchId } } : {}),
             },
         },
         include: { match: { include: { court: true } } },
     });
+    // Overlap reale: |Δstart| < durata (a esattamente `durata` di distanza sono back-to-back, ok)
+    const alreadyBooked = bookedCandidates.find(mp =>
+        Math.abs((mp as any).match.startTime.getTime() - startTime.getTime()) < bookDurMin * 60 * 1000
+    ) ?? null;
     if (alreadyBooked) {
         const existingMatch = alreadyBooked.match as any;
         const existingCovered = existingMatch?.court?.isCovered ?? false;
+        // Court swap solo per lo STESSO slot (±30min): a distanza maggiore è una
+        // sovrapposizione vera, non un cambio campo — non cancellare il booking esistente.
+        const sameSlot = Math.abs(existingMatch.startTime.getTime() - startTime.getTime()) <= 30 * 60 * 1000;
 
         // Court swap: stessa fascia oraria ma tipo campo diverso (scoperto ↔ coperto)
         // Tenta prima il nuovo booking; cancella il vecchio SOLO se riesce
         // → evita di lasciare l'utente senza prenotazione se il tipo richiesto è esaurito
-        if (preferCovered !== existingCovered && existingMatch?.isPrivateBooking) {
+        if (sameSlot && preferCovered !== existingCovered && existingMatch?.isPrivateBooking) {
             logger.info(
                 { matchId: existingMatch.id, from: existingCovered ? 'coperto' : 'scoperto', to: preferCovered ? 'coperto' : 'scoperto' },
                 'Court swap detected — trying new booking before cancelling old'
@@ -1939,6 +1982,47 @@ async function bookSlotForPlayer(
 }
 
 async function createNewMatchAction(
+    startTime: Date,
+    player: any,
+    club: any,
+    preferCovered: boolean = false,
+    preferMixed: boolean | null = null,
+    privateBooking: boolean | null = null,
+    committedPlayers: number | null = null,
+): Promise<{ success: boolean; errorMessage?: string; matchId?: string; requestedTime?: Date }> {
+    // Lock per-club: serializza selezione campo + creazione match. Senza lock, due booking
+    // simultanei sullo stesso slot vedono entrambi il campo "libero" → stesso campo due volte.
+    const redis = getRedis();
+    const lockKey = `booking_lock:${player.clubId}`;
+    const lockToken = `${Date.now()}-${Math.random()}`;
+    let lockState: 'acquired' | 'unavailable' | 'busy' = 'busy';
+    try {
+        for (let attempt = 0; attempt < 20; attempt++) {
+            const res = await redis.set(lockKey, lockToken, 'PX', 10_000, 'NX');
+            if (res) { lockState = 'acquired'; break; }
+            await new Promise(r => setTimeout(r, 250));
+        }
+    } catch {
+        // Redis giù: meglio procedere senza lock (rischio race minimo) che bloccare le prenotazioni
+        lockState = 'unavailable';
+    }
+    if (lockState === 'busy') {
+        logger.warn({ clubId: player.clubId }, 'createNewMatchAction: booking lock busy dopo 5s');
+        return { success: false, errorMessage: 'Sto completando un\'altra prenotazione proprio in questo momento — riprova tra qualche secondo!' };
+    }
+    try {
+        return await _createNewMatchInner(startTime, player, club, preferCovered, preferMixed, privateBooking, committedPlayers);
+    } finally {
+        if (lockState === 'acquired') {
+            try {
+                const current = await redis.get(lockKey);
+                if (current === lockToken) await redis.del(lockKey);
+            } catch { /* TTL 10s fa scadere il lock da solo */ }
+        }
+    }
+}
+
+async function _createNewMatchInner(
     startTime: Date,
     player: any,
     club: any,
@@ -2054,9 +2138,12 @@ async function createNewMatchAction(
     let displacedPendingPhones: string[] = [];
     let displacedOriginalSkill = 0;
     let displacedIsPrivate = false;
+    let displacementReady = false;
 
     if (displacedMatchId && displacedMatchData) {
-        // Fetch confirmed players e pending invitations del match che stiamo spostando
+        // Fetch confirmed players e pending invitations del match che stiamo spostando.
+        // Solo lettura: le scritture (cancellazione + nuovo match) avvengono più sotto in
+        // un'unica transazione, così se la creazione fallisce il match spostato resta intatto.
         const fullDisplacedMatch = await prisma.match.findUnique({
             where: { id: displacedMatchId },
             include: {
@@ -2075,25 +2162,7 @@ async function createNewMatchAction(
             displacedPendingPhones = (fullDisplacedMatch.invitations as any[]).map((inv: any) => inv.player.phoneNumber);
             displacedOriginalSkill = (fullDisplacedMatch as any).skillLevel ?? 0;
             displacedIsPrivate = (fullDisplacedMatch as any).isPrivateBooking ?? false;
-
-            // Displacement DB sync (atomico):
-            // 1. Segna tutti i MatchPlayer come usciti
-            await prisma.matchPlayer.updateMany({
-                where: { matchId: displacedMatchId, leftAt: null },
-                data: { leftAt: new Date() },
-            });
-            // 2. Annulla le invitation PENDING
-            await prisma.invitation.updateMany({
-                where: { matchId: displacedMatchId, status: 'PENDING' },
-                data: { status: 'IGNORED' },
-            });
-            // 3. Cancella il match con motivo DISPLACED_BY_BOOKING
-            await prisma.match.update({
-                where: { id: displacedMatchId },
-                data: { status: 'CANCELLED', cancelledAt: new Date(), cancelledReason: 'DISPLACED_BY_BOOKING' },
-            });
-
-            logger.info({ displacedMatchId, courtId: effectiveCourt.id }, 'createNewMatchAction: displaced OPEN match for BOOK_FIELD');
+            displacementReady = true;
         }
     }
 
@@ -2109,24 +2178,44 @@ async function createNewMatchAction(
         // preferMixed=null con prenotazione non-privata → non dovrebbe succedere (brain chiede prima)
     }
 
-    const match = await prisma.match.create({
-        data: {
-            clubId: player.clubId,
-            courtId: effectiveCourt.id,
-            startTime,
-            endTime: new Date(startTime.getTime() + durationMin * 60000),
-            skillLevel,
-            isMixed: preferMixed === true,
-            targetGender: matchTargetGender,
-            playersNeeded: 4,
-            status: initialStatus,
-            isPrivateBooking,
-            committedPlayers: (!isPrivateBooking && committedPlayers && committedPlayers > 1) ? committedPlayers : 0,
-        },
-    });
+    // Displacement + creazione in un'UNICA transazione: o si sposta il vecchio match E si
+    // crea il nuovo, o niente — mai cancellare il match spostato senza dare lo slot al nuovo.
+    const match = await prisma.$transaction(async (tx: any) => {
+        if (displacementReady && displacedMatchId) {
+            await tx.matchPlayer.updateMany({
+                where: { matchId: displacedMatchId, leftAt: null },
+                data: { leftAt: new Date() },
+            });
+            await tx.invitation.updateMany({
+                where: { matchId: displacedMatchId, status: 'PENDING' },
+                data: { status: 'IGNORED' },
+            });
+            await tx.match.update({
+                where: { id: displacedMatchId },
+                data: { status: 'CANCELLED', cancelledAt: new Date(), cancelledReason: 'DISPLACED_BY_BOOKING' },
+            });
+            logger.info({ displacedMatchId, courtId: effectiveCourt.id }, 'createNewMatchAction: displaced OPEN match for BOOK_FIELD');
+        }
 
-    await prisma.matchPlayer.create({ data: { matchId: match.id, playerId: player.id } });
-    await prisma.invitation.create({ data: { matchId: match.id, playerId: player.id, status: 'ACCEPTED' } });
+        const created = await tx.match.create({
+            data: {
+                clubId: player.clubId,
+                courtId: effectiveCourt.id,
+                startTime,
+                endTime: new Date(startTime.getTime() + durationMin * 60000),
+                skillLevel,
+                isMixed: preferMixed === true,
+                targetGender: matchTargetGender,
+                playersNeeded: 4,
+                status: initialStatus,
+                isPrivateBooking,
+                committedPlayers: (!isPrivateBooking && committedPlayers && committedPlayers > 1) ? committedPlayers : 0,
+            },
+        });
+        await tx.matchPlayer.create({ data: { matchId: created.id, playerId: player.id } });
+        await tx.invitation.create({ data: { matchId: created.id, playerId: player.id, status: 'ACCEPTED' } });
+        return created;
+    });
 
     // Wave per trovare gli altri 3 giocatori (solo se matchmaking — match OPEN)
     // Fire-and-forget: checkSilentMatches (ogni 30min) rilancia se Redis era down

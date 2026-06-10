@@ -190,14 +190,22 @@ export async function processMatchOutcomes(matchId: string): Promise<void> {
 // ─────────────────────────────────────────────
 
 async function filterExcluded(players: any[]): Promise<any[]> {
-    const result: any[] = [];
-    for (const p of players) {
-        if (p.reliabilityScore >= EXCLUSION_THRESHOLD) { result.push(p); continue; }
-        // Score basso — controlla quanti inviti ha ricevuto
-        const invCount = await prisma.invitation.count({ where: { playerId: p.id } });
-        if (invCount < EXCLUSION_MIN_INVITES) result.push(p); // non abbastanza storia
-    }
-    return result;
+    // Solo per gli score sotto soglia serve la storia inviti — una groupBy unica invece
+    // di una count per giocatore (N+1)
+    const lowScoreIds = players.filter(p => p.reliabilityScore < EXCLUSION_THRESHOLD).map(p => p.id);
+    if (lowScoreIds.length === 0) return players;
+
+    const counts = await prisma.invitation.groupBy({
+        by: ['playerId'],
+        where: { playerId: { in: lowScoreIds } },
+        _count: { playerId: true },
+    });
+    const countMap = new Map(counts.map(c => [c.playerId, c._count.playerId]));
+
+    return players.filter(p =>
+        p.reliabilityScore >= EXCLUSION_THRESHOLD ||
+        (countMap.get(p.id) ?? 0) < EXCLUSION_MIN_INVITES // non abbastanza storia → non escludere
+    );
 }
 
 // ─────────────────────────────────────────────
@@ -399,12 +407,6 @@ export function isMorningMatchInRome(date: Date): boolean {
 
 /** true se il match cade in un giorno feriale (lun-ven) in Rome */
 export function isWeekdayInRome(date: Date): boolean {
-    const day = parseInt(
-        new Intl.DateTimeFormat('en-US', { timeZone: 'Europe/Rome', weekday: 'narrow' })
-            .formatToParts(date).find(p => p.type === 'weekday')?.value === 'S' ? '0' : '1', // trick: use numeric weekday
-        10
-    );
-    // Più semplice: usare getDay() dopo conversione alla data Rome
     const romeDate = new Date(date.toLocaleString('en-US', { timeZone: 'Europe/Rome' }));
     const dow = romeDate.getDay(); // 0=Dom, 1=Lun, ..., 6=Sab
     return dow >= 1 && dow <= 5;
