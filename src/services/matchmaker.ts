@@ -95,10 +95,15 @@ async function _processWaveInner(matchId: string, waveNumber: number, urgencyMul
         const committedCount = Math.max(confirmedCount, (match as any).committedPlayers ?? 0);
         let actualSpotsNeeded: number;
         if (match.isMixed) {
-            // Misto: conta i posti rimasti per genere (target 2M+2F), non il totale
+            // Misto: conta i posti rimasti per genere (target 2M+2F), non il totale.
+            // Cap sui posti fisici: un giocatore legacy con genere UNKNOWN occupa un posto
+            // senza contare nei generi — senza cap si inviterebbe più gente dei posti reali.
             const maleConf = match.MatchPlayer.filter(mp => !mp.leftAt && (mp.player as any)?.gender === 'MALE').length;
             const femaleConf = match.MatchPlayer.filter(mp => !mp.leftAt && (mp.player as any)?.gender === 'FEMALE').length;
-            actualSpotsNeeded = Math.max(0, 2 - maleConf) + Math.max(0, 2 - femaleConf);
+            actualSpotsNeeded = Math.min(
+                Math.max(0, 2 - maleConf) + Math.max(0, 2 - femaleConf),
+                Math.max(0, match.playersNeeded - confirmedCount),
+            );
         } else {
             actualSpotsNeeded = match.playersNeeded - committedCount;
         }

@@ -1010,6 +1010,10 @@ export async function executeAction(
 
                 // Per partite miste: verifica che il posto del genere del giocatore sia ancora disponibile
                 if (match.isMixed) {
+                    // Genere sconosciuto: occuperebbe un posto senza mai contare nel lock 2M+2F
+                    // → la partita arriverebbe a 4/4 restando OPEN per sempre (zombie). Si chiede
+                    // prima il genere (il brain gestisce SAVE_GENDER al turno successivo).
+                    if ((player as any).gender !== 'MALE' && (player as any).gender !== 'FEMALE') throw new Error('GENDER_UNKNOWN');
                     const maleCount = match.MatchPlayer.filter((mp: any) => mp.player?.gender === 'MALE').length;
                     const femaleCount = match.MatchPlayer.filter((mp: any) => mp.player?.gender === 'FEMALE').length;
                     if ((player as any).gender === 'MALE' && maleCount >= 2) throw new Error('GENDER_SLOT_FULL');
@@ -1023,14 +1027,16 @@ export async function executeAction(
                 });
                 await tx.invitation.update({ where: { id: inv.id }, data: { status: 'ACCEPTED', respondedAt: new Date() } });
 
-                // Lock gender-aware: misto si chiude solo con 2M+2F
+                // Lock gender-aware: misto si chiude con 2M+2F. Fallback: a posti fisici esauriti
+                // si chiude comunque (giocatori legacy con genere UNKNOWN già dentro non contano
+                // nei generi — senza fallback il match resterebbe OPEN per sempre).
                 let shouldLock = false;
                 if (match.isMixed) {
                     const maleCount = match.MatchPlayer.filter((mp: any) => mp.player?.gender === 'MALE').length;
                     const femaleCount = match.MatchPlayer.filter((mp: any) => mp.player?.gender === 'FEMALE').length;
                     const newMale = maleCount + ((player as any).gender === 'MALE' ? 1 : 0);
                     const newFemale = femaleCount + ((player as any).gender === 'FEMALE' ? 1 : 0);
-                    shouldLock = newMale >= 2 && newFemale >= 2;
+                    shouldLock = (newMale >= 2 && newFemale >= 2) || (match.MatchPlayer.length + 1 >= match.playersNeeded);
                 } else {
                     shouldLock = match.MatchPlayer.length + 1 >= match.playersNeeded;
                 }
@@ -1715,34 +1721,35 @@ async function findPlayerFuzzy(name: string, clubId: string): Promise<{ player: 
 /**
  * Verifica compatibilità di genere tra un giocatore e un match OPEN.
  * Regole:
- * - isMixed=true: max 2 del genere del giocatore già presenti → compatibile
+ * - isMixed=true: serve genere NOTO (il lock è 2M+2F: un UNKNOWN occuperebbe un posto
+ *   senza mai contare → partita zombie 4/4 sempre OPEN) + max 2 del proprio genere
  * - isMixed=false: targetGender esplicito o inferito dai partecipanti deve coincidere
- * - genere UNKNOWN: nessun filtro (compatibile per default)
+ * - genere UNKNOWN: nessun filtro sui non-misti (compatibile per default)
  */
 function isMatchGenderCompatible(
     match: { isMixed: boolean; targetGender?: string | null; MatchPlayer: { player?: { gender?: string | null } | null }[] },
     playerGender: string
 ): boolean {
-    if (playerGender === 'UNKNOWN') return true;
-
     if (match.isMixed) {
+        if (playerGender !== 'MALE' && playerGender !== 'FEMALE') return false;
         // In un match misto il bilanciamento è 2M+2F: max 2 del proprio genere
         const myGenderCount = match.MatchPlayer.filter(mp => mp.player?.gender === playerGender).length;
         return myGenderCount < 2;
-    } else {
-        if (match.targetGender === 'ANY') return true;
-        if (match.targetGender === 'MALE') return playerGender === 'MALE';
-        if (match.targetGender === 'FEMALE') return playerGender === 'FEMALE';
-        // Nessun targetGender esplicito: inferisci dai partecipanti
-        const participantGenders = match.MatchPlayer
-            .map(mp => mp.player?.gender)
-            .filter((g): g is string => !!g && g !== 'UNKNOWN');
-        if (participantGenders.length === 0) return true; // Match vuoto: qualsiasi genere OK
-        const firstGender = participantGenders[0];
-        const allSame = participantGenders.every(g => g === firstGender);
-        if (allSame && firstGender !== playerGender) return false;
-        return true;
     }
+    if (playerGender === 'UNKNOWN') return true;
+
+    if (match.targetGender === 'ANY') return true;
+    if (match.targetGender === 'MALE') return playerGender === 'MALE';
+    if (match.targetGender === 'FEMALE') return playerGender === 'FEMALE';
+    // Nessun targetGender esplicito: inferisci dai partecipanti
+    const participantGenders = match.MatchPlayer
+        .map(mp => mp.player?.gender)
+        .filter((g): g is string => !!g && g !== 'UNKNOWN');
+    if (participantGenders.length === 0) return true; // Match vuoto: qualsiasi genere OK
+    const firstGender = participantGenders[0];
+    const allSame = participantGenders.every(g => g === firstGender);
+    if (allSame && firstGender !== playerGender) return false;
+    return true;
 }
 
 export async function joinExistingMatch(matchId: string, player: any): Promise<{ success: boolean; errorMessage?: string }> {
@@ -1774,11 +1781,11 @@ export async function joinExistingMatch(matchId: string, player: any): Promise<{
                     }
                 }
             } else {
-                // Match misto: massimo 2 per genere. Se la quota del genere del giocatore è piena → niente posto
-                if (player.gender === 'MALE' || player.gender === 'FEMALE') {
-                    const sameGenderCount = match.MatchPlayer.filter((mp: any) => mp.player?.gender === player.gender).length;
-                    if (sameGenderCount >= 2) throw new Error('GENDER_SLOT_FULL');
-                }
+                // Match misto: serve un genere noto (lock 2M+2F — un UNKNOWN occuperebbe un
+                // posto senza mai contare → partita zombie). Poi: massimo 2 per genere.
+                if (player.gender !== 'MALE' && player.gender !== 'FEMALE') throw new Error('GENDER_UNKNOWN');
+                const sameGenderCount = match.MatchPlayer.filter((mp: any) => mp.player?.gender === player.gender).length;
+                if (sameGenderCount >= 2) throw new Error('GENDER_SLOT_FULL');
             }
 
             await tx.matchPlayer.upsert({
@@ -1794,12 +1801,15 @@ export async function joinExistingMatch(matchId: string, player: any): Promise<{
                 await tx.invitation.create({ data: { matchId, playerId: player.id, status: 'ACCEPTED', respondedAt: new Date() } });
             }
 
-            // Lock: per match misti serve 2M+2F, non solo 4 corpi (altrimenti chiuderebbe con composizione errata es. 3M+1F)
+            // Lock: per match misti serve 2M+2F, non solo 4 corpi (altrimenti chiuderebbe con
+            // composizione errata es. 3M+1F). Fallback: a posti fisici esauriti si chiude comunque
+            // (giocatori legacy UNKNOWN già dentro non contano nei generi → senza fallback il
+            // match resterebbe OPEN per sempre).
             let shouldLock: boolean;
             if (match.isMixed) {
                 const maleCount = match.MatchPlayer.filter((mp: any) => mp.player?.gender === 'MALE').length + (player.gender === 'MALE' ? 1 : 0);
                 const femaleCount = match.MatchPlayer.filter((mp: any) => mp.player?.gender === 'FEMALE').length + (player.gender === 'FEMALE' ? 1 : 0);
-                shouldLock = maleCount >= 2 && femaleCount >= 2;
+                shouldLock = (maleCount >= 2 && femaleCount >= 2) || (match.MatchPlayer.length + 1 >= match.playersNeeded);
             } else {
                 shouldLock = match.MatchPlayer.length + 1 >= match.playersNeeded;
             }
@@ -1820,6 +1830,7 @@ export async function joinExistingMatch(matchId: string, player: any): Promise<{
         if (err.message === 'MATCH_FULL') return { success: false, errorMessage: 'MATCH_FULL' };
         if (err.message === 'ALREADY_JOINED') return { success: false, errorMessage: 'ALREADY_JOINED' };
         if (err.message === 'GENDER_MISMATCH') return { success: false, errorMessage: 'GENDER_MISMATCH' };
+        if (err.message === 'GENDER_UNKNOWN') return { success: false, errorMessage: 'GENDER_UNKNOWN' };
         throw err;
     }
 }

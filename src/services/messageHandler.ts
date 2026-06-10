@@ -718,6 +718,15 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[], cor
                     'Troppo a ridosso per il matchmaking, rischierei di lasciarti senza campo. Tengo la tua prenotazione privata così com\'è — il campo è tuo, porta chi vuoi! 🎾',
                 ];
                 await simulateTypingAndSend(jid, _msgs[Math.floor(Math.random() * _msgs.length)]);
+            } else if (result.errorMessage === 'GENDER_UNKNOWN') {
+                // Partita mista (2M+2F): serve il genere prima di aggiungerlo.
+                // Al turno dopo il brain usa SAVE_GENDER e si procede.
+                const _genderAskMsgs = [
+                    'Questa è una partita mista (2 uomini e 2 donne), quindi mi serve saperlo: sei un uomo o una donna? 😊 Appena mi rispondi ti metto dentro.',
+                    'Per le partite miste devo bilanciare 2 uomini e 2 donne. Essendo un assistente digitale non vorrei sbagliarmi: sei un uomo o una donna? 😊',
+                    'Mi manca solo un dato: questa partita è mista (2 e 2), sei un uomo o una donna? Poi ti aggiungo subito 🎾',
+                ];
+                await simulateTypingAndSend(jid, _genderAskMsgs[Math.floor(Math.random() * _genderAskMsgs.length)]);
             } else if (result.errorMessage === 'GENDER_MISMATCH') {
                 await simulateTypingAndSend(jid, 'Questa partita è riservata a giocatori dello stesso genere, non posso aggiungerti. Vuoi che cerchi un\'altra partita o prenoti un campo libero? 🎾');
             } else if (result.errorMessage?.includes('già una prenotazione') || result.errorMessage === 'ALREADY_BOOKED') {
