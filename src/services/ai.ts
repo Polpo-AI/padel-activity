@@ -154,6 +154,60 @@ Rispondi SOLO con:
 }
 
 // ─────────────────────────────────────────────
+// SPLIT FAQ MULTI-TOPIC — "Hai il bar? E il parcheggio?" → 2 domande autocontenute
+// Lo split grezzo su '?' spezza male le domande articolate ("Se piove e il campo
+// è coperto, si gioca?" diventava 1 domanda monca). Haiku segmenta per argomento;
+// in caso di errore si torna allo split su '?'.
+// ─────────────────────────────────────────────
+
+export async function splitFaqQuestions(text: string): Promise<string[]> {
+    const naiveSplit = () => text
+        .split('?')
+        .map((s: string) => s.trim())
+        .filter((s: string) => s.length > 5)
+        .map((s: string) => s + '?');
+
+    const trimmed = (text || '').trim();
+    if (trimmed.length < 6) return [];
+    // Fast-path: una sola domanda semplice (al più un '?' finale) → nessuna chiamata AI
+    const qMarks = (trimmed.match(/\?/g) || []).length;
+    if (qMarks === 0) return [trimmed + '?'];
+    if (qMarks === 1 && trimmed.endsWith('?')) return [trimmed];
+
+    try {
+        const result = await withRetry(
+            () => anthropic.messages.create({
+                model: 'claude-haiku-4-5-20251001',
+                max_tokens: 300,
+                temperature: 0,
+                messages: [{
+                    role: 'user',
+                    content: `Questo messaggio di un cliente di un circolo padel può contenere una o più domande distinte. Separale in domande autocontenute e riutilizzabili (una per argomento), senza dati personali, mantenendo il significato originale. NON inventare domande non presenti.
+
+Messaggio: "${trimmed.slice(0, 400)}"
+
+Rispondi SOLO con un array JSON di stringhe, es. ["Avete il bar?", "C'è il parcheggio?"]`,
+                }],
+            }),
+            { maxAttempts: 2, baseDelayMs: 500, shouldRetry: isTransientNetworkError, context: 'splitFaqQuestions' }
+        );
+        const raw = result.content[0].type === 'text' ? result.content[0].text.trim() : '';
+        const start = raw.indexOf('[');
+        const end = raw.lastIndexOf(']');
+        if (start === -1 || end === -1) return naiveSplit();
+        const parsed = JSON.parse(raw.slice(start, end + 1));
+        if (!Array.isArray(parsed)) return naiveSplit();
+        const questions = parsed
+            .filter((q: unknown): q is string => typeof q === 'string' && q.trim().length > 5)
+            .map((q: string) => q.trim())
+            .slice(0, 5); // mai più di 5 FAQ da un singolo messaggio
+        return questions.length > 0 ? questions : naiveSplit();
+    } catch {
+        return naiveSplit();
+    }
+}
+
+// ─────────────────────────────────────────────
 // REQUIRES RESPONSE — filtro messaggi offline
 // Usato per evitare di rispondere a ringraziamenti,
 // conferme, emoji o altri messaggi che non richiedono azione.

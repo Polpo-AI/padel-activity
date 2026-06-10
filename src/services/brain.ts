@@ -1460,11 +1460,9 @@ export async function executeAction(
                 const askedByLabel = player?.name || player?.phoneNumber;
 
                 // Splitta domande multi-topic: "Hai il bar? C'è parcheggio?" → 2 FAQ separate
-                const subQuestions = rawQuestion
-                    .split('?')
-                    .map((s: string) => s.trim())
-                    .filter((s: string) => s.length > 5)
-                    .map((s: string) => s + '?');
+                // Haiku segmenta per argomento (fallback interno: split su '?').
+                const { splitFaqQuestions } = await import('./ai');
+                const subQuestions = await splitFaqQuestions(rawQuestion);
 
                 // Dedup: controlla se questo player ha già FAQ pending con lo stesso testo
                 const existingIds = await redis.lrange(idsKey, 0, -1);

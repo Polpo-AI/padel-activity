@@ -467,295 +467,7 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[], cor
     if (action !== 'NONE') {
         const result = await executeAction(action, params, player, club, phoneNumber);
         if (!result.success && result.errorMessage) {
-            // Campo preferito non disponibile → redirect algorithm con preferenza tipo campo
-            // Il two-pass in redirect.ts cerca prima il tipo preferito, poi aggiunge il tipo opposto come fallback
-            if (result.errorMessage === 'ONLY_COVERED_AVAILABLE') {
-                // Utente voleva scoperto, solo coperto è libero a quell'orario
-                // → redirect con originalCourtIsCovered=false: prima cerca scoperti vicini, poi coperto come fallback
-                try {
-                    const { redirectGroup } = await import('./redirect');
-                    const refTime = result.requestedTime ?? new Date();
-                    await redirectGroup({
-                        clubId: club?.id ?? '',
-                        referentPhone: player?.phoneNumber ?? phoneNumber,
-                        referentJid: jid,
-                        playerPhones: [player?.phoneNumber ?? phoneNumber],
-                        playerCount: 1,
-                        originalMatchId: 'none',
-                        originalStartTime: refTime,
-                        originalSkillLevel: player?.skillLevel ?? 0,
-                        originalCourtIsCovered: false,
-                        reason: 'SLOT_TAKEN',
-                        intent: 'BOOK_FIELD',
-                    });
-                } catch (err) {
-                    logger.error({ err }, 'ONLY_COVERED_AVAILABLE redirectGroup failed');
-                    const _msgs = [
-                        "A quell'orario i campi scoperti sono tutti occupati. Dimmi un altro orario e trovo qualcosa!",
-                        "I campi scoperti sono tutti pieni in quella fascia, prova un altro orario 😔",
-                        "A quell'ora non c'è nessun campo scoperto libero. Ti va un campo coperto, o preferisci cambiare orario?",
-                        "Campi scoperti esauriti a quell'orario, vuoi un altro orario o consideri un campo coperto? 😅",
-                        "Nessun campo scoperto disponibile in quella fascia. Hai un altro orario in mente?",
-                    ];
-                    await simulateTypingAndSend(jid, _msgs[Math.floor(Math.random() * _msgs.length)]);
-                }
-                return;
-            }
-            if (result.errorMessage === 'ONLY_UNCOVERED_AVAILABLE') {
-                // Utente voleva coperto, solo scoperto è libero a quell'orario
-                // → redirect con originalCourtIsCovered=true: prima cerca coperti vicini, poi scoperto come fallback
-                try {
-                    const { redirectGroup } = await import('./redirect');
-                    const refTime = result.requestedTime ?? new Date();
-                    await redirectGroup({
-                        clubId: club?.id ?? '',
-                        referentPhone: player?.phoneNumber ?? phoneNumber,
-                        referentJid: jid,
-                        playerPhones: [player?.phoneNumber ?? phoneNumber],
-                        playerCount: 1,
-                        originalMatchId: 'none',
-                        originalStartTime: refTime,
-                        originalSkillLevel: player?.skillLevel ?? 0,
-                        originalCourtIsCovered: true,
-                        reason: 'SLOT_TAKEN',
-                        intent: 'BOOK_FIELD',
-                    });
-                } catch (err) {
-                    logger.error({ err }, 'ONLY_UNCOVERED_AVAILABLE redirectGroup failed');
-                    const _msgs = [
-                        "A quell'orario i campi coperti sono tutti occupati. Dimmi un altro orario e trovo qualcosa!",
-                        "I campi coperti sono tutti pieni in quella fascia, prova un altro orario 😔",
-                        "A quell'ora non c'è nessun campo coperto libero. Ti va un campo scoperto, o preferisci cambiare orario?",
-                        "Campi coperti esauriti a quell'orario, vuoi un altro orario o consideri un campo scoperto? 😅",
-                        "Nessun campo coperto disponibile in quella fascia. Hai un altro orario in mente?",
-                    ];
-                    await simulateTypingAndSend(jid, _msgs[Math.floor(Math.random() * _msgs.length)]);
-                }
-                return;
-            }
-            if (result.errorMessage.startsWith('PLAYER_NOT_FOUND:')) {
-                const searchedName = result.errorMessage.split(':').slice(1).join(':').trim();
-                const redis = getRedis();
-                const nameKey = searchedName.toLowerCase();
-                const alreadyNotified = await redis.get(`invite:admin_notified:${club?.id}:${nameKey}`);
-                const clubName = club?.name || 'circolo';
-                if (alreadyNotified) {
-                    const _alreadyMsgs = [
-                        `Ho già contattato il circolo per verificare. Ti rispondo appena ho notizie!`,
-                        `Ho già segnalato al circolo, appena ho una risposta te la giro!`,
-                        `Il circolo è già al corrente, ti aggiorno non appena rispondo!`,
-                        `Ho già mandato il messaggio al circolo. Attendo risposta per te!`,
-                        `Ho già contattato il circolo, ti tengo aggiornato!`,
-                    ];
-                    await simulateTypingAndSend(jid, _alreadyMsgs[Math.floor(Math.random() * _alreadyMsgs.length)]);
-                } else {
-                    const alreadyAsked = await redis.get(`invite:not_found:${club?.id}:${nameKey}`);
-                    if (alreadyAsked) {
-                        // Seconda volta: escalation all'admin
-                        const { notifyAdmin } = await import('../utils/notify-admin');
-                        await notifyAdmin(
-                            `❓ ${player?.name || phoneNumber} insiste: vuole invitare "${searchedName}" ma non risulta iscritto. Verificare?`,
-                            `invite_not_found_${nameKey.substring(0, 20)}`,
-                            club?.adminPhone ?? undefined,
-                            club?.name ?? undefined,
-                        ).catch(() => {});
-                        await redis.set(`invite:admin_notified:${club?.id}:${nameKey}`, '1', 'EX', 3600);
-                        const _escalateMsgs = [
-                            `Ho già contattato il circolo per verificare. Ti rispondo appena ho notizie!`,
-                            `Ho già segnalato al circolo, appena ho una risposta te la giro!`,
-                            `Il circolo è già al corrente, ti aggiorno non appena rispondo!`,
-                            `Ho già mandato il messaggio al circolo. Attendo risposta per te!`,
-                            `Ho già contattato il circolo, ti tengo aggiornato!`,
-                        ];
-                        await simulateTypingAndSend(jid, _escalateMsgs[Math.floor(Math.random() * _escalateMsgs.length)]);
-                    } else {
-                        // Prima volta: informa l'utente e memorizza
-                        await redis.set(`invite:not_found:${club?.id}:${nameKey}`, '1', 'EX', 3600);
-                        const _notFoundMsgs = [
-                            `Non trovo "${searchedName}" iscritto a ${clubName}. Sei sicuro si sia segnato così?`,
-                            `"${searchedName}" non risulta nella lista di ${clubName}. Lo conosci con un altro nome?`,
-                            `Non ho trovato "${searchedName}" tra gli iscritti a ${clubName}. Sei sicuro del nome?`,
-                            `Il nome "${searchedName}" non mi torna tra gli iscritti a ${clubName}. Come l'hai scritto?`,
-                            `Nessun "${searchedName}" nella lista di ${clubName}. Magari è iscritto con un nome diverso?`,
-                        ];
-                        await simulateTypingAndSend(jid, _notFoundMsgs[Math.floor(Math.random() * _notFoundMsgs.length)]);
-                    }
-                }
-            } else if (result.errorMessage.startsWith('PLAYER_AMBIGUOUS:')) {
-                // Più giocatori corrispondono al nome: chiedi quale, mai invitare a caso
-                const names = result.errorMessage.split(':').slice(1).join(':').split('|').filter(Boolean);
-                const _ambiguousMsgs = [
-                    `Ho trovato più giocatori con quel nome: ${names.join(', ')}. Quale intendi? Dimmi nome e cognome e lo invito 🎾`,
-                    `Ce n'è più d'uno con quel nome (${names.join(', ')}) — dimmi nome e cognome esatti così non sbaglio persona 😊`,
-                    `Nel circolo risultano: ${names.join(', ')}. Chi di loro? Scrivimi nome e cognome e procedo 🎾`,
-                ];
-                await simulateTypingAndSend(jid, _ambiguousMsgs[Math.floor(Math.random() * _ambiguousMsgs.length)]);
-            } else if (result.errorMessage.startsWith('NO_ACTIVE_MATCH_FOR_INVITE:')) {
-                // L'amico esiste ma non c'è una partita aperta a cui agganciarlo
-                const friendName = result.errorMessage.split(':').slice(1).join(':').trim() || 'il tuo amico';
-                const _noMatchMsgs = [
-                    `${friendName} è iscritto, ma al momento non hai una partita aperta a cui aggiungerlo. Dimmi giorno e orario, apro la partita e lo invito per primo 🎾`,
-                    `Ho trovato ${friendName}! Però non hai partite in cerca di giocatori adesso — prenota prima un campo e lo coinvolgo subito 🎾`,
-                    `${friendName} c'è nella lista! Mi serve solo una partita aperta: dimmi quando volete giocare e lo invito per primo 🎾`,
-                ];
-                await simulateTypingAndSend(jid, _noMatchMsgs[Math.floor(Math.random() * _noMatchMsgs.length)]);
-            } else if (result.errorMessage === 'ALREADY_JOINED') {
-                const _alreadyMsgs = [
-                    "Sei già dentro a questa partita! Non devi fare altro, ci vediamo in campo 🎾",
-                    "Tranquillo, sei già iscritto a questa partita — è tutto a posto 🎾",
-                    "Ci sei già dentro! Non serve confermare di nuovo, ci vediamo in campo 🎾",
-                    "Sei già in questa partita, non devi fare nulla 🎾",
-                ];
-                await simulateTypingAndSend(jid, _alreadyMsgs[Math.floor(Math.random() * _alreadyMsgs.length)]);
-            } else if (result.errorMessage === 'MATCH_CLOSED') {
-                const _closedMsgs = [
-                    "Questa partita non è più disponibile (è stata chiusa o completata). Vuoi che cerchi un altro orario?",
-                    "Questa partita è già chiusa, vuoi che cerchi qualcos'altro? 😔",
-                    "La partita non è più disponibile, ti trovo subito un'alternativa? 😕",
-                    "Questa partita si è chiusa, dimmi quando sei libero e cerco 😔",
-                    "La partita è già chiusa. Vuoi un altro orario?",
-                ];
-                await simulateTypingAndSend(jid, _closedMsgs[Math.floor(Math.random() * _closedMsgs.length)]);
-            } else if (result.errorMessage === 'MATCH_FULL') {
-                const _fullMsgs = [
-                    "Questa partita si è appena riempita! Dimmi un altro orario e ti trovo posto 🎾",
-                    "Il posto è stato preso appena prima di te, vuoi che cerchi un'altra partita? 😔",
-                    "La partita si è riempita proprio adesso, dimmi quando sei libero e trovo qualcosa 😅",
-                    "Arrivato un attimo dopo, i posti sono finiti. Provo un altro orario? 😕",
-                    "Piena! Qualcuno ti ha appena superato, ti cerco subito un'altra partita? 😅",
-                ];
-                await simulateTypingAndSend(jid, _fullMsgs[Math.floor(Math.random() * _fullMsgs.length)]);
-            } else if (result.errorMessage === 'GENDER_SLOT_FULL') {
-                const _genderMsgs = [
-                    "I posti del tuo genere in questa partita sono esauriti! Provo a cercarti un'altra? 🎾",
-                    "Ops, i posti per il tuo genere sono già tutti occupati. Vuoi che cerchi un altro slot? 😅",
-                    "Appena occupato l'ultimo posto per il tuo genere. Cerco un'altra partita per te? 😕",
-                ];
-                await simulateTypingAndSend(jid, _genderMsgs[Math.floor(Math.random() * _genderMsgs.length)]);
-            } else if (result.errorMessage === 'SKILL_TEST_REQUIRED') {
-                const _skillMsgs = [
-                    "Per cercare altri giocatori ti serve prima la valutazione col maestro (il circolo ti contatterà per organizzarla). Nel frattempo puoi prenotare il campo privatamente!",
-                    "Prima di cercare altri giocatori ci vuole la valutazione col maestro, te la organizziamo noi presto. Per ora puoi prenotare il campo con chi vuoi!",
-                    "La valutazione col maestro è il primo passo per giocare con altri iscritti, il circolo ti contatta presto. Nel frattempo il campo è tuo quando vuoi!",
-                    "Non hai ancora fatto la valutazione col maestro, ti contatteranno per fissarla. Puoi già prenotare il campo nel frattempo!",
-                    "La valutazione col maestro è necessaria prima di cercare altri giocatori (il circolo ti raggiungerà presto). Puoi prenotare il campo privatamente da subito!",
-                ];
-                await simulateTypingAndSend(jid, _skillMsgs[Math.floor(Math.random() * _skillMsgs.length)]);
-            } else if (result.errorMessage === 'ALL_COURTS_TAKEN') {
-                // Tutti i campi occupati a quell'orario — redirect con intent BOOK_FIELD
-                // (se è arrivato qui, il booking era privato o skill<=0)
-                try {
-                    const { redirectGroup } = await import('./redirect');
-                    const refTime = result.requestedTime ?? new Date();
-                    await redirectGroup({
-                        clubId: club?.id ?? '',
-                        referentPhone: player?.phoneNumber ?? phoneNumber,
-                        referentJid: jid,
-                        playerPhones: [player?.phoneNumber ?? phoneNumber],
-                        playerCount: 1,
-                        originalMatchId: 'none',
-                        originalStartTime: refTime,
-                        originalSkillLevel: player?.skillLevel ?? 0,
-                        originalCourtIsCovered: params?.preferCovered === true ? true : params?.preferCovered === false ? false : null,
-                        reason: 'SLOT_TAKEN',
-                        intent: 'BOOK_FIELD',
-                    });
-                } catch (err) {
-                    logger.error({ err }, 'ALL_COURTS_TAKEN redirectGroup failed');
-                    const _msgs = [
-                        "Tutti i campi sono occupati a quell'orario, dimmi un altro orario e trovo subito qualcosa 😔",
-                        "A quell'orario non c'è nessun campo libero, prova con un altro orario 😔",
-                        "Tutti i campi sono pieni in quella fascia. Hai un altro orario in testa?",
-                        "A quell'ora sono tutti occupati, dammi un'alternativa e vedo cosa c'è 😕",
-                        "Nessun campo disponibile a quell'orario, dimmi quando sei libero e trovo qualcosa 😔",
-                    ];
-                    await simulateTypingAndSend(jid, _msgs[Math.floor(Math.random() * _msgs.length)]);
-                }
-            } else if (result.errorMessage === 'NO_OPEN_MATCH') {
-                // Nessun OPEN match compatibile trovato per il matchmaking — redirect con intent MATCHMAKING
-                try {
-                    const { redirectGroup } = await import('./redirect');
-                    const refTime = result.requestedTime ?? new Date();
-                    await redirectGroup({
-                        clubId: club?.id ?? '',
-                        referentPhone: player?.phoneNumber ?? phoneNumber,
-                        referentJid: jid,
-                        playerPhones: [player?.phoneNumber ?? phoneNumber],
-                        playerCount: 1,
-                        originalMatchId: 'none',
-                        originalStartTime: refTime,
-                        originalSkillLevel: player?.skillLevel ?? 0,
-                        originalCourtIsCovered: null,
-                        reason: 'SLOT_TAKEN',
-                        intent: 'MATCHMAKING',
-                    });
-                } catch (err) {
-                    logger.error({ err }, 'NO_OPEN_MATCH redirectGroup failed');
-                    const _msgs = [
-                        "Non ci sono partite aperte a quell'orario. Dimmi un altro orario e vedo cosa c'è disponibile!",
-                        "A quell'orario non c'è nessuna partita aperta. Vuoi che apra io una per te?",
-                        "Nessuna partita disponibile in quella fascia, prova un altro orario o vuoi prenotare il campo in privato? 😔",
-                        "Non ho trovato partite a quell'orario, dimmi quando sei libero e cerco 😕",
-                        "A quell'ora non ci sono partite disponibili. Hai un'altra fascia che preferisci?",
-                    ];
-                    await simulateTypingAndSend(jid, _msgs[Math.floor(Math.random() * _msgs.length)]);
-                }
-            } else if (result.errorMessage === 'NO_PRIVATE_BOOKING_TO_CONVERT') {
-                const _msgs = [
-                    'Non trovo nessuna prenotazione privata da aprire. Hai già una partita prenotata privatamente?',
-                    'Non vedo prenotazioni private attive al momento. Vuoi prenotare un campo e poi cercare altri giocatori?',
-                    'Non ho trovato una prenotazione privata da convertire. Hai già una partita fissa o vuoi crearne una?',
-                    'Non risulta nessuna prenotazione privata aperta. Vuoi che prenoti il campo adesso e poi cerco altri giocatori?',
-                    'Non trovo partite private da aprire. Hai già prenotato qualcosa, o vuoi iniziare da zero?',
-                ];
-                await simulateTypingAndSend(jid, _msgs[Math.floor(Math.random() * _msgs.length)]);
-            } else if (result.errorMessage === 'TOO_LATE_FOR_MATCHMAKING') {
-                // La conversione a matchmaking è stata rifiutata (troppo poco tempo): la prenotazione
-                // privata NON è stata toccata, resta valida. Lo comunichiamo chiaramente.
-                const _msgs = [
-                    'Manca troppo poco all\'orario per trovare altri giocatori in tempo, quindi non apro la partita al matchmaking — ma tranquilla, il tuo campo resta prenotato! Vieni pure con chi vuoi 🎾',
-                    'Per cercare altri giocatori servirebbe più anticipo: così a ridosso dell\'orario rischierei di non trovarli e farti perdere il campo. La tua prenotazione resta valida, gioca con chi hai! 🎾',
-                    'Troppo a ridosso per il matchmaking, rischierei di lasciarti senza campo. Tengo la tua prenotazione privata così com\'è — il campo è tuo, porta chi vuoi! 🎾',
-                ];
-                await simulateTypingAndSend(jid, _msgs[Math.floor(Math.random() * _msgs.length)]);
-            } else if (result.errorMessage === 'GENDER_UNKNOWN') {
-                // Partita mista (2M+2F): serve il genere prima di aggiungerlo.
-                // Al turno dopo il brain usa SAVE_GENDER e si procede.
-                const _genderAskMsgs = [
-                    'Questa è una partita mista (2 uomini e 2 donne), quindi mi serve saperlo: sei un uomo o una donna? 😊 Appena mi rispondi ti metto dentro.',
-                    'Per le partite miste devo bilanciare 2 uomini e 2 donne. Essendo un assistente digitale non vorrei sbagliarmi: sei un uomo o una donna? 😊',
-                    'Mi manca solo un dato: questa partita è mista (2 e 2), sei un uomo o una donna? Poi ti aggiungo subito 🎾',
-                ];
-                await simulateTypingAndSend(jid, _genderAskMsgs[Math.floor(Math.random() * _genderAskMsgs.length)]);
-            } else if (result.errorMessage === 'GENDER_MISMATCH') {
-                await simulateTypingAndSend(jid, 'Questa partita è riservata a giocatori dello stesso genere, non posso aggiungerti. Vuoi che cerchi un\'altra partita o prenoti un campo libero? 🎾');
-            } else if (result.errorMessage?.includes('già una prenotazione') || result.errorMessage === 'ALREADY_BOOKED') {
-                // Prenotazione duplicata: suggerisci cercare altri giocatori se è privata
-                const existingPrivate = player ? await prisma.matchPlayer.findFirst({
-                    where: { playerId: player.id, leftAt: null, match: { status: 'LOCKED', isPrivateBooking: true } },
-                }) : null;
-                if (existingPrivate) {
-                    const _bookedOpenMsgs = [
-                        "Hai già una prenotazione in quella fascia. Vuoi che cerchi altri giocatori per completare la partita? 🎾",
-                        "Sei già prenotato in quella fascia, vuoi che cerchi altri giocatori per completarla? 🎾",
-                        "Ho già una tua prenotazione lì, vuoi che cerchi altri giocatori per completarla? 😊",
-                        "Quella fascia è già tua! Vuoi che trovi altri giocatori per la partita?",
-                        "Sei già dentro in quella fascia, cerco altri giocatori per completare la squadra? 🎾",
-                    ];
-                    await simulateTypingAndSend(jid, _bookedOpenMsgs[Math.floor(Math.random() * _bookedOpenMsgs.length)]);
-                } else {
-                    const _bookedRescheduleMsgs = [
-                        "Hai già una prenotazione in quella fascia. Vuoi spostare o prenotare un altro orario? 🎾",
-                        "Hai già qualcosa in quella fascia, vuoi spostare o scegliere un altro orario? 😊",
-                        "Quell'orario è già occupato da una tua prenotazione. Cambio orario o sposto quella?",
-                        "Sei già prenotato in quella fascia! Vuoi cambiare orario?",
-                        "Quella fascia è già tua, vuoi spostare la prenotazione o sceglierne un'altra? 🎾",
-                    ];
-                    await simulateTypingAndSend(jid, _bookedRescheduleMsgs[Math.floor(Math.random() * _bookedRescheduleMsgs.length)]);
-                }
-            } else {
-                await simulateTypingAndSend(jid, `Ops! ${result.errorMessage} 😕`);
-            }
+            await handleActionError(jid, action, params, result, player, club, phoneNumber);
         }
         // REGISTER_PLAYER riuscito → re-call brain con il player ora registrato per catturare
         // qualsiasi intento di prenotazione espresso prima della registrazione.
@@ -809,39 +521,8 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[], cor
                             }
                             // Per match OPEN (matchmaking): msg2 è già stato inviato sopra
                         } else if (!result2.success && result2.errorMessage) {
-                            if (result2.errorMessage === 'ONLY_COVERED_AVAILABLE') {
-                                const { redirectGroup } = await import('./redirect');
-                                await redirectGroup({
-                                    clubId: club?.id ?? '',
-                                    referentPhone: newCtx.player.phoneNumber,
-                                    referentJid: jid,
-                                    playerPhones: [newCtx.player.phoneNumber],
-                                    playerCount: 1,
-                                    originalMatchId: 'none',
-                                    originalStartTime: result2.requestedTime ?? new Date(),
-                                    originalSkillLevel: newCtx.player.skillLevel ?? 0,
-                                    originalCourtIsCovered: false,
-                                    reason: 'SLOT_TAKEN',
-                                    intent: 'BOOK_FIELD',
-                                });
-                            } else if (result2.errorMessage === 'ALL_COURTS_TAKEN') {
-                                const { redirectGroup } = await import('./redirect');
-                                await redirectGroup({
-                                    clubId: club?.id ?? '',
-                                    referentPhone: newCtx.player.phoneNumber,
-                                    referentJid: jid,
-                                    playerPhones: [newCtx.player.phoneNumber],
-                                    playerCount: 1,
-                                    originalMatchId: 'none',
-                                    originalStartTime: result2.requestedTime ?? new Date(),
-                                    originalSkillLevel: newCtx.player.skillLevel ?? 0,
-                                    originalCourtIsCovered: params2?.preferCovered === true ? true : params2?.preferCovered === false ? false : null,
-                                    reason: 'SLOT_TAKEN',
-                                    intent: 'BOOK_FIELD',
-                                });
-                            } else {
-                                await simulateTypingAndSend(jid, 'Per prenotare scrivimi giorno e orario 🎾');
-                            }
+                            // Catena unica: stessi messaggi/redirect del path principale
+                            await handleActionError(jid, action2, params2, result2, newCtx.player, club, phoneNumber);
                         }
 
                         // Pulisci la bozza prenotazione: l'intento è stato gestito in questo turno
@@ -1072,14 +753,8 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[], cor
                         }));
                     }
                 } else if (!secResult.success && secResult.errorMessage) {
-                    const _secErrMsgs: Record<string, string> = {
-                        ALL_COURTS_TAKEN: 'Per quell\'orario non ho trovato campi disponibili — dimmi un\'altra fascia oraria quando vuoi.',
-                        ONLY_COVERED_AVAILABLE: 'Per quell\'orario ho solo il campo coperto disponibile. Vuoi che prenoti quello?',
-                        SLOT_OVERLAP: 'Hai già una prenotazione in quella fascia oraria.',
-                        GENDER_SLOT_FULL: 'I posti per il tuo genere in quella partita sono esauriti.',
-                    };
-                    const msg = _secErrMsgs[secResult.errorMessage];
-                    if (msg) await simulateTypingAndSend(jid, msg);
+                    // Catena unica: l'azione secondaria fallita riceve gli stessi messaggi/redirect della primaria
+                    await handleActionError(jid, secondaryAction, secondaryParams || {}, secResult, player, club, phoneNumber);
                 }
             } catch (err) {
                 logger.warn({ err, secondaryAction }, 'Secondary action from brain failed — ignored');
@@ -1205,6 +880,316 @@ export async function handleMatchFilled(matchId: string, startTime: Date): Promi
             }
         } catch (fallbackErr) {
             logger.error({ fallbackErr }, 'handleMatchFilled: fallback individual notify also failed');
+        }
+    }
+}
+
+
+// ─────────────────────────────────────────────
+// GESTIONE ESITI NEGATIVI DI executeAction
+// Catena unica per tutti i path (principale, post-REGISTER_PLAYER): traduce gli
+// errorMessage simbolici in messaggi utente e attiva il redirect dove previsto.
+// ─────────────────────────────────────────────
+
+async function handleActionError(
+    jid: string,
+    action: string,
+    params: any,
+    result: { errorMessage?: string; requestedTime?: Date },
+    player: any,
+    club: any,
+    phoneNumber: string,
+): Promise<void> {
+    if (!result.errorMessage) return;
+    {
+        // Campo preferito non disponibile → redirect algorithm con preferenza tipo campo
+        // Il two-pass in redirect.ts cerca prima il tipo preferito, poi aggiunge il tipo opposto come fallback
+        if (result.errorMessage === 'ONLY_COVERED_AVAILABLE') {
+            // Utente voleva scoperto, solo coperto è libero a quell'orario
+            // → redirect con originalCourtIsCovered=false: prima cerca scoperti vicini, poi coperto come fallback
+            try {
+                const { redirectGroup } = await import('./redirect');
+                const refTime = result.requestedTime ?? new Date();
+                await redirectGroup({
+                    clubId: club?.id ?? '',
+                    referentPhone: player?.phoneNumber ?? phoneNumber,
+                    referentJid: jid,
+                    playerPhones: [player?.phoneNumber ?? phoneNumber],
+                    playerCount: 1,
+                    originalMatchId: 'none',
+                    originalStartTime: refTime,
+                    originalSkillLevel: player?.skillLevel ?? 0,
+                    originalCourtIsCovered: false,
+                    reason: 'SLOT_TAKEN',
+                    intent: 'BOOK_FIELD',
+                });
+            } catch (err) {
+                logger.error({ err }, 'ONLY_COVERED_AVAILABLE redirectGroup failed');
+                const _msgs = [
+                    "A quell'orario i campi scoperti sono tutti occupati. Dimmi un altro orario e trovo qualcosa!",
+                    "I campi scoperti sono tutti pieni in quella fascia, prova un altro orario 😔",
+                    "A quell'ora non c'è nessun campo scoperto libero. Ti va un campo coperto, o preferisci cambiare orario?",
+                    "Campi scoperti esauriti a quell'orario, vuoi un altro orario o consideri un campo coperto? 😅",
+                    "Nessun campo scoperto disponibile in quella fascia. Hai un altro orario in mente?",
+                ];
+                await simulateTypingAndSend(jid, _msgs[Math.floor(Math.random() * _msgs.length)]);
+            }
+            return;
+        }
+        if (result.errorMessage === 'ONLY_UNCOVERED_AVAILABLE') {
+            // Utente voleva coperto, solo scoperto è libero a quell'orario
+            // → redirect con originalCourtIsCovered=true: prima cerca coperti vicini, poi scoperto come fallback
+            try {
+                const { redirectGroup } = await import('./redirect');
+                const refTime = result.requestedTime ?? new Date();
+                await redirectGroup({
+                    clubId: club?.id ?? '',
+                    referentPhone: player?.phoneNumber ?? phoneNumber,
+                    referentJid: jid,
+                    playerPhones: [player?.phoneNumber ?? phoneNumber],
+                    playerCount: 1,
+                    originalMatchId: 'none',
+                    originalStartTime: refTime,
+                    originalSkillLevel: player?.skillLevel ?? 0,
+                    originalCourtIsCovered: true,
+                    reason: 'SLOT_TAKEN',
+                    intent: 'BOOK_FIELD',
+                });
+            } catch (err) {
+                logger.error({ err }, 'ONLY_UNCOVERED_AVAILABLE redirectGroup failed');
+                const _msgs = [
+                    "A quell'orario i campi coperti sono tutti occupati. Dimmi un altro orario e trovo qualcosa!",
+                    "I campi coperti sono tutti pieni in quella fascia, prova un altro orario 😔",
+                    "A quell'ora non c'è nessun campo coperto libero. Ti va un campo scoperto, o preferisci cambiare orario?",
+                    "Campi coperti esauriti a quell'orario, vuoi un altro orario o consideri un campo scoperto? 😅",
+                    "Nessun campo coperto disponibile in quella fascia. Hai un altro orario in mente?",
+                ];
+                await simulateTypingAndSend(jid, _msgs[Math.floor(Math.random() * _msgs.length)]);
+            }
+            return;
+        }
+        if (result.errorMessage.startsWith('PLAYER_NOT_FOUND:')) {
+            const searchedName = result.errorMessage.split(':').slice(1).join(':').trim();
+            const redis = getRedis();
+            const nameKey = searchedName.toLowerCase();
+            const alreadyNotified = await redis.get(`invite:admin_notified:${club?.id}:${nameKey}`);
+            const clubName = club?.name || 'circolo';
+            if (alreadyNotified) {
+                const _alreadyMsgs = [
+                    `Ho già contattato il circolo per verificare. Ti rispondo appena ho notizie!`,
+                    `Ho già segnalato al circolo, appena ho una risposta te la giro!`,
+                    `Il circolo è già al corrente, ti aggiorno non appena rispondo!`,
+                    `Ho già mandato il messaggio al circolo. Attendo risposta per te!`,
+                    `Ho già contattato il circolo, ti tengo aggiornato!`,
+                ];
+                await simulateTypingAndSend(jid, _alreadyMsgs[Math.floor(Math.random() * _alreadyMsgs.length)]);
+            } else {
+                const alreadyAsked = await redis.get(`invite:not_found:${club?.id}:${nameKey}`);
+                if (alreadyAsked) {
+                    // Seconda volta: escalation all'admin
+                    const { notifyAdmin } = await import('../utils/notify-admin');
+                    await notifyAdmin(
+                        `❓ ${player?.name || phoneNumber} insiste: vuole invitare "${searchedName}" ma non risulta iscritto. Verificare?`,
+                        `invite_not_found_${nameKey.substring(0, 20)}`,
+                        club?.adminPhone ?? undefined,
+                        club?.name ?? undefined,
+                    ).catch(() => {});
+                    await redis.set(`invite:admin_notified:${club?.id}:${nameKey}`, '1', 'EX', 3600);
+                    const _escalateMsgs = [
+                        `Ho già contattato il circolo per verificare. Ti rispondo appena ho notizie!`,
+                        `Ho già segnalato al circolo, appena ho una risposta te la giro!`,
+                        `Il circolo è già al corrente, ti aggiorno non appena rispondo!`,
+                        `Ho già mandato il messaggio al circolo. Attendo risposta per te!`,
+                        `Ho già contattato il circolo, ti tengo aggiornato!`,
+                    ];
+                    await simulateTypingAndSend(jid, _escalateMsgs[Math.floor(Math.random() * _escalateMsgs.length)]);
+                } else {
+                    // Prima volta: informa l'utente e memorizza
+                    await redis.set(`invite:not_found:${club?.id}:${nameKey}`, '1', 'EX', 3600);
+                    const _notFoundMsgs = [
+                        `Non trovo "${searchedName}" iscritto a ${clubName}. Sei sicuro si sia segnato così?`,
+                        `"${searchedName}" non risulta nella lista di ${clubName}. Lo conosci con un altro nome?`,
+                        `Non ho trovato "${searchedName}" tra gli iscritti a ${clubName}. Sei sicuro del nome?`,
+                        `Il nome "${searchedName}" non mi torna tra gli iscritti a ${clubName}. Come l'hai scritto?`,
+                        `Nessun "${searchedName}" nella lista di ${clubName}. Magari è iscritto con un nome diverso?`,
+                    ];
+                    await simulateTypingAndSend(jid, _notFoundMsgs[Math.floor(Math.random() * _notFoundMsgs.length)]);
+                }
+            }
+        } else if (result.errorMessage.startsWith('PLAYER_AMBIGUOUS:')) {
+            // Più giocatori corrispondono al nome: chiedi quale, mai invitare a caso
+            const names = result.errorMessage.split(':').slice(1).join(':').split('|').filter(Boolean);
+            const _ambiguousMsgs = [
+                `Ho trovato più giocatori con quel nome: ${names.join(', ')}. Quale intendi? Dimmi nome e cognome e lo invito 🎾`,
+                `Ce n'è più d'uno con quel nome (${names.join(', ')}) — dimmi nome e cognome esatti così non sbaglio persona 😊`,
+                `Nel circolo risultano: ${names.join(', ')}. Chi di loro? Scrivimi nome e cognome e procedo 🎾`,
+            ];
+            await simulateTypingAndSend(jid, _ambiguousMsgs[Math.floor(Math.random() * _ambiguousMsgs.length)]);
+        } else if (result.errorMessage.startsWith('NO_ACTIVE_MATCH_FOR_INVITE:')) {
+            // L'amico esiste ma non c'è una partita aperta a cui agganciarlo
+            const friendName = result.errorMessage.split(':').slice(1).join(':').trim() || 'il tuo amico';
+            const _noMatchMsgs = [
+                `${friendName} è iscritto, ma al momento non hai una partita aperta a cui aggiungerlo. Dimmi giorno e orario, apro la partita e lo invito per primo 🎾`,
+                `Ho trovato ${friendName}! Però non hai partite in cerca di giocatori adesso — prenota prima un campo e lo coinvolgo subito 🎾`,
+                `${friendName} c'è nella lista! Mi serve solo una partita aperta: dimmi quando volete giocare e lo invito per primo 🎾`,
+            ];
+            await simulateTypingAndSend(jid, _noMatchMsgs[Math.floor(Math.random() * _noMatchMsgs.length)]);
+        } else if (result.errorMessage === 'ALREADY_JOINED') {
+            const _alreadyMsgs = [
+                "Sei già dentro a questa partita! Non devi fare altro, ci vediamo in campo 🎾",
+                "Tranquillo, sei già iscritto a questa partita — è tutto a posto 🎾",
+                "Ci sei già dentro! Non serve confermare di nuovo, ci vediamo in campo 🎾",
+                "Sei già in questa partita, non devi fare nulla 🎾",
+            ];
+            await simulateTypingAndSend(jid, _alreadyMsgs[Math.floor(Math.random() * _alreadyMsgs.length)]);
+        } else if (result.errorMessage === 'MATCH_CLOSED') {
+            const _closedMsgs = [
+                "Questa partita non è più disponibile (è stata chiusa o completata). Vuoi che cerchi un altro orario?",
+                "Questa partita è già chiusa, vuoi che cerchi qualcos'altro? 😔",
+                "La partita non è più disponibile, ti trovo subito un'alternativa? 😕",
+                "Questa partita si è chiusa, dimmi quando sei libero e cerco 😔",
+                "La partita è già chiusa. Vuoi un altro orario?",
+            ];
+            await simulateTypingAndSend(jid, _closedMsgs[Math.floor(Math.random() * _closedMsgs.length)]);
+        } else if (result.errorMessage === 'MATCH_FULL') {
+            const _fullMsgs = [
+                "Questa partita si è appena riempita! Dimmi un altro orario e ti trovo posto 🎾",
+                "Il posto è stato preso appena prima di te, vuoi che cerchi un'altra partita? 😔",
+                "La partita si è riempita proprio adesso, dimmi quando sei libero e trovo qualcosa 😅",
+                "Arrivato un attimo dopo, i posti sono finiti. Provo un altro orario? 😕",
+                "Piena! Qualcuno ti ha appena superato, ti cerco subito un'altra partita? 😅",
+            ];
+            await simulateTypingAndSend(jid, _fullMsgs[Math.floor(Math.random() * _fullMsgs.length)]);
+        } else if (result.errorMessage === 'GENDER_SLOT_FULL') {
+            const _genderMsgs = [
+                "I posti del tuo genere in questa partita sono esauriti! Provo a cercarti un'altra? 🎾",
+                "Ops, i posti per il tuo genere sono già tutti occupati. Vuoi che cerchi un altro slot? 😅",
+                "Appena occupato l'ultimo posto per il tuo genere. Cerco un'altra partita per te? 😕",
+            ];
+            await simulateTypingAndSend(jid, _genderMsgs[Math.floor(Math.random() * _genderMsgs.length)]);
+        } else if (result.errorMessage === 'SKILL_TEST_REQUIRED') {
+            const _skillMsgs = [
+                "Per cercare altri giocatori ti serve prima la valutazione col maestro (il circolo ti contatterà per organizzarla). Nel frattempo puoi prenotare il campo privatamente!",
+                "Prima di cercare altri giocatori ci vuole la valutazione col maestro, te la organizziamo noi presto. Per ora puoi prenotare il campo con chi vuoi!",
+                "La valutazione col maestro è il primo passo per giocare con altri iscritti, il circolo ti contatta presto. Nel frattempo il campo è tuo quando vuoi!",
+                "Non hai ancora fatto la valutazione col maestro, ti contatteranno per fissarla. Puoi già prenotare il campo nel frattempo!",
+                "La valutazione col maestro è necessaria prima di cercare altri giocatori (il circolo ti raggiungerà presto). Puoi prenotare il campo privatamente da subito!",
+            ];
+            await simulateTypingAndSend(jid, _skillMsgs[Math.floor(Math.random() * _skillMsgs.length)]);
+        } else if (result.errorMessage === 'ALL_COURTS_TAKEN') {
+            // Tutti i campi occupati a quell'orario — redirect con intent BOOK_FIELD
+            // (se è arrivato qui, il booking era privato o skill<=0)
+            try {
+                const { redirectGroup } = await import('./redirect');
+                const refTime = result.requestedTime ?? new Date();
+                await redirectGroup({
+                    clubId: club?.id ?? '',
+                    referentPhone: player?.phoneNumber ?? phoneNumber,
+                    referentJid: jid,
+                    playerPhones: [player?.phoneNumber ?? phoneNumber],
+                    playerCount: 1,
+                    originalMatchId: 'none',
+                    originalStartTime: refTime,
+                    originalSkillLevel: player?.skillLevel ?? 0,
+                    originalCourtIsCovered: params?.preferCovered === true ? true : params?.preferCovered === false ? false : null,
+                    reason: 'SLOT_TAKEN',
+                    intent: 'BOOK_FIELD',
+                });
+            } catch (err) {
+                logger.error({ err }, 'ALL_COURTS_TAKEN redirectGroup failed');
+                const _msgs = [
+                    "Tutti i campi sono occupati a quell'orario, dimmi un altro orario e trovo subito qualcosa 😔",
+                    "A quell'orario non c'è nessun campo libero, prova con un altro orario 😔",
+                    "Tutti i campi sono pieni in quella fascia. Hai un altro orario in testa?",
+                    "A quell'ora sono tutti occupati, dammi un'alternativa e vedo cosa c'è 😕",
+                    "Nessun campo disponibile a quell'orario, dimmi quando sei libero e trovo qualcosa 😔",
+                ];
+                await simulateTypingAndSend(jid, _msgs[Math.floor(Math.random() * _msgs.length)]);
+            }
+        } else if (result.errorMessage === 'NO_OPEN_MATCH') {
+            // Nessun OPEN match compatibile trovato per il matchmaking — redirect con intent MATCHMAKING
+            try {
+                const { redirectGroup } = await import('./redirect');
+                const refTime = result.requestedTime ?? new Date();
+                await redirectGroup({
+                    clubId: club?.id ?? '',
+                    referentPhone: player?.phoneNumber ?? phoneNumber,
+                    referentJid: jid,
+                    playerPhones: [player?.phoneNumber ?? phoneNumber],
+                    playerCount: 1,
+                    originalMatchId: 'none',
+                    originalStartTime: refTime,
+                    originalSkillLevel: player?.skillLevel ?? 0,
+                    originalCourtIsCovered: null,
+                    reason: 'SLOT_TAKEN',
+                    intent: 'MATCHMAKING',
+                });
+            } catch (err) {
+                logger.error({ err }, 'NO_OPEN_MATCH redirectGroup failed');
+                const _msgs = [
+                    "Non ci sono partite aperte a quell'orario. Dimmi un altro orario e vedo cosa c'è disponibile!",
+                    "A quell'orario non c'è nessuna partita aperta. Vuoi che apra io una per te?",
+                    "Nessuna partita disponibile in quella fascia, prova un altro orario o vuoi prenotare il campo in privato? 😔",
+                    "Non ho trovato partite a quell'orario, dimmi quando sei libero e cerco 😕",
+                    "A quell'ora non ci sono partite disponibili. Hai un'altra fascia che preferisci?",
+                ];
+                await simulateTypingAndSend(jid, _msgs[Math.floor(Math.random() * _msgs.length)]);
+            }
+        } else if (result.errorMessage === 'NO_PRIVATE_BOOKING_TO_CONVERT') {
+            const _msgs = [
+                'Non trovo nessuna prenotazione privata da aprire. Hai già una partita prenotata privatamente?',
+                'Non vedo prenotazioni private attive al momento. Vuoi prenotare un campo e poi cercare altri giocatori?',
+                'Non ho trovato una prenotazione privata da convertire. Hai già una partita fissa o vuoi crearne una?',
+                'Non risulta nessuna prenotazione privata aperta. Vuoi che prenoti il campo adesso e poi cerco altri giocatori?',
+                'Non trovo partite private da aprire. Hai già prenotato qualcosa, o vuoi iniziare da zero?',
+            ];
+            await simulateTypingAndSend(jid, _msgs[Math.floor(Math.random() * _msgs.length)]);
+        } else if (result.errorMessage === 'TOO_LATE_FOR_MATCHMAKING') {
+            // La conversione a matchmaking è stata rifiutata (troppo poco tempo): la prenotazione
+            // privata NON è stata toccata, resta valida. Lo comunichiamo chiaramente.
+            const _msgs = [
+                'Manca troppo poco all\'orario per trovare altri giocatori in tempo, quindi non apro la partita al matchmaking — ma tranquilla, il tuo campo resta prenotato! Vieni pure con chi vuoi 🎾',
+                'Per cercare altri giocatori servirebbe più anticipo: così a ridosso dell\'orario rischierei di non trovarli e farti perdere il campo. La tua prenotazione resta valida, gioca con chi hai! 🎾',
+                'Troppo a ridosso per il matchmaking, rischierei di lasciarti senza campo. Tengo la tua prenotazione privata così com\'è — il campo è tuo, porta chi vuoi! 🎾',
+            ];
+            await simulateTypingAndSend(jid, _msgs[Math.floor(Math.random() * _msgs.length)]);
+        } else if (result.errorMessage === 'GENDER_UNKNOWN') {
+            // Partita mista (2M+2F): serve il genere prima di aggiungerlo.
+            // Al turno dopo il brain usa SAVE_GENDER e si procede.
+            const _genderAskMsgs = [
+                'Questa è una partita mista (2 uomini e 2 donne), quindi mi serve saperlo: sei un uomo o una donna? 😊 Appena mi rispondi ti metto dentro.',
+                'Per le partite miste devo bilanciare 2 uomini e 2 donne. Essendo un assistente digitale non vorrei sbagliarmi: sei un uomo o una donna? 😊',
+                'Mi manca solo un dato: questa partita è mista (2 e 2), sei un uomo o una donna? Poi ti aggiungo subito 🎾',
+            ];
+            await simulateTypingAndSend(jid, _genderAskMsgs[Math.floor(Math.random() * _genderAskMsgs.length)]);
+        } else if (result.errorMessage === 'GENDER_MISMATCH') {
+            await simulateTypingAndSend(jid, 'Questa partita è riservata a giocatori dello stesso genere, non posso aggiungerti. Vuoi che cerchi un\'altra partita o prenoti un campo libero? 🎾');
+        } else if (result.errorMessage?.includes('già una prenotazione') || result.errorMessage === 'ALREADY_BOOKED') {
+            // Prenotazione duplicata: suggerisci cercare altri giocatori se è privata
+            const existingPrivate = player ? await prisma.matchPlayer.findFirst({
+                where: { playerId: player.id, leftAt: null, match: { status: 'LOCKED', isPrivateBooking: true } },
+            }) : null;
+            if (existingPrivate) {
+                const _bookedOpenMsgs = [
+                    "Hai già una prenotazione in quella fascia. Vuoi che cerchi altri giocatori per completare la partita? 🎾",
+                    "Sei già prenotato in quella fascia, vuoi che cerchi altri giocatori per completarla? 🎾",
+                    "Ho già una tua prenotazione lì, vuoi che cerchi altri giocatori per completarla? 😊",
+                    "Quella fascia è già tua! Vuoi che trovi altri giocatori per la partita?",
+                    "Sei già dentro in quella fascia, cerco altri giocatori per completare la squadra? 🎾",
+                ];
+                await simulateTypingAndSend(jid, _bookedOpenMsgs[Math.floor(Math.random() * _bookedOpenMsgs.length)]);
+            } else {
+                const _bookedRescheduleMsgs = [
+                    "Hai già una prenotazione in quella fascia. Vuoi spostare o prenotare un altro orario? 🎾",
+                    "Hai già qualcosa in quella fascia, vuoi spostare o scegliere un altro orario? 😊",
+                    "Quell'orario è già occupato da una tua prenotazione. Cambio orario o sposto quella?",
+                    "Sei già prenotato in quella fascia! Vuoi cambiare orario?",
+                    "Quella fascia è già tua, vuoi spostare la prenotazione o sceglierne un'altra? 🎾",
+                ];
+                await simulateTypingAndSend(jid, _bookedRescheduleMsgs[Math.floor(Math.random() * _bookedRescheduleMsgs.length)]);
+            }
+        } else {
+            await simulateTypingAndSend(jid, `Ops! ${result.errorMessage} 😕`);
         }
     }
 }

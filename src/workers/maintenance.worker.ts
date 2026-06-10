@@ -138,6 +138,39 @@ const maintenanceWorker = new Worker(
             logger.info(`cleanup-pending-invitations: ${expiredByMatch.count} expired by past match, ${expiredByAge.count} expired by age (>48h)`);
         }
 
+        if (job.name === 'skill-test-reminder') {
+            // Promemoria settimanale: giocatori registrati da 2+ giorni ancora senza
+            // valutazione col maestro (skillLevel <= 0). Finché non hanno un livello
+            // possono solo prenotare in privato — l'admin deve organizzare gli skill test.
+            const twoDaysAgo = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000);
+            const clubs = await prisma.club.findMany({ select: { id: true, name: true, adminPhone: true } });
+            for (const club of clubs) {
+                if (!club.adminPhone) continue;
+                const adminPhone = club.adminPhone; // narrowing esplicito (la closure sotto lo perde)
+                const pending = await prisma.player.findMany({
+                    where: { clubId: club.id, active: true, skillLevel: { lte: 0 }, createdAt: { lt: twoDaysAgo } },
+                    select: { name: true, phoneNumber: true, createdAt: true },
+                    orderBy: { createdAt: 'asc' },
+                    take: 30,
+                });
+                if (pending.length === 0) continue;
+                const lines = pending.map(p =>
+                    `• ${p.name || 'Senza nome'} (+${p.phoneNumber}) — iscritto il ${p.createdAt.toLocaleDateString('it-IT', { timeZone: 'Europe/Rome' })}`
+                ).join('\n');
+                const { notifyAdmin } = await import('../utils/notify-admin');
+                const { runWithContext } = await import('../utils/request-context');
+                await runWithContext({ clubId: club.id }, () =>
+                    notifyAdmin(
+                        `📋 Valutazioni col maestro in attesa (${pending.length}):\n${lines}\n\nFinché non assegni il livello (Dashboard → Utenti) possono solo prenotare il campo in privato — niente inviti alle partite.`,
+                        `skill-test-reminder-${club.id}`,
+                        adminPhone,
+                        club.name ?? undefined,
+                    )
+                ).catch(() => {});
+            }
+            logger.info('skill-test-reminder: done');
+        }
+
         if (job.name === 'process-match-outcomes') {
             // Finestra: partite terminate nelle ultime 3 ore (copre gap tra run).
             // processMatchOutcomes è idempotente: salta invitation già in stato finale.

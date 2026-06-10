@@ -216,6 +216,13 @@ async function scheduleMaintenance() {
         removeOnComplete: true,
     });
 
+    // Promemoria valutazioni skill test in attesa — lunedi ~9:00 italiane (8:00 UTC)
+    await maintenanceQueue.add('skill-test-reminder', {}, {
+        repeat: { pattern: '0 8 * * 1' },
+        jobId: 'skill-test-reminder',
+        removeOnComplete: true,
+    });
+
     logger.info('Maintenance jobs scheduled (daily-reset, check-timeouts, check-silent, cleanup-messages, process-outcomes, cleanup-pending-invitations, resend-undelivered)');
 }
 
