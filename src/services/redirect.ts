@@ -752,7 +752,8 @@ async function addGroupToMatch(matchId: string, group: RedirectGroup): Promise<v
                 'Quella partita è riservata a giocatori di un altro genere, non posso aggiungerti 😔 Vuoi un\'altra opzione?',
             ],
             GENDER_SLOT_FULL: [
-                'I posti per il tuo genere in quella partita si sono appena esauriti 😕 Vuoi scegliere un\'altra opzione?',
+                // Niente genere nei messaggi (scelta di prodotto): si segnala solo che non c'è più posto
+                'In quella partita non c\'è più posto, si è appena riempita 😕 Vuoi scegliere un\'altra opzione?',
             ],
             DEFAULT: [
                 'Mi dispiace, i posti disponibili sono cambiati! Vuoi scegliere un\'altra opzione?',

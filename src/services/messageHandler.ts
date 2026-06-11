@@ -1020,10 +1020,12 @@ export async function handleActionError(
             ];
             await simulateTypingAndSend(jid, _fullMsgs[Math.floor(Math.random() * _fullMsgs.length)]);
         } else if (result.errorMessage === 'GENDER_SLOT_FULL') {
+            // Niente genere nei messaggi (scelta di prodotto): all'utente si dice solo
+            // che in quella partita non c'è più posto per lui.
             const _genderMsgs = [
-                "I posti del tuo genere in questa partita sono esauriti! Provo a cercarti un'altra? 🎾",
-                "Ops, i posti per il tuo genere sono già tutti occupati. Vuoi che cerchi un altro slot? 😅",
-                "Appena occupato l'ultimo posto per il tuo genere. Cerco un'altra partita per te? 😕",
+                "In questa partita non c'è più posto! Provo a cercartene un'altra? 🎾",
+                "Ops, i posti per questa partita sono già tutti occupati. Vuoi che cerchi un altro slot? 😅",
+                "Qualcuno ha appena preso l'ultimo posto disponibile. Cerco un'altra partita per te? 😕",
             ];
             await simulateTypingAndSend(jid, _genderMsgs[Math.floor(Math.random() * _genderMsgs.length)]);
         } else if (result.errorMessage === 'SKILL_TEST_REQUIRED') {
