@@ -223,7 +223,23 @@ async function scheduleMaintenance() {
         removeOnComplete: true,
     });
 
-    logger.info('Maintenance jobs scheduled (daily-reset, check-timeouts, check-silent, cleanup-messages, process-outcomes, cleanup-pending-invitations, resend-undelivered)');
+    // Archivia match conclusi > 30 giorni — il 1° del mese alle 04:00.
+    // L'handler esisteva ma non era mai stato schedulato: nessun match diventava
+    // ARCHIVED e la tabella accumulava LOCKED/CANCELLED/UNFILLED per sempre.
+    await maintenanceQueue.add('archive-old-matches', {}, {
+        repeat: { pattern: '0 4 1 * *' },
+        jobId: 'archive-old-matches',
+        removeOnComplete: true,
+    });
+
+    // Elimina righe ConversationState scadute (fallback Postgres degli stati Redis) — 04:30 ogni notte
+    await maintenanceQueue.add('prune-conversation-states', {}, {
+        repeat: { pattern: '30 4 * * *' },
+        jobId: 'prune-conversation-states',
+        removeOnComplete: true,
+    });
+
+    logger.info('Maintenance jobs scheduled (daily-reset, check-timeouts, check-silent, cleanup-messages, process-outcomes, cleanup-pending-invitations, resend-undelivered, skill-test-reminder, archive-old-matches, prune-conversation-states)');
 }
 
 // ─────────────────────────────────────────────

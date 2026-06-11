@@ -22,16 +22,16 @@ Riferimento architetturale. Per regole operative → vedi [CLAUDE.md](CLAUDE.md)
 
 ## Architettura dei Processi
 
-Due processi separati per ambiente:
+Un solo processo applicativo per ambiente (+ uno stub):
 
-- **`src/index.ts`** — API HTTP (Express) + WhatsApp bot (Baileys)
-  - Gestisce messaggi in entrata, booking, onboarding, inviti
+- **`src/index.ts`** — TUTTO: API HTTP (Express) + WhatsApp bot (Baileys) + worker BullMQ
+  - Gestisce messaggi in entrata, booking, inviti
   - Espone `/api/webhooks`, `/api/dashboard`, `/api/setup`, `/health`, `/dashboard`, `/setup`
+  - Registra i worker BullMQ (code: `wave`, `reminder`, `maintenance`) — girano qui perché serve il socket WA
   - **Multi-tenant:** connette N socket Baileys (uno per club con `botPhoneNumber` configurato), evento `wahEvents.emit('message', msg, clubId)`, enqueue con clubId
 
-- **`src/worker.ts`** — Worker BullMQ
-  - Consuma code: `wave`, `maintenance`, `recovery`, `reminder`
-  - Non ha connessione WhatsApp diretta — manda messaggi via `simulateTypingAndSend`
+- **`src/worker.ts`** — stub keep-alive
+  - NON consuma code: mantenuto solo per compatibilità con le unit systemd `padel-worker-*`
 
 ### Multi-tenant: architettura socket
 
@@ -62,7 +62,7 @@ Wave per match di club X:
 | File | Cosa fa |
 |------|---------|
 | `src/index.ts` | Avvia Express, Baileys, schedula job manutenzione |
-| `src/worker.ts` | Avvia worker BullMQ per le code |
+| `src/worker.ts` | Stub keep-alive (compat systemd) — i worker girano in index.ts |
 
 ### API
 | File | Cosa fa |
@@ -79,13 +79,11 @@ Wave per match di club X:
 | `src/services/messageHandler.ts` | Routing messaggi: brain per tutti (registrati e non). Dopo BOOK_FIELD invia scheda prenotazione dettagliata |
 | `src/services/brain.ts` | **Cervello AI del bot** — unica chiamata Claude Sonnet con contesto completo → `{ message, action, params }`. Nessuna frase hardcodata |
 | `src/services/inbound-queue.ts` | Debouncing messaggi in entrata (60s per JID), batch processing, recovery dopo crash |
-| `src/services/ai.ts` | Wrapper AI: generazione testi inviti, requiresResponse(), inferGender() |
-| `src/services/conversational-manager.ts` | ⚠️ LEGACY — ancora presente ma non più nel path principale. Il brain gestisce tutto |
+| `src/services/ai.ts` | Wrapper AI: requiresResponse(), inferGender(), splitFaqQuestions(), trascrizione audio |
 
 ### Booking & Matchmaking
 | File | Cosa fa |
 |------|---------|
-| `src/services/booking.ts` | buildRomeTime() per timezone IT — ancora usato per conversione orari. Flusso step-by-step legacy |
 | `src/services/matchmaker.ts` | Orchestra wave di inviti, trova match aperto, buildMatchSocialContext() |
 | `src/services/scoring.ts` | Selezione giocatori per wave (skill range, gender, reliability), processMatchOutcomes() |
 | `src/services/redirect.ts` | Algoritmo P1-P5: trova 5 alternative quando slot è pieno (redirectGroup) |
@@ -93,11 +91,7 @@ Wave per match di club X:
 | `src/services/pricing.ts` | Calcolo prezzo per slot, copertura economica partita |
 
 ### Onboarding
-⚠️ Il flusso onboarding è stato eliminato. Il brain gestisce direttamente la registrazione tramite `REGISTER_PLAYER`.
-| File | Cosa fa |
-|------|---------|
-| `src/services/onboarding-flow.ts` | ⚠️ LEGACY — usato solo da `group-handler.ts`. Non più nel path principale |
-| `src/services/onboarding.ts` | Gestione stati AWAITING_* su Redis (invitation choice, friend phone, ecc.) |
+⚠️ Il flusso onboarding è stato eliminato (file `onboarding*.ts` e `group-handler.ts` rimossi). Il brain gestisce direttamente la registrazione tramite `REGISTER_PLAYER`.
 
 ### Stato Conversazionale
 | File | Cosa fa |
@@ -109,7 +103,6 @@ Wave per match di club X:
 |------|---------|
 | `src/services/db.ts` | Singleton Prisma client |
 | `src/services/queue.ts` | Singleton BullMQ queues (wave, maintenance, recovery, reminder), checkSilentMatches |
-| `src/services/whatsapp-rate-limiter.ts` | Rate limiting invio messaggi WA |
 | `src/utils/retry.ts` | Retry con backoff esponenziale per chiamate esterne |
 | `src/utils/circuit-breaker.ts` | Circuit breaker per AI e servizi esterni |
 | `src/utils/notify-admin.ts` | Notifiche admin su WhatsApp per eventi critici |
@@ -118,12 +111,11 @@ Wave per match di club X:
 | File | Cosa fa |
 |------|---------|
 | `src/workers/wave.worker.ts` | Processa job `process-wave` → chiama matchmaker.processWave() |
-| `src/workers/maintenance.worker.ts` | daily-reset, check-timeouts, check-silent-matches, cleanup-messages, cleanup-pending-invitations |
-| `src/workers/recovery.worker.ts` | Gestisce recovery partite in difficoltà |
+| `src/workers/maintenance.worker.ts` | daily-reset, check-timeouts, check-silent-matches, process-match-outcomes, cleanup-messages, cleanup-pending-invitations, resend-undelivered, skill-test-reminder, archive-old-matches, prune-conversation-states |
 | `src/workers/reminder.worker.ts` | Promemoria partite ai giocatori confermati |
 
 ### Prompts AI
-Tutti in `src/prompts/*.md` — modificabili senza toccare codice TypeScript.
+In `src/prompts/*.md` solo i prompt minori (classify_intent, generate_feedback_request). Il prompt principale del brain è hardcoded in `src/services/brain.ts` (buildStaticRules + systemPrompt, con prompt caching); gli inviti wave sono template senza AI in `invitation-templates.ts`.
 
 ---
 
@@ -134,7 +126,7 @@ Tutti in `src/prompts/*.md` — modificabili senza toccare codice TypeScript.
 | `Club` | Circolo — configura regole (matchLowerRange, matchUpperRange, waveMultiplier, maxDailyMessages, **city, address**) |
 | `Player` | Giocatore — skillLevel float 1.0-7.0 (assegnato SOLO dal club), reliabilityScore, dailyMessagesCount |
 | `Court` | Campo — nome, isCovered |
-| `Match` | Partita — status: OPEN→LOCKED→ARCHIVED, skillLevel, playersNeeded |
+| `Match` | Partita — status: OPEN→LOCKED (→CANCELLED/UNFILLED) →ARCHIVED, skillLevel, playersNeeded |
 | `MatchPlayer` | Join Player↔Match — joinedAt, leftAt |
 | `Invitation` | Invito wave — status: PENDING→ACCEPTED/REJECTED/IGNORED |
 | `WhatsAppMessage` | Log audit messaggi in/out — NON usato per stato conversazionale |
@@ -150,13 +142,19 @@ Tutti in `src/prompts/*.md` — modificabili senza toccare codice TypeScript.
 
 | Chiave Redis | TTL | Scopo |
 |-------------|-----|-------|
-| `state:awaiting:{jid}` | 24h | Stati AWAITING_* (invitation choice, friend phone, ecc.) |
-| `state:booking:{jid}` | 24h | Flusso prenotazione step-by-step |
-| `state:unclear:{jid}` | 24h | Retry classificazione intent |
-| `state:role:{jid}:*` | 1h | AWAITING_REDIRECT_CHOICE |
+| `state:role:{jid}:AWAITING_REDIRECT_CHOICE` | 10min | Scelta tra le opzioni del redirect |
+| `state:booking_intent:{jid}` | 15min | Bozza prenotazione (giorno/ora/preferenze) tra un turno brain e l'altro |
+| `state:feedback_pending:{jid}` | 48h | Risposta feedback post-partita attesa (brain → SAVE_FEEDBACK) |
 | `wave_lock:{matchId}` | 15s | Mutex distributed lock per wave |
-| `feedback_requested:{matchId}:{playerId}` | 24h | Dedup feedback request |
+| `booking_lock:{clubId}` | 10s | Serializza selezione campo + creazione match |
+| `redirect:sent:{jid}:{matchId}:{reason}:{ts}` | 90s | Dedup redirect paralleli |
+| `feedback_requested:{matchId}:{playerId}` | 24h | Dedup invio richiesta feedback |
 | `warning:timeout:{matchId}` | 1h | Dedup warning "ultima chiamata" |
+| `outcomes_processed:{matchId}` | 30g | Idempotenza processMatchOutcomes |
+| `approval:*` | 24h–90g | Gate approvazione numeri sconosciuti (APPROVAL_GATE) |
+| `faq:pending_ids:{clubId}` + `faq:pending:{clubId}:{id}` | 7g | Coda domande FAQ in attesa di risposta admin |
+| `faq:awaiting_*:{clubId}` | 24h | Stati conversazione FAQ admin (conflict/merge/save/improvement) |
+| `alert:gender_unknown:{clubId}:{playerId}` | 7g | Dedup alert genere mancante |
 | `{prefix}inbound:{jid}` | 10min | Coda messaggi in entrata (debounce) |
 
 ---
@@ -192,7 +190,7 @@ messageHandler._handleBatchInner()
             └── INVITE_PREFERRED — cerca player per nome nel club
 ```
 
-**BrainAction types:** `NONE | ACCEPT_INVITATION | REJECT_INVITATION | CANCEL_MATCH | BOOK_FIELD | OPT_OUT | OPT_IN | INVITE_PREFERRED | SAVE_NOTE | REQUEST_LESSON | RESCHEDULE_MATCH | FAQ_REQUEST | REGISTER_PLAYER`
+**BrainAction types:** `NONE | ACCEPT_INVITATION | REJECT_INVITATION | CANCEL_MATCH | BOOK_FIELD | OPT_OUT | OPT_IN | INVITE_PREFERRED | SAVE_NOTE | REQUEST_LESSON | RESCHEDULE_MATCH | FAQ_REQUEST | REGISTER_PLAYER | OPEN_TO_MATCHMAKING | SAVE_GENDER | SET_RACKET_RENTAL | SAVE_FEEDBACK`
 
 ---
 
@@ -238,7 +236,7 @@ wave.worker.ts → matchmaker.processWave()
 - Prisma scrive i timestamp in **UTC**
 - Il DB PostgreSQL ha `timezone = 'Europe/Rome'` → Supabase dashboard mostra orario italiano
 - Output verso utenti: sempre `{ timeZone: 'Europe/Rome' }` in `toLocaleTimeString/toLocaleDateString`
-- Input utente (es. "alle 18"): convertito con `buildRomeTime()` in `booking.ts` (gestisce DST)
+- Input utente (es. "alle 18"): convertito con `buildRomeTime()`/`parseBookingDateTime()` in `brain.ts` (gestisce DST) — clone `buildRomeTimestamp()` in `redirect.ts`
 - **MAI** `ALTER DATABASE ... SET timezone TO 'UTC'` — tornerebbe a mostrare UTC nel dashboard
 
 ---
@@ -276,9 +274,13 @@ wave.worker.ts → matchmaker.processWave()
 
 | Job | Frequenza | Cosa fa |
 |-----|-----------|---------|
-| `daily-reset` | 00:00 ogni notte | Azzera dailyMessagesCount su tutti i player |
+| `daily-reset` | 00:00 ogni notte | Azzera dailyMessagesCount + contatori mattina/pomeriggio su tutti i player |
 | `check-timeouts` | ogni 30min | Cancella match OPEN scaduti senza abbastanza giocatori |
 | `check-silent-matches` | ogni 30min | Rilancia wave su match OPEN senza attività |
 | `process-match-outcomes` | ogni 2h | Chiude invitation PENDING di match terminati, aggiorna reliability |
 | `cleanup-messages` | 03:00 ogni notte | Elimina WhatsAppMessage > 30 giorni |
 | `cleanup-pending-invitations` | ogni ora | PENDING su match passati → IGNORED; PENDING > 48h → IGNORED |
+| `resend-undelivered` | ogni 20min | Rinvia messaggi `important` mai usciti (status <2); gestisce dormienza e numeri dismessi |
+| `skill-test-reminder` | lunedì 08:00 UTC | Promemoria admin: giocatori registrati senza valutazione col maestro |
+| `archive-old-matches` | 1° del mese 04:00 | Match LOCKED/CANCELLED/UNFILLED > 30 giorni → ARCHIVED |
+| `prune-conversation-states` | 04:30 ogni notte | Elimina righe ConversationState scadute (fallback Postgres) |

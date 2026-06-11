@@ -1,13 +1,12 @@
 /**
  * MESSAGE HANDLER
  *
- * Riceve batch dalla inbound-queue (debounce 10s per JID).
+ * Riceve batch dalla inbound-queue (debounce 60s per JID).
  * Flow:
- * 1. Deduplication + trascrizione audio
- * 2. Onboarding attivo → continueOnboarding
- * 3. Giocatore non trovato → startSingleOnboarding
- * 4. Redirect choice → confirmRedirectChoice
- * 5. Brain (Claude Sonnet) → callBrain → executeAction
+ * 1. De-LID + deduplication + persistenza + trascrizione audio
+ * 2. Catena admin (approval → pending action → FAQ flow → comandi DB)
+ * 3. Redirect choice → confirmRedirectChoice
+ * 4. Brain (Claude Sonnet) → callBrain → executeAction (registrati e non)
  */
 
 import { proto } from '@whiskeysockets/baileys';

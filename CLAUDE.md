@@ -139,8 +139,8 @@ Richiede un nome specifico. "vengo con degli amici" senza nomi → `BOOK_FIELD` 
 #### Il brain NON deve promettere il campo prima di BOOK_FIELD
 Mai menzionare nome campo o tipo (coperto/scoperto) nella risposta JSON del brain — il brain non sa quale verrà assegnato.
 
-#### Campo coperto: chiedere conferma quando lo scoperto è pieno
-`createNewMatchAction` ritorna `ONLY_COVERED_AVAILABLE`. `messageHandler` intercetta e chiede conferma. Stato `state:pending_covered:{jid}` (TTL 5min). Si applica solo se esistono campi scoperti nel circolo.
+#### Campo coperto quando lo scoperto è pieno: redirect, non stato dedicato
+`createNewMatchAction` ritorna `ONLY_COVERED_AVAILABLE` → `handleActionError` attiva `redirectGroup` (two-pass: prima il tipo preferito, poi l'opposto come fallback). Lo stato `state:pending_covered:{jid}` è stato RIMOSSO — non re-introdurlo. Si applica solo se esistono campi scoperti nel circolo.
 
 #### Doppia prenotazione: check pre-booking
 `bookSlotForPlayer` verifica `MatchPlayer` esistente (leftAt=null) in ±30min prima di creare/joinare.
@@ -151,8 +151,8 @@ Mai menzionare nome campo o tipo (coperto/scoperto) nella risposta JSON del brai
 #### Messaggi replay (APPROVED_*): flag alreadyPersisted
 `NormalizedMessage.alreadyPersisted = true` evita che `_handleBatchInner` salvi di nuovo il replay.
 
-#### Admin check DEVE venire prima dell'onboarding state check
-Ordine in `_handleBatchInner`: (1) carica club+adminPhone, (2) gestisci comando admin `ok <numero>` e ritorna, (3) onboarding state, (4) player lookup. L'admin deve sempre poter operare indipendentemente.
+#### Admin check DEVE venire prima di tutto il resto
+Ordine in `_handleBatchInner`: (1) carica club+adminPhone, (2) catena admin (approval → pending action → FAQ flow → comandi DB) e ritorna se gestito, (3) player lookup, (4) redirect choice, (5) brain. L'admin deve sempre poter operare indipendentemente.
 
 #### skillLevel -1 per nuovi giocatori + gender inference
 `REGISTER_PLAYER` crea con `skillLevel: -1` + `inferGender(firstName)` dal primo nome.
@@ -222,6 +222,8 @@ node -e "console.log(new Date(2026,3,17).toLocaleDateString('it-IT',{weekday:'lo
 |----------|-------------|-----------|---------|
 | Staging | `/root/padel-staging` | `preview` | `padel-staging.service` + `padel-worker-staging.service` |
 | Produzione | `/root/padel-prod` | `main` | `padel-prod.service` + `padel-worker-prod.service` |
+
+> I `padel-worker-*` sono stub keep-alive: tutti i worker BullMQ girano dentro `padel-staging`/`padel-prod` (serve il socket WA). Riavviare sempre entrambi i servizi è comunque corretto.
 
 VPS: `root@46.225.212.159` (SSH con chiave `~/.ssh/id_ed25519`)
 
