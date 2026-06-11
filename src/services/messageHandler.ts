@@ -1124,7 +1124,10 @@ export async function handleActionError(
             ];
             await simulateTypingAndSend(jid, _genderAskMsgs[Math.floor(Math.random() * _genderAskMsgs.length)]);
         } else if (result.errorMessage === 'GENDER_MISMATCH') {
-            await simulateTypingAndSend(jid, 'Questa partita è riservata a giocatori dello stesso genere, non posso aggiungerti. Vuoi che cerchi un\'altra partita o prenoti un campo libero? 🎾');
+            // Copy scelta di prodotto: niente "riservata a..." — si comunica il limite raggiunto.
+            // GENDER_MISMATCH scatta solo con genere noto (UNKNOWN passa il check) → MALE/FEMALE garantito.
+            const _mismatchLabel = player?.gender === 'FEMALE' ? 'donne' : 'uomini';
+            await simulateTypingAndSend(jid, `La partita ha già raggiunto il numero massimo di ${_mismatchLabel}. Vuoi che cerchi un'altra partita o prenoti un campo libero? 🎾`);
         } else if (result.errorMessage?.includes('già una prenotazione') || result.errorMessage === 'ALREADY_BOOKED') {
             // Prenotazione duplicata: suggerisci cercare altri giocatori se è privata
             const existingPrivate = player ? await prisma.matchPlayer.findFirst({

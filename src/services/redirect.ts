@@ -734,22 +734,25 @@ async function addGroupToMatch(matchId: string, group: RedirectGroup): Promise<v
     const { joinExistingMatch } = await import('./brain');
     let joinedAny = false;
     let lastError: string | null = null;
+    let lastErrorGender: string | null = null;
     for (const phone of group.playerPhones) {
         const player = await prisma.player.findFirst({ where: { phoneNumber: phone, clubId: group.clubId } });
         if (!player) continue;
         try {
             const res = await joinExistingMatch(matchId, player);
             if (res.success || res.errorMessage === 'ALREADY_JOINED') joinedAny = true;
-            else lastError = res.errorMessage ?? null;
+            else { lastError = res.errorMessage ?? null; lastErrorGender = (player as any).gender ?? null; }
         } catch (err) {
             logger.error({ err, phone, matchId }, 'addGroupToMatch: joinExistingMatch failed');
         }
     }
 
     if (!joinedAny) {
+        // Copy scelta di prodotto: niente "riservata a..." — si comunica il limite raggiunto
+        const _mismatchLabel = lastErrorGender === 'FEMALE' ? 'donne' : 'uomini';
         const _failMsgs: Record<string, string[]> = {
             GENDER_MISMATCH: [
-                'Quella partita è riservata a giocatori di un altro genere, non posso aggiungerti 😔 Vuoi un\'altra opzione?',
+                `La partita ha già raggiunto il numero massimo di ${_mismatchLabel} 😔 Vuoi un'altra opzione?`,
             ],
             GENDER_SLOT_FULL: [
                 // Niente genere nei messaggi (scelta di prodotto): si segnala solo che non c'è più posto
