@@ -849,7 +849,7 @@ export async function handleMatchFilled(matchId: string, startTime: Date): Promi
 // errorMessage simbolici in messaggi utente e attiva il redirect dove previsto.
 // ─────────────────────────────────────────────
 
-async function handleActionError(
+export async function handleActionError(
     jid: string,
     action: string,
     params: any,

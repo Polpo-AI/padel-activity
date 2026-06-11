@@ -1972,6 +1972,9 @@ export async function joinExistingMatch(matchId: string, player: any): Promise<{
         if (err.message === 'ALREADY_JOINED') return { success: false, errorMessage: 'ALREADY_JOINED' };
         if (err.message === 'GENDER_MISMATCH') return { success: false, errorMessage: 'GENDER_MISMATCH' };
         if (err.message === 'GENDER_UNKNOWN') return { success: false, errorMessage: 'GENDER_UNKNOWN' };
+        // Mancava: senza questo mapping l'errore usciva come eccezione (incoerente con i fratelli)
+        // e in addGroupToMatch il messaggio specifico 'posti del tuo genere esauriti' era irraggiungibile.
+        if (err.message === 'GENDER_SLOT_FULL') return { success: false, errorMessage: 'GENDER_SLOT_FULL' };
         throw err;
     }
 }
