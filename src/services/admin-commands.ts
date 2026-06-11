@@ -1197,3 +1197,59 @@ async function executeAdminSteps(
         logger.warn({ command, params }, 'executeAdminSteps: unhandled command');
     }
 }
+
+// ─────────────────────────────────────────────
+// APPROVAL GATE — comando "ok <numero>" (anche multipli, o "ok" secco)
+// Usato sia dal telefono admin che dalla self-chat del telefono del circolo.
+// ─────────────────────────────────────────────
+
+export async function handleApprovalCommand(text: string, club: any, jid: string): Promise<boolean> {
+    if (!/^ok\b/i.test(text)) return false;
+
+    const redis = getRedis();
+    const extractedPhones = [...text.matchAll(/[+]?\d{7,15}/g)]
+        .map(m => m[0].replace(/\D/g, ''))
+        .filter(p => p.length >= 7);
+
+    let phonesToApprove: string[] = extractedPhones;
+    if (phonesToApprove.length === 0) {
+        // "ok" senza numero: approva l'unico pending
+        const pendingRaw = await redis.get(`approval:last_pending:${club?.id || ''}`);
+        if (pendingRaw) phonesToApprove = [pendingRaw];
+    }
+
+    if (phonesToApprove.length === 0) {
+        await sendMessage(jid, '⚠️ Nessun numero in attesa di approvazione.');
+        return true;
+    }
+
+    for (const targetPhone of phonesToApprove) {
+        await redis.set(`approval:approved:${targetPhone}`, '1', 'EX', 90 * 24 * 3600);
+        await redis.del(`approval:pending:${targetPhone}`);
+        await redis.del(`approval:last_pending:${club?.id || ''}`);
+        logger.info({ targetPhone }, 'Admin approved number');
+        // Replay il messaggio pendente come se fosse appena arrivato
+        const stored = await redis.get(`approval:text:${targetPhone}`);
+        if (stored) {
+            await redis.del(`approval:text:${targetPhone}`);
+            const { handleBatch } = await import('./messageHandler');
+            const { getClubId } = await import('../utils/request-context');
+            await handleBatch(`${targetPhone}@s.whatsapp.net`, [{
+                type: 'text',
+                text: stored,
+                clubId: getClubId(),
+                alreadyPersisted: true,
+                raw: {
+                    key: { id: `APPROVED_${Date.now()}`, remoteJid: `${targetPhone}@s.whatsapp.net`, fromMe: false },
+                    pushName: targetPhone,
+                    messageTimestamp: Math.floor(Date.now() / 1000),
+                    message: { conversation: stored },
+                } as any,
+            }]);
+        }
+    }
+
+    const plural = phonesToApprove.length > 1 ? `${phonesToApprove.length} numeri approvati` : `${phonesToApprove[0]} approvato`;
+    await sendMessage(jid, `✅ ${plural}`).catch(() => {});
+    return true;
+}

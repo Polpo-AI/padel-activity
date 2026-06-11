@@ -264,58 +264,9 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[], cor
     const isFromAdmin = adminPhone && phoneNumber === adminPhone;
     if (isFromAdmin) {
         // Supporta sia "ok +393..." (singolo) che "ok +39A +39B +39C" (multipli)
-        const isOkCommand = /^ok\b/i.test(combinedText);
-        if (isOkCommand) {
-            const redis = getRedis();
-            const extractedPhones = [...combinedText.matchAll(/[+]?\d{7,15}/g)]
-                .map(m => m[0].replace(/\D/g, ''))
-                .filter(p => p.length >= 7);
-
-            let phonesToApprove: string[] = extractedPhones;
-            if (phonesToApprove.length === 0) {
-                // "ok" senza numero: approva l'unico pending
-                const pendingRaw = await redis.get(`approval:last_pending:${club?.id || ''}`);
-                if (pendingRaw) phonesToApprove = [pendingRaw];
-            }
-
-            if (phonesToApprove.length === 0) {
-                await sendMessage(jid, '⚠️ Nessun numero in attesa di approvazione.');
-                return;
-            }
-
-            for (const targetPhone of phonesToApprove) {
-                await redis.set(`approval:approved:${targetPhone}`, '1', 'EX', 90 * 24 * 3600);
-                await redis.del(`approval:pending:${targetPhone}`);
-                await redis.del(`approval:last_pending:${club?.id || ''}`);
-                logger.info({ targetPhone }, 'Admin approved number');
-                // Replay il messaggio pendente come se fosse appena arrivato
-                const stored = await redis.get(`approval:text:${targetPhone}`);
-                if (stored) {
-                    await redis.del(`approval:text:${targetPhone}`);
-                    const { handleBatch } = await import('./messageHandler');
-                    const { getClubId } = await import('../utils/request-context');
-                    await handleBatch(`${targetPhone}@s.whatsapp.net`, [{
-                        type: 'text',
-                        text: stored,
-                        clubId: getClubId(),
-                        alreadyPersisted: true,
-                        raw: {
-                            key: { id: `APPROVED_${Date.now()}`, remoteJid: `${targetPhone}@s.whatsapp.net`, fromMe: false },
-                            pushName: targetPhone,
-                            messageTimestamp: Math.floor(Date.now() / 1000),
-                            message: { conversation: stored },
-                        } as any,
-                    }]);
-                }
-            }
-
-            const plural = phonesToApprove.length > 1 ? `${phonesToApprove.length} numeri approvati` : `${phonesToApprove[0]} approvato`;
-            await sendMessage(jid, `✅ ${plural}`).catch(() => {});
-            return;
-        }
-
-        // Admin: conferma azioni destructive pendenti (priorità massima)
-        const { handleAdminCommand, handleAdminFaqFlow, handleAdminPendingAction } = await import('./admin-commands');
+        const { handleAdminCommand, handleAdminFaqFlow, handleAdminPendingAction, handleApprovalCommand } = await import('./admin-commands');
+        const approvalHandled = await handleApprovalCommand(combinedText, club, jid);
+        if (approvalHandled) return;
         const pendingActionHandled = await handleAdminPendingAction(combinedText, club, jid);
         if (pendingActionHandled) return;
 
@@ -348,16 +299,20 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[], cor
         // (staging). In produzione il flag è assente → i numeri nuovi vanno dritti al brain → REGISTER_PLAYER.
         if (process.env.APPROVAL_GATE === 'true' && !approved) {
             const alreadyPending = await redis.get(`approval:pending:${phoneNumber}`);
-            if (!alreadyPending && adminPhone) {
-                // Prima volta che scrive: notifica admin e metti in attesa
+            if (!alreadyPending) {
+                // Prima volta che scrive: notifica admin (self-chat sempre, adminPhone se abilitato) e metti in attesa
                 const preview = combinedText.substring(0, 200) || '(nessun testo)';
                 await redis.set(`approval:pending:${phoneNumber}`, '1', 'EX', 86400);
                 await redis.set(`approval:text:${phoneNumber}`, combinedText || '', 'EX', 86400);
                 await redis.set(`approval:last_pending:${club?.id || ''}`, phoneNumber, 'EX', 86400);
-                const adminJid = `${adminPhone}@s.whatsapp.net`;
-                await sendMessage(adminJid,
-                    `🔔 Numero sconosciuto: +${phoneNumber}\n📩 "${preview}"\n\nRispondi *ok ${phoneNumber}* per autorizzare.`
-                );
+                const { notifyAdmin } = await import('../utils/notify-admin');
+                await notifyAdmin(
+                    `🔔 Numero sconosciuto: +${phoneNumber}\n📩 "${preview}"\n\nRispondi *ok ${phoneNumber}* per autorizzare.`,
+                    `approval-${phoneNumber}`,
+                    club?.adminPhone ?? undefined,
+                    club?.name ?? undefined,
+                    'players',
+                ).catch(() => {});
                 logger.info({ phoneNumber }, 'Unknown number — waiting for admin approval');
             }
             return; // Nessuna risposta al numero non autorizzato
@@ -692,7 +647,7 @@ async function _handleBatchInner(jid: string, messages: NormalizedMessage[], cor
         // OPT_OUT: notifica admin
         if (action === 'OPT_OUT' && player) {
             const { notifyAdmin } = await import('../utils/notify-admin');
-            notifyAdmin(`⚠️ OPT_OUT: ${player.name || phoneNumber} (${phoneNumber}) ha disattivato i messaggi.`).catch(() => {});
+            notifyAdmin(`⚠️ OPT_OUT: ${player.name || phoneNumber} (${phoneNumber}) ha disattivato i messaggi.`, `opt-out-${phoneNumber}`, undefined, undefined, 'players').catch(() => {});
         }
 
         // ── Secondary FAQ detection: batch con 2+ messaggi ───────────────────────
@@ -993,6 +948,7 @@ async function handleActionError(
                         `invite_not_found_${nameKey.substring(0, 20)}`,
                         club?.adminPhone ?? undefined,
                         club?.name ?? undefined,
+                        'faq',
                     ).catch(() => {});
                     await redis.set(`invite:admin_notified:${club?.id}:${nameKey}`, '1', 'EX', 3600);
                     const _escalateMsgs = [

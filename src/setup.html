@@ -436,6 +436,18 @@
     </div>
 
     <div class="field-row">
+      <div style="grid-column: 1 / -1;">
+        <label>Notifiche inoltrate al telefono admin<span class="label-hint">la chat del circolo riceve sempre tutto</span></label>
+        <div style="display:flex; flex-wrap:wrap; gap:10px 18px; margin-top:6px;">
+          <label style="display:flex; align-items:center; gap:6px; font-weight:normal; margin:0; cursor:pointer;"><input type="checkbox" class="notify-cat" value="system" checked /> Errori di sistema</label>
+          <label style="display:flex; align-items:center; gap:6px; font-weight:normal; margin:0; cursor:pointer;"><input type="checkbox" class="notify-cat" value="matches" checked /> Partite a rischio o cancellate</label>
+          <label style="display:flex; align-items:center; gap:6px; font-weight:normal; margin:0; cursor:pointer;"><input type="checkbox" class="notify-cat" value="faq" /> Domande in attesa di risposta</label>
+          <label style="display:flex; align-items:center; gap:6px; font-weight:normal; margin:0; cursor:pointer;"><input type="checkbox" class="notify-cat" value="players" /> Giocatori (iscrizioni, opt-out, livelli)</label>
+        </div>
+      </div>
+    </div>
+
+    <div class="field-row">
       <div>
         <label>Apertura campi</label>
         <input type="time" id="openTime" value="08:00" />
@@ -616,6 +628,7 @@
 <script>
 const STATE = {
   name: '', city: '', address: '', adminPhone: '', adminAltPhone: '',
+  adminNotifyCategories: ['system', 'matches'],
   openTime: '08:00', closeTime: '23:30',
   matchDuration: 90, timezone: 'Europe/Rome',
   courts: [{ name: 'Campo 1', covered: false }],
@@ -692,6 +705,7 @@ function collectStep(step) {
     STATE.address = v('address');
     STATE.adminPhone = v('adminPhone');
     STATE.adminAltPhone = v('adminAltPhone');
+    STATE.adminNotifyCategories = [...document.querySelectorAll('.notify-cat:checked')].map(c => c.value);
     STATE.openTime = v('openTime') || '08:00';
     STATE.closeTime = v('closeTime') || '23:30';
     STATE.matchDuration = parseInt(v('matchDuration')) || 90;
@@ -793,7 +807,8 @@ function buildSummary() {
   const items = [
     { k: 'Circolo',          v: STATE.name },
     ...(STATE.city ? [{ k: 'Città', v: STATE.city + (STATE.address ? ` — ${STATE.address}` : '') }] : []),
-    { k: 'Admin WA',         v: STATE.adminPhone },
+    { k: 'Admin WA',         v: STATE.adminPhone || 'solo chat del circolo' },
+    ...(STATE.adminPhone ? [{ k: 'Notifiche admin', v: STATE.adminNotifyCategories.map(c => ({ system: 'sistema', matches: 'partite', faq: 'FAQ', players: 'giocatori' }[c] || c)).join(', ') || 'nessuna' }] : []),
     { k: 'Orari',            v: `${STATE.openTime} – ${STATE.closeTime}` },
     { k: 'Durata partita',   v: `${STATE.matchDuration} min` },
     { k: 'Campi',            v: courts.map(c => `${c.name}${c.covered ? ' 🏠' : ' ☀️'}`).join(', '), full: true },
@@ -822,6 +837,7 @@ function buildJson() {
     ...(STATE.address && { address: STATE.address }),
     adminPhone: STATE.adminPhone,
     ...(STATE.adminAltPhone && { adminAlternativePhone: STATE.adminAltPhone }),
+    adminNotifyCategories: STATE.adminNotifyCategories,
     timezone: STATE.timezone,
     openTime: STATE.openTime,
     closeTime: STATE.closeTime,

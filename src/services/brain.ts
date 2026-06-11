@@ -948,12 +948,12 @@ export async function executeAction(
                     active: true,
                 },
             });
-            if (club.adminPhone) {
+            {
                 const { notifyAdmin } = await import('../utils/notify-admin');
                 const genderWarning = gender === 'UNKNOWN'
                     ? `\n⚠️ Genere non riconosciuto dal nome — impostalo a mano (Dashboard → Utenti): finché manca, non riceverà inviti alle partite.`
                     : '';
-                notifyAdmin(`🆕 Nuovo giocatore registrato: ${name} (${phoneNumber})${genderWarning}`).catch(() => {});
+                notifyAdmin(`🆕 Nuovo giocatore registrato: ${name} (${phoneNumber})${genderWarning}`, `new-player-${phoneNumber}`, undefined, undefined, 'players').catch(() => {});
             }
             return { success: true };
         } catch (regErr: any) {
@@ -1203,6 +1203,7 @@ export async function executeAction(
                         notifyAdmin(
                             `❌ Disdetta last-minute di ${leavingName}: partita di ${matchTimeStr} annullata (${remaining.length} giocatori reindirizzati).`,
                             `lastminute-cancel-${mp.matchId}`,
+                            undefined, undefined, 'matches',
                         ).catch(() => {});
                     } else {
                         // Matchmaking LOCKED con margine: riapri e rilancia wave con urgenza
@@ -1410,7 +1411,7 @@ export async function executeAction(
         if (action === 'OPT_IN') {
             await prisma.player.update({ where: { id: player.id }, data: { active: true } });
             const { notifyAdmin } = await import('../utils/notify-admin');
-            notifyAdmin(`✅ OPT_IN: ${player.name || player.id} ha richiesto di rientrare nella lista.`).catch(() => {});
+            notifyAdmin(`✅ OPT_IN: ${player.name || player.id} ha richiesto di rientrare nella lista.`, `opt-in-${player.id}`, undefined, undefined, 'players').catch(() => {});
             return { success: true };
         }
 
@@ -1503,6 +1504,7 @@ export async function executeAction(
                         `faq_pending_${faqId}`,
                         club?.adminPhone,
                         club?.name,
+                        'faq',
                     ).catch(() => {});
                 }
             }

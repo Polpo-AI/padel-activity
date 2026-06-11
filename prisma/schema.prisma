@@ -145,6 +145,9 @@ model Club {
   aiTone                     String?
   adminPhone                 String?
   adminAlternativePhone      String?
+  // Categorie di notifiche inoltrate ANCHE al telefono admin (la self-chat del
+  // telefono del circolo le riceve sempre tutte): system | matches | faq | players
+  adminNotifyCategories      String[]  @default(["system", "matches"])
   deadlineMinutesBeforeMatch Int       @default(60)
   mixedLevelRange            Int       @default(1)
   matchUpperRange            Float     @default(1.0)

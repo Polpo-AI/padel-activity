@@ -157,7 +157,8 @@ export async function handleMatchUnfillable(matchId: string, forceCancel: boolea
         await notifyAdmin(
             `❌ Partita CANCELLATA per mancanza giocatori\n${courtName} alle ${timeStr}\n` +
             `Confermati: ${confirmedPlayers.length}/${match.playersNeeded}`,
-            `unfillable-${matchId}`
+            `unfillable-${matchId}`,
+            undefined, undefined, 'matches'
         );
     } else {
         await prisma.match.update({
@@ -168,7 +169,8 @@ export async function handleMatchUnfillable(matchId: string, forceCancel: boolea
         await notifyAdmin(
             `⚠️ Partita SENZA GIOCATORI SUFFICIENTI\n${courtName} alle ${timeStr}\n` +
             `${confirmedPlayers.length}/${match.playersNeeded} — pool esaurito. Intervento manuale.`,
-            `unfilled-${matchId}`
+            `unfilled-${matchId}`,
+            undefined, undefined, 'matches'
         );
     }
 }

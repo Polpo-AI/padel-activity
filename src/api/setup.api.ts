@@ -44,6 +44,7 @@ router.post('/club', requireSetupSecret, async (req, res) => {
             name,
             adminPhone,
             adminAlternativePhone,
+            adminNotifyCategories, // categorie inoltrate al telefono admin (la self-chat riceve sempre tutto)
             timezone,
             openTime,
             closeTime,
@@ -77,6 +78,14 @@ router.post('/club', requireSetupSecret, async (req, res) => {
         if (!Array.isArray(courts) || courts.length === 0) {
             return res.status(400).json({ error: 'Almeno un campo è obbligatorio' });
         }
+        if (adminNotifyCategories !== undefined) {
+            const { ADMIN_NOTIFY_CATEGORIES } = await import('../utils/notify-admin');
+            const valid = Array.isArray(adminNotifyCategories)
+                && adminNotifyCategories.every((c: any) => ADMIN_NOTIFY_CATEGORIES.includes(c));
+            if (!valid) {
+                return res.status(400).json({ error: `adminNotifyCategories deve essere un array di: ${ADMIN_NOTIFY_CATEGORIES.join(', ')}` });
+            }
+        }
 
         // ── Verifica unicità username ──────────
         const existing = await prisma.club.findFirst({ where: { dashboardUsername } });
@@ -97,6 +106,7 @@ router.post('/club', requireSetupSecret, async (req, res) => {
                 name: name.trim(),
                 adminPhone: adminPhone ?? null,
                 adminAlternativePhone: adminAlternativePhone || null,
+                ...(adminNotifyCategories !== undefined ? { adminNotifyCategories } : {}),
                 timezone: timezone || 'Europe/Rome',
                 openTime: openTime || '08:00',
                 closeTime: closeTime || '23:30',

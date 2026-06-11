@@ -6,6 +6,7 @@ import Toast from "../../shared/Toast";
 const EMPTY = {
   // Circolo
   name: "", city: "", address: "", adminPhone: "", adminAlternativePhone: "",
+  adminNotifyCategories: ["system", "matches"],
   // Bot
   botName: "", aiTone: "friendly", maxDailyMessages: 2, racketPrice: "",
   // Orari & Partite
@@ -77,6 +78,7 @@ export default function SettingsView({ token, club, onClubUpdate }) {
         address: d.address || "",
         adminPhone: d.adminPhone || "",
         adminAlternativePhone: d.adminAlternativePhone || "",
+        adminNotifyCategories: d.adminNotifyCategories ?? ["system", "matches"],
         botName: d.botName || "",
         aiTone: d.aiTone || "friendly",
         maxDailyMessages: d.maxDailyMessages ?? 2,
@@ -160,13 +162,37 @@ export default function SettingsView({ token, club, onClubUpdate }) {
           <F label="Indirizzo" hint="Appare in ogni conferma di prenotazione">
             <input value={form.address} onChange={f("address")} style={inputSt} placeholder="Via Roma 1" />
           </F>
-          <F label="Telefono admin" hint="Riceve notifiche WhatsApp">
+          <F label="Telefono admin" hint="Riceve solo le notifiche selezionate sotto. Vuoto = tutto passa dalla chat del circolo">
             <input value={form.adminPhone} onChange={f("adminPhone")} style={inputSt} placeholder="393457991255" />
           </F>
           <F label="Telefono alternativo" hint="Per lezioni/maestro">
             <input value={form.adminAlternativePhone} onChange={f("adminAlternativePhone")} style={inputSt} placeholder="393457991256" />
           </F>
         </Grid>
+        <F label="Notifiche inoltrate al telefono admin" hint="La chat del telefono del circolo (Messaggi a te stesso) riceve sempre tutte le notifiche">
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            {[
+              { id: "system", label: "🚨 Errori di sistema" },
+              { id: "matches", label: "🎾 Partite a rischio" },
+              { id: "faq", label: "❓ Domande in attesa" },
+              { id: "players", label: "👤 Giocatori" },
+            ].map(cat => {
+              const on = form.adminNotifyCategories.includes(cat.id);
+              return (
+                <button type="button" key={cat.id} onClick={() => {
+                  setForm(p => ({ ...p, adminNotifyCategories: on ? p.adminNotifyCategories.filter(c => c !== cat.id) : [...p.adminNotifyCategories, cat.id] }));
+                  setDirty(true);
+                }} style={{
+                  padding: "9px 14px", borderRadius: 8, cursor: "pointer", fontSize: 12,
+                  border: `1px solid ${on ? C.accent : C.border}`,
+                  background: on ? C.accentDim : "transparent",
+                  color: on ? C.accent : C.muted,
+                  fontFamily: "inherit",
+                }}>{cat.label}</button>
+              );
+            })}
+          </div>
+        </F>
       </Section>
 
       {/* ── 2. Bot ── */}

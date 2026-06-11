@@ -145,8 +145,6 @@ const maintenanceWorker = new Worker(
             const twoDaysAgo = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000);
             const clubs = await prisma.club.findMany({ select: { id: true, name: true, adminPhone: true } });
             for (const club of clubs) {
-                if (!club.adminPhone) continue;
-                const adminPhone = club.adminPhone; // narrowing esplicito (la closure sotto lo perde)
                 const pending = await prisma.player.findMany({
                     where: { clubId: club.id, active: true, skillLevel: { lte: 0 }, createdAt: { lt: twoDaysAgo } },
                     select: { name: true, phoneNumber: true, createdAt: true },
@@ -163,8 +161,9 @@ const maintenanceWorker = new Worker(
                     notifyAdmin(
                         `📋 Valutazioni col maestro in attesa (${pending.length}):\n${lines}\n\nFinché non assegni il livello (Dashboard → Utenti) possono solo prenotare il campo in privato — niente inviti alle partite.`,
                         `skill-test-reminder-${club.id}`,
-                        adminPhone,
+                        club.adminPhone ?? undefined,
                         club.name ?? undefined,
+                        'players',
                     )
                 ).catch(() => {});
             }

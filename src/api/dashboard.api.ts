@@ -139,8 +139,18 @@ router.patch('/club', authMiddleware, async (req: Request, res: Response) => {
         botName, aiTone, maxDailyMessages, racketPrice,
         openTime, closeTime, matchDuration, deadlineMinutesBeforeMatch,
         skillLevelCount, matchLowerRange, matchUpperRange,
-        skillTestCost, skillTestDuration,
+        skillTestCost, skillTestDuration, adminNotifyCategories,
     } = req.body;
+
+    // Categorie notifiche admin: array di valori ammessi (system|matches|faq|players)
+    if (adminNotifyCategories !== undefined) {
+        const { ADMIN_NOTIFY_CATEGORIES } = await import('../utils/notify-admin');
+        const valid = Array.isArray(adminNotifyCategories)
+            && adminNotifyCategories.every((c: any) => ADMIN_NOTIFY_CATEGORIES.includes(c));
+        if (!valid) {
+            return res.status(400).json({ error: `adminNotifyCategories deve essere un array di: ${ADMIN_NOTIFY_CATEGORIES.join(', ')}` });
+        }
+    }
     const confirm = req.query.confirm === 'true';
 
     try {
@@ -200,6 +210,7 @@ router.patch('/club', authMiddleware, async (req: Request, res: Response) => {
 
                 skillTestCost:              skillTestCost !== undefined ? parseFloat(skillTestCost) : undefined,
                 skillTestDuration:          skillTestDuration !== undefined ? parseInt(skillTestDuration) : undefined,
+                adminNotifyCategories:      def(adminNotifyCategories),
             },
         });
         res.json(updated);
@@ -1654,12 +1665,19 @@ router.post('/test-notification', authMiddleware, async (req: Request, res: Resp
     try {
         const clubId = (req as any).clubId;
         const club = await prisma.club.findUnique({ where: { id: clubId }, select: { adminPhone: true, name: true } });
-        if (!club?.adminPhone) return res.status(400).json({ error: 'adminPhone non configurato' });
 
-        const jid = `${club.adminPhone.replace(/\D/g, '')}@s.whatsapp.net`;
+        // adminPhone se configurato, altrimenti self-chat del telefono del circolo
+        let jid = club?.adminPhone ? `${club.adminPhone.replace(/\D/g, '')}@s.whatsapp.net` : null;
+        if (!jid) {
+            const { getBotJid } = await import('../services/whatsapp');
+            jid = await getBotJid(clubId);
+        }
+        if (!jid) return res.status(503).json({ error: 'Nessun canale disponibile: né adminPhone né bot connesso' });
+
+        const targetJid = jid;
         // Imposta il clubId nel context così sendMessage usa il socket corretto
         await runWithContext({ correlationId: `test-notif-${clubId}`, clubId }, async () => {
-            await sendMessage(jid, `🎾 *Test notifica Francesca*\nConnessione attiva. JID utilizzato: ${jid}`);
+            await sendMessage(targetJid, `🎾 *Test notifica Francesca*\nConnessione attiva. JID utilizzato: ${targetJid}`);
         });
         res.json({ ok: true, jid });
     } catch (err: any) {

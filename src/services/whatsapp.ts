@@ -584,10 +584,11 @@ async function handleSelfChatAdmin(msg: proto.IWebMessageInfo, clubKey: string):
             : await prisma.club.findFirst();
         if (!club) return;
         const { runWithContext } = require('../utils/request-context');
-        const { handleAdminCommand, handleAdminFaqFlow, handleAdminPendingAction } = await import('./admin-commands');
+        const { handleAdminCommand, handleAdminFaqFlow, handleAdminPendingAction, handleApprovalCommand } = await import('./admin-commands');
 
         await runWithContext({ clubId: club.id }, async () => {
             const handled =
+                await handleApprovalCommand(text, club, selfJid) ||
                 await handleAdminPendingAction(text, club, selfJid) ||
                 await handleAdminFaqFlow(text, club, selfJid) ||
                 await handleAdminCommand(text, club, selfJid);

@@ -296,6 +296,7 @@ async function alertUnknownGenderPlayers(
         `gender-unknown-${club.id}-${Date.now()}`,
         club.adminPhone ?? undefined,
         club.name ?? undefined,
+        'players',
     ).catch(() => {});
 }
 

@@ -218,12 +218,14 @@ export async function checkSilentMatches(): Promise<void> {
                     notifyAdmin(
                         `⚠️ Partita ${match.id} senza wave — impossibile rilanciare (Redis?). Verifica manualmente.`,
                         `silent-wave-fail-${match.id}`,
+                        undefined, undefined, 'matches',
                     ).catch(() => {});
                 });
 
                 await notifyAdminSafe(
                     `Partita rilevata senza wave attive → rilancio automatico (${Math.round(minutesLeft)} min al match).`,
-                    `silent-match-${match.id}`
+                    `silent-match-${match.id}`,
+                    'matches'
                 );
             }
         }
@@ -249,9 +251,9 @@ export async function checkRedisHealth(): Promise<boolean> {
 // NOTIFY ADMIN SAFE
 // ─────────────────────────────────────────────
 
-async function notifyAdminSafe(message: string, key: string): Promise<void> {
+async function notifyAdminSafe(message: string, key: string, category: 'system' | 'matches' | 'faq' | 'players' = 'system'): Promise<void> {
     try {
         const { notifyAdmin } = await import('../utils/notify-admin');
-        await notifyAdmin(message, key);
+        await notifyAdmin(message, key, undefined, undefined, category);
     } catch {}
 }
