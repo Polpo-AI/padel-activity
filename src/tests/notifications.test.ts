@@ -13,14 +13,16 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 // vi.mock factories are hoisted before const declarations, so use vi.hoisted()
 // to avoid TDZ "Cannot access before initialization" errors
-const { mockSimulateTypingAndSend, mockRedirectGroup, mockWaveQueueAdd } = vi.hoisted(() => ({
+const { mockSimulateTypingAndSend, mockDissolveGroup, mockRedirectGroup, mockWaveQueueAdd } = vi.hoisted(() => ({
     mockSimulateTypingAndSend: vi.fn().mockResolvedValue(undefined),
+    mockDissolveGroup: vi.fn().mockResolvedValue(undefined),
     mockRedirectGroup: vi.fn().mockResolvedValue(undefined),
     mockWaveQueueAdd: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock('../services/whatsapp', () => ({
     simulateTypingAndSend: mockSimulateTypingAndSend,
+    dissolveGroup: mockDissolveGroup,
 }));
 
 vi.mock('../services/redirect', () => ({
@@ -41,7 +43,7 @@ const { mockPrismaMatchFindUnique, mockPrismaMatchFindMany, mockPrismaMatchUpdat
     mockPrismaMatchUpdateMany, mockPrismaInvitationUpdateMany, mockPrismaMatchPlayerUpdateMany } = vi.hoisted(() => ({
     mockPrismaMatchFindUnique: vi.fn(),
     mockPrismaMatchFindMany: vi.fn(),
-    mockPrismaMatchUpdate: vi.fn(),
+    mockPrismaMatchUpdate: vi.fn().mockResolvedValue({}),
     mockPrismaMatchUpdateMany: vi.fn(),
     mockPrismaInvitationUpdateMany: vi.fn(),
     mockPrismaMatchPlayerUpdateMany: vi.fn().mockResolvedValue({ count: 0 }),
@@ -147,10 +149,11 @@ describe('notifyMatchCancelled', () => {
 
         await notifyMatchCancelled('match-1', 'club-1');
 
-        // Messaggio al gruppo WA
-        expect(mockSimulateTypingAndSend).toHaveBeenCalledWith(
+        // Il gruppo WA viene sciolto (messaggio finale + rimozione partecipanti), non solo notificato
+        expect(mockDissolveGroup).toHaveBeenCalledWith(
             groupId,
             expect.stringContaining('annullata'),
+            'club-1',
         );
 
         // redirectGroup con tutti e 3 i telefoni

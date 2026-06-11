@@ -15,3 +15,10 @@ process.on('uncaughtException', (err) => {
 process.on('unhandledRejection', (reason, promise) => {
     logger.error({ reason, promise }, 'Unhandled Rejection in Worker process');
 });
+
+// Tiene vivo il processo: lo stub usciva subito e systemd (Restart=always) lo riavviava
+// in loop ogni ~10s (contatore a 800+). Resta idle finché non si decide se disabilitare
+// il servizio o riconvertirlo a worker reale.
+setInterval(() => {}, 1 << 30);
+process.on('SIGTERM', () => process.exit(0));
+process.on('SIGINT', () => process.exit(0));

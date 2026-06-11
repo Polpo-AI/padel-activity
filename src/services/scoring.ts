@@ -119,6 +119,8 @@ export async function processMatchOutcomes(matchId: string): Promise<void> {
                             simulateTypingAndSend(jid, message)
                         );
                         await redis.set(redisKey, '1', 'EX', 86400); // 24 ore
+                        // Stato per il brain (48h): riconosce la risposta e la salva con SAVE_FEEDBACK
+                        await redis.set(`state:feedback_pending:${jid}`, JSON.stringify({ matchId, playerId: inv.playerId }), 'EX', 48 * 3600).catch(() => {});
                     } catch (err) {
                         logger.error({ err, playerId: inv.playerId }, 'Error sending feedback request');
                     }

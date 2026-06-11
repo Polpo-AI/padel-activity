@@ -236,6 +236,9 @@ export async function handleAdminFaqFlow(text: string, club: any, jid: string): 
     // ── Routing AI: classifica il messaggio admin contro tutte le FAQ in sospeso
     const routing = await classifyFaqResponse(text.trim(), pendingItems);
 
+    // NONE → non è una risposta alle FAQ (comando, conversazione): passa alla catena successiva
+    if (routing.type === 'none') return false;
+
     // AMBIGUOUS → chiede a quale domanda si riferisce, senza numerazione
     if (routing.type === 'ambiguous') {
         const list = pendingItems.map(item => `• ${item.askedBy}: "${item.question}"`).join('\n');
@@ -502,7 +505,8 @@ type FaqRoutingResult =
     | { type: 'single'; targetIndex: number; answerText: string }
     | { type: 'multi'; answers: Array<{ index: number; answerText: string }> }
     | { type: 'covers_all'; answerText: string }
-    | { type: 'ambiguous' };
+    | { type: 'ambiguous' }
+    | { type: 'none' };
 
 async function classifyFaqResponse(
     adminText: string,
@@ -522,13 +526,14 @@ Analizza il messaggio e determina:
 - "single": risponde chiaramente a UNA sola domanda (specifica quale con targetIndex 0-based)
 - "multi": contiene risposte separate a PIÙ domande diverse nello stesso messaggio
 - "covers_all": una risposta che va bene per TUTTE le domande
-- "ambiguous": non è chiaro a quale domanda risponde
+- "ambiguous": è una risposta, ma non è chiaro a quale domanda
+- "none": NON è una risposta a nessuna delle domande (comando di gestione, domanda dell'admin, conversazione generica)
 
 Estrai il testo della risposta per ogni domanda coperta.
 
 Restituisci SOLO JSON:
 {
-  "type": "single" | "multi" | "covers_all" | "ambiguous",
+  "type": "single" | "multi" | "covers_all" | "ambiguous" | "none",
   "targetIndex": number | null,
   "answerText": "..." | null,
   "answers": [{"index": number, "answerText": "..."}] | null
@@ -536,7 +541,8 @@ Restituisci SOLO JSON:
 - "single": targetIndex = indice domanda, answerText = testo risposta
 - "multi": answers = array con indice e risposta per ogni domanda coperta
 - "covers_all": answerText = risposta unificata (di solito il testo completo)
-- "ambiguous": tutti null`;
+- "ambiguous": tutti null
+- "none": tutti null`;
 
     try {
         const resp = await anthropic.messages.create({
@@ -562,9 +568,14 @@ Restituisci SOLO JSON:
             if (result.type === 'covers_all') {
                 return { type: 'covers_all', answerText: result.answerText || adminText };
             }
+            if (result.type === 'none') {
+                return { type: 'none' };
+            }
         }
     } catch (err) { logger.error({ err }, 'classifyFaqResponse failed'); }
-    return { type: 'ambiguous' };
+    // Default 'none' (non più 'ambiguous'): su errore AI meglio lasciar passare il messaggio
+    // alla catena comandi che bloccare l'admin con "a quale domanda ti riferisci?".
+    return { type: 'none' };
 }
 
 async function routeFaqResponse(
@@ -1213,14 +1224,19 @@ export async function handleApprovalCommand(text: string, club: any, jid: string
 
     let phonesToApprove: string[] = extractedPhones;
     if (phonesToApprove.length === 0) {
-        // "ok" senza numero: approva l'unico pending
+        // "ok" secco: se c'è un'azione admin in attesa di conferma ("Confermi? Rispondi sì o no"),
+        // il "ok" è quella conferma — la gestisce handleAdminPendingAction, non l'approval gate.
+        // Prima questo handler ingoiava QUALSIASI messaggio che iniziava con "ok".
+        const pendingAction = await redis.get(`admin:pending_action:${club?.id || ''}`);
+        if (pendingAction) return false;
         const pendingRaw = await redis.get(`approval:last_pending:${club?.id || ''}`);
         if (pendingRaw) phonesToApprove = [pendingRaw];
     }
 
     if (phonesToApprove.length === 0) {
-        await sendMessage(jid, '⚠️ Nessun numero in attesa di approvazione.');
-        return true;
+        // Niente da approvare: non è un comando di approvazione — lascia proseguire la
+        // catena (pending action, FAQ flow, comandi, brain) invece di ingoiare il messaggio.
+        return false;
     }
 
     for (const targetPhone of phonesToApprove) {

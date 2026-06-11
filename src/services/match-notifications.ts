@@ -57,12 +57,16 @@ export async function notifyMatchCancelled(matchId: string, clubId: string): Pro
 
     if (confirmed.length === 0) return;
 
-    // Se esiste un gruppo WA (match LOCKED) notifica anche lì
-    if (match.groupId && confirmed.length > 1) {
-        await simulateTypingAndSend(
+    // Gruppo WA: messaggio finale + scioglimento. Prima si mandava solo un messaggio e il
+    // gruppo restava orfano per sempre (bot incluso) anche a partita cancellata.
+    if (match.groupId) {
+        const { dissolveGroup } = await import('./whatsapp');
+        await dissolveGroup(
             match.groupId,
-            `Purtroppo la partita del ${fmtTime(match.startTime)} è stata annullata dal circolo. Stiamo cercando alternative per tutti!`,
+            `Purtroppo la partita del ${fmtTime(match.startTime)} è stata annullata dal circolo. Vi scrivo in privato con le alternative!`,
+            clubId,
         ).catch(() => {});
+        await prisma.match.update({ where: { id: matchId }, data: { groupId: null } }).catch(() => {});
     }
 
     // redirectGroup: al solo prenotante se 1 confermato, a tutti se matchmaking (2+)

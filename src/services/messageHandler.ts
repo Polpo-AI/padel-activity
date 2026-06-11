@@ -1148,6 +1148,15 @@ async function handleActionError(
                 ];
                 await simulateTypingAndSend(jid, _bookedRescheduleMsgs[Math.floor(Math.random() * _bookedRescheduleMsgs.length)]);
             }
+        } else if (/^[A-Z][A-Z0-9_]*(:.*)?$/.test(result.errorMessage)) {
+            // Codice simbolico non mappato (nuovo errore interno): mai mostrarlo grezzo all'utente
+            logger.warn({ action, errorMessage: result.errorMessage }, 'handleActionError: unmapped symbolic error code');
+            const _genericMsgs = [
+                'Non sono riuscita a completare l\'operazione, riprova tra poco!',
+                'Qualcosa non è andato come previsto, riprova tra un attimo 😅',
+                'Non ci sono riuscita al primo colpo — riprova tra poco e dovrebbe andare!',
+            ];
+            await simulateTypingAndSend(jid, _genericMsgs[Math.floor(Math.random() * _genericMsgs.length)]);
         } else {
             await simulateTypingAndSend(jid, `Ops! ${result.errorMessage} 😕`);
         }

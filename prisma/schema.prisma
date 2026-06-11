@@ -103,6 +103,9 @@ model Invitation {
   match             Match            @relation(fields: [matchId], references: [id])
   player            Player           @relation(fields: [playerId], references: [id])
 
+  // Un solo invito per (partita, giocatore): rende efficace lo skipDuplicates della
+  // createMany in matchmaker e blocca i doppi inviti in race tra wave parallele.
+  @@unique([matchId, playerId])
   @@index([playerId, status])
   @@index([matchId, status])
   @@index([status, sentAt])

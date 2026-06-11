@@ -41,7 +41,8 @@ export type BrainAction =
     | 'REGISTER_PLAYER'
     | 'OPEN_TO_MATCHMAKING'
     | 'SAVE_GENDER'
-    | 'SET_RACKET_RENTAL';
+    | 'SET_RACKET_RENTAL'
+    | 'SAVE_FEEDBACK';
 
 export interface BrainResponse {
     message: string;
@@ -65,6 +66,7 @@ export interface BrainContext {
     slotsAvailability: { fullSlots: string[]; onlyCoveredSlots: string[]; freeScopertoSlots: string[] };
     pendingBookingIntent?: { day: string; time: string; preferMixed?: boolean | null; preferCovered?: boolean | null } | null;
     pendingRacket?: { matchId: string; mode: 'single' | 'count' } | null;
+    pendingFeedback?: { matchId: string } | null;
 }
 
 // ─────────────────────────────────────────────
@@ -253,6 +255,19 @@ export async function buildBrainContext(jid: string, phoneNumber: string): Promi
         } catch { /* non bloccante */ }
     }
 
+    // Feedback post-partita in sospeso (stato impostato da processMatchOutcomes all'invio
+    // della richiesta): il brain riconosce la risposta e la salva con SAVE_FEEDBACK.
+    let pendingFeedback: { matchId: string } | null = null;
+    if (player?.id) {
+        try {
+            const rawFb = await (await import('./queue')).getRedis().get(`state:feedback_pending:${jid}`);
+            if (rawFb) {
+                const parsedFb = JSON.parse(rawFb);
+                if (parsedFb?.matchId) pendingFeedback = { matchId: parsedFb.matchId };
+            }
+        } catch { /* non bloccante */ }
+    }
+
     return {
         club,
         player,
@@ -267,6 +282,7 @@ export async function buildBrainContext(jid: string, phoneNumber: string): Promi
         slotsAvailability: { fullSlots, onlyCoveredSlots, freeScopertoSlots },
         pendingBookingIntent,
         pendingRacket,
+        pendingFeedback,
     };
 }
 
@@ -473,7 +489,8 @@ Rispondi SEMPRE con JSON valido: { "message": "...", "action": "NOME", "params":
   ⛔ Se l'utente dice "siamo già in 2/3, cercane altri N" — la risposta corretta è OPEN_TO_MATCHMAKING MA spiegando che il matchmaking cerca tra i soci con Skill Test completato: non si può "contare" un amico non iscritto come già confermato. Il sistema cercherà i giocatori mancanti (playersNeeded - 1, dove 1 è il player registrato).
   Messaggio: usa una frase che chiarisca che si cerca tra i soci del circolo. Es. "Perfetto, apro la partita al matchmaking — cercherò tra i soci con Skill Test completato 🎾".
 
-- SET_RACKET_RENTAL — params: { "matchId": "...", "rackets": <0-4> } — USA SOLO se c'è una "DOMANDA RACCHETTA IN SOSPESO" e l'utente sta rispondendo a quella. matchId = quello della sezione. rackets = 1 o 0 (matchmaking: serve/non serve) oppure il numero indicato (prenotazione privata). Conferma breve, nessun dettaglio campo.`}
+- SET_RACKET_RENTAL — params: { "matchId": "...", "rackets": <0-4> } — USA SOLO se c'è una "DOMANDA RACCHETTA IN SOSPESO" e l'utente sta rispondendo a quella. matchId = quello della sezione. rackets = 1 o 0 (matchmaking: serve/non serve) oppure il numero indicato (prenotazione privata). Conferma breve, nessun dettaglio campo.
+- SAVE_FEEDBACK — params: { "matchId": "...", "rating": <1-5 oppure null>, "comment": "sintesi breve" } — USA SOLO se c'è la sezione "FEEDBACK PARTITA IN SOSPESO" e l'utente sta raccontando com'è andata quella partita.`}
 
 ═══ INTENTI MULTIPLI (facoltativo) ═══
 Se il messaggio contiene chiaramente DUE intenti separati e autonomi (es. "accetto E poi prenota venerdì alle 18"), puoi aggiungere al JSON i campi opzionali "secondaryAction" e "secondaryParams".
@@ -536,7 +553,7 @@ export async function callBrain(
     contactCards?: { phone?: string; name?: string }[],
     quotedContext?: { text: string; fromBot: boolean },
 ): Promise<BrainResponse> {
-    const { club, player, isAdmin, recentMessages, pendingInvitations, confirmedMatches, availableMatches, courts, faqs, slotsAvailability, pendingBookingIntent, pendingRacket } = context;
+    const { club, player, isAdmin, recentMessages, pendingInvitations, confirmedMatches, availableMatches, courts, faqs, slotsAvailability, pendingBookingIntent, pendingRacket, pendingFeedback } = context;
 
     const now = new Date().toLocaleString('it-IT', {
         timeZone: 'Europe/Rome', weekday: 'long', day: 'numeric',
@@ -791,6 +808,13 @@ ${pendingRacket.mode === 'count'
     : `Se risponde se gli serve o no (es. "sì mi serve", "no porto la mia", "ne ho una") → usa SET_RACKET_RENTAL con params { "matchId": "${pendingRacket.matchId}", "rackets": <1 se serve, 0 se no> }.`}
 Conferma brevemente ("Perfetto, segnato!" o simile). Se l'utente NON parla di racchetta, ignora questa sezione e gestisci normalmente il suo messaggio.
 ╚════════════════════════════════╝` : ''}
+${pendingFeedback ? `
+╔══ FEEDBACK PARTITA IN SOSPESO ══╗
+Hai chiesto al giocatore com'è andata la sua ultima partita (partita ${pendingFeedback.matchId}).
+Se il suo messaggio racconta com'è andata (anche solo "bene!", "vinta 6-3", una lamentela sul campo o sui compagni) → usa SAVE_FEEDBACK con params { "matchId": "${pendingFeedback.matchId}", "rating": <1-5 oppure null>, "comment": "<sintesi fedele in 1 frase>" }.
+rating: deducilo dal tono (1=pessima, 3=neutra, 5=ottima); null se non deducibile. Nel messaggio ringrazia brevemente, senza fare altre domande.
+Se l'utente parla d'altro (prenotazioni, domande), ignora questa sezione e gestisci normalmente.
+╚══════════════════════════════════╝` : ''}
 ${quotedContext ? `
 ═══ MESSAGGIO CITATO ═══
 L'utente sta rispondendo citando ${quotedContext.fromBot ? 'un TUO messaggio precedente' : 'un suo messaggio precedente'}. Quando dice "questo", "quello", "il primo" e simili, si riferisce a questo testo citato:
@@ -987,6 +1011,38 @@ export async function executeAction(
             return { success: true, matchId };
         } catch (err) {
             logger.error({ err, matchId }, 'SET_RACKET_RENTAL failed');
+            return { success: true };
+        }
+    }
+
+    // SAVE_FEEDBACK: salva la risposta alla richiesta feedback post-partita.
+    // Prima la richiesta partiva (processMatchOutcomes) ma la risposta non veniva mai
+    // salvata: MatchFeedback restava sempre vuoto e il brain non aveva contesto.
+    if (action === 'SAVE_FEEDBACK') {
+        const matchId = params.matchId as string | undefined;
+        const comment = typeof params.comment === 'string' ? params.comment.trim().slice(0, 500) : '';
+        if (!matchId || !player?.id || !comment) return { success: true };
+        try {
+            const fbMatch = await prisma.match.findUnique({ where: { id: matchId }, select: { courtId: true, clubId: true } });
+            // courtId è obbligatorio su MatchFeedback; partite senza campo (webhook) → solo cleanup stato
+            if (fbMatch?.courtId && fbMatch.clubId === player.clubId) {
+                const ratingNum = parseInt(String(params.rating ?? ''), 10);
+                const rating = !isNaN(ratingNum) ? Math.max(1, Math.min(5, ratingNum)) : null;
+                await prisma.matchFeedback.create({
+                    data: {
+                        matchId,
+                        playerId: player.id,
+                        courtId: fbMatch.courtId,
+                        content: rating != null ? `[${rating}/5] ${comment}` : comment,
+                    },
+                });
+            }
+            if (phoneNumber) {
+                await getRedis().del(`state:feedback_pending:${phoneNumber.replace(/\D/g, '')}@s.whatsapp.net`).catch(() => {});
+            }
+            return { success: true };
+        } catch (err) {
+            logger.error({ err, matchId }, 'SAVE_FEEDBACK failed — best effort');
             return { success: true };
         }
     }
@@ -1649,10 +1705,13 @@ export async function executeAction(
                 where: {
                     playerId: player.id,
                     leftAt: null,
-                    match: { status: 'LOCKED', isPrivateBooking: true },
+                    // Solo prenotazioni FUTURE: con orderBy joinedAt si rischiava di convertire
+                    // una prenotazione già passata (restano LOCKED fino all'archiviazione) o,
+                    // con più prenotazioni attive, quella sbagliata. La più vicina è l'intento tipico.
+                    match: { status: 'LOCKED', isPrivateBooking: true, startTime: { gt: new Date() } },
                 },
                 include: { match: true },
-                orderBy: { joinedAt: 'desc' },
+                orderBy: { match: { startTime: 'asc' } },
             });
 
             if (!existingMp) {
@@ -1840,6 +1899,9 @@ export async function joinExistingMatch(matchId: string, player: any): Promise<{
                 include: { MatchPlayer: { where: { leftAt: null }, include: { player: { select: { gender: true } } } } },
             });
             if (!match) throw new Error('MATCH_CLOSED');
+            // Difesa multi-tenant: joinMatchId arriva dal brain (può essere allucinato) —
+            // mai unire un giocatore a una partita di un altro circolo.
+            if (player.clubId && match.clubId !== player.clubId) throw new Error('MATCH_CLOSED');
             if (match.MatchPlayer.some((mp: any) => mp.playerId === player.id)) throw new Error('ALREADY_JOINED');
             if (match.status !== 'OPEN') throw new Error('MATCH_CLOSED');
             if (match.MatchPlayer.length >= match.playersNeeded) throw new Error('MATCH_FULL');

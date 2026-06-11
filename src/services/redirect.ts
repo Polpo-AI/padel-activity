@@ -109,7 +109,9 @@ export async function redirectGroup(group: RedirectGroup): Promise<void> {
     // sul solo matchId sarebbe condiviso fra TUTTI gli utenti → il secondo utente non riceverebbe il
     // redirect. TTL breve: basta a deduplicare job paralleli, non blocca un redirect legittimo successivo.
     const redis = getRedis();
-    const lockKey = `redirect:sent:${group.referentJid}:${group.originalMatchId}:${group.reason}`;
+    // La chiave include anche l'orario richiesto: senza, due booking falliti ravvicinati
+    // (orari diversi) entro il TTL condividevano il lock e il secondo redirect spariva.
+    const lockKey = `redirect:sent:${group.referentJid}:${group.originalMatchId}:${group.reason}:${new Date(group.originalStartTime).getTime()}`;
     const acquired = await redis.set(lockKey, '1', 'EX', 90, 'NX').catch(() => null);
     if (!acquired) {
         logger.warn({ matchId: group.originalMatchId, referentJid: group.referentJid, reason: group.reason }, 'redirectGroup: già inviato — skip duplicato');

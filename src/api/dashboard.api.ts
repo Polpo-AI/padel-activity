@@ -590,11 +590,22 @@ router.patch('/matches/:id', authMiddleware, async (req: Request, res: Response)
         const newStartTime = newStartTimeStr ? new Date(newStartTimeStr) : match.startTime;
         const targetCourtId = newCourtId || match.courtId;
 
-        // Verifica disponibilità campo al nuovo orario
-        if (newStartTimeStr && targetCourtId) {
-            const conflict = await prisma.match.findFirst({
-                where: { courtId: targetCourtId, id: { not: match.id }, status: { in: ['OPEN', 'LOCKED'] }, startTime: newStartTime },
+        // Verifica disponibilità campo — overlap sulla durata, non solo orario esatto
+        // (una partita alle 18:00 da 90min blocca anche le 18:30), e anche quando cambia
+        // solo il campo (prima il cambio campo saltava del tutto il check).
+        if (targetCourtId) {
+            const clubCfg = await prisma.club.findUnique({ where: { id: clubId }, select: { matchDuration: true } });
+            const slotMs = (clubCfg?.matchDuration || 90) * 60 * 1000;
+            const candidates = await prisma.match.findMany({
+                where: {
+                    courtId: targetCourtId,
+                    id: { not: match.id },
+                    status: { in: ['OPEN', 'LOCKED'] },
+                    startTime: { gte: new Date(newStartTime.getTime() - slotMs), lte: new Date(newStartTime.getTime() + slotMs) },
+                },
+                select: { startTime: true },
             });
+            const conflict = candidates.some(c => Math.abs(c.startTime.getTime() - newStartTime.getTime()) < slotMs);
             if (conflict) return res.status(409).json({ error: 'Campo già occupato a quell\'orario' });
         }
 
