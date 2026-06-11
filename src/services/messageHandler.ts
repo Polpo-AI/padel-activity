@@ -108,8 +108,12 @@ export async function handleBatch(jid: string, messages: NormalizedMessage[], re
             if (isSocketError && retryCount === 0) {
                 logger.warn({ correlationId, jid, clubId }, 'Socket unavailable — retrying batch in 90s');
                 conversationalPhase.delete(correlationId);
+                // I messaggi sono già stati persistiti nel primo passaggio: senza alreadyPersisted
+                // il retry li scarterebbe tutti come duplicati (dedup su messageId) e la risposta
+                // non partirebbe mai.
+                const retryMessages = messages.map(m => ({ ...m, alreadyPersisted: true }));
                 setTimeout(() => {
-                    handleBatch(jid, messages, 1).catch(retryErr =>
+                    handleBatch(jid, retryMessages, 1).catch(retryErr =>
                         logger.error({ err: retryErr, correlationId }, `Retry batch also failed for ${jid}`)
                     );
                 }, 90_000);

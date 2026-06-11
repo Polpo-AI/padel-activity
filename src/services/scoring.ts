@@ -112,7 +112,12 @@ export async function processMatchOutcomes(matchId: string): Promise<void> {
                     );
 
                     try {
-                        await simulateTypingAndSend(jid, message);
+                        // Contesto club: processMatchOutcomes gira dal maintenance worker senza contesto —
+                        // senza clubId la richiesta feedback partirebbe dal socket WA del primo club.
+                        const { runWithContext } = await import('../utils/request-context');
+                        await runWithContext({ correlationId: `feedback-${matchId}`, clubId: match.clubId ?? undefined }, () =>
+                            simulateTypingAndSend(jid, message)
+                        );
                         await redis.set(redisKey, '1', 'EX', 86400); // 24 ore
                     } catch (err) {
                         logger.error({ err, playerId: inv.playerId }, 'Error sending feedback request');

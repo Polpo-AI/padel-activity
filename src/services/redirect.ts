@@ -876,7 +876,7 @@ async function createMatchForGroup(option: RedirectOption, group: RedirectGroup)
         });
     }
 
-    const timeStr = option.startTime.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
+    const timeStr = option.startTime.toLocaleTimeString('it-IT', { timeZone: 'Europe/Rome', hour: '2-digit', minute: '2-digit' });
 
     if (isBookField) {
         await simulateTypingAndSend(
@@ -910,7 +910,9 @@ async function resolveChoice(text: string, options: RedirectOption[]): Promise<R
     const { anthropic } = await import('./ai');
 
     const optionsList = options.map((o, i) =>
-        `${i + 1}. ${o.court} alle ${o.startTime.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })} (${o.description})`
+        // timeZone obbligatorio: l'utente ha visto gli orari in ora italiana (buildOptionDescription) —
+        // senza, Haiku riceveva orari UTC e "ok per le 18" non matchava nessuna opzione.
+        `${i + 1}. ${o.court} alle ${o.startTime.toLocaleTimeString('it-IT', { timeZone: 'Europe/Rome', hour: '2-digit', minute: '2-digit' })} (${o.description})`
     ).join('\n');
 
     const prompt = `

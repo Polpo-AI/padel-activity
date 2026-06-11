@@ -1009,6 +1009,9 @@ export async function executeAction(
                     include: { MatchPlayer: { where: { leftAt: null }, include: { player: { select: { gender: true } } } } },
                 });
                 if (!match || match.status !== 'OPEN') throw new Error('MATCH_CLOSED');
+                // Già dentro (entrato via redirect/dashboard con invito ancora PENDING): senza questo
+                // check l'upsert è un no-op ma shouldLock lo conterebbe due volte → LOCK con 3 giocatori.
+                if (match.MatchPlayer.some((mp2: any) => mp2.playerId === player.id)) throw new Error('ALREADY_JOINED');
                 if (match.MatchPlayer.length >= match.playersNeeded) throw new Error('MATCH_FULL');
 
                 // Per partite miste: verifica che il posto del genere del giocatore sia ancora disponibile
@@ -1058,6 +1061,14 @@ export async function executeAction(
                 // Marchiamo l'invito IGNORED (così processMatchOutcomes NON lo conta come no-show)
                 // e diamo un piccolo segnale POSITIVO di affidabilità: ha risposto ed era disponibile,
                 // è esattamente il giocatore che vogliamo in cima alla lista, non in fondo.
+                // Già in partita: l'invito PENDING è stale — risolvilo come ACCEPTED così non
+                // riappare nel contesto del brain e non rischia il tag GHOST a fine partita.
+                if (accErr?.message === 'ALREADY_JOINED') {
+                    await prisma.invitation.update({
+                        where: { id: inv.id },
+                        data: { status: 'ACCEPTED', respondedAt: new Date() },
+                    }).catch(() => {});
+                }
                 if (accErr?.message === 'MATCH_FULL' || accErr?.message === 'GENDER_SLOT_FULL') {
                     // Reliability v2: outcome WILLING_FULL → ESCLUSO dalla finestra (nessuna colpa,
                     // ma nemmeno una conversione). Non penalizza e non premia.
@@ -1309,25 +1320,90 @@ export async function executeAction(
                     data: { status: 'CANCELLED', cancelledAt: new Date(), cancelledReason: 'RESCHEDULED' },
                 });
             } else if (!oldMatch?.isPrivateBooking) {
-                // Matchmaking con altri giocatori rimasti (OPEN o LOCKED) → riapri se LOCKED, rilancia wave, notifica
-                if (oldMatch?.status === 'LOCKED') {
-                    await prisma.match.update({ where: { id: mp.matchId }, data: { status: 'OPEN' } });
-                }
-                waveQueue.add('process-wave', {
-                    matchId: mp.matchId,
-                    waveNumber: 1,
-                    urgencyMultiplier: 2,
-                    scheduledAt: Date.now(),
-                }, { delay: 0 }).catch(err => logger.warn({ err, matchId: mp.matchId }, 'Wave scheduling failed'));
-
+                // Matchmaking con altri giocatori rimasti: stessa logica di CANCEL_MATCH.
+                // Sotto deadline (o recovery esaurite) nessun sostituto è possibile (wave soppresse
+                // <60min) → si cancella con messaggio onesto e si reindirizzano i rimasti.
+                // Altrimenti: riapri, sciogli il gruppo WA e azzera groupId — senza questo,
+                // handleMatchFilled verrebbe skippato al riempimento (guardia !match.groupId)
+                // e il sostituto non entrerebbe mai nel gruppo.
                 const matchTimeStr = oldMatch!.startTime.toLocaleString('it-IT', {
                     timeZone: 'Europe/Rome', weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit',
                 });
                 const leavingName = (player as any).name?.split(' ')[0] || 'Un giocatore';
-                for (const rmp of oldMatch!.MatchPlayer) {
-                    const phone = (rmp as any).player?.phoneNumber;
-                    if (phone) {
-                        simulateTypingAndSend(`${phone}@s.whatsapp.net`,
+                const remaining = oldMatch!.MatchPlayer.filter((rmp: any) => (rmp as any).player?.phoneNumber);
+
+                const MAX_RECOVERY_WAVES = 3;
+                const minutesUntilStart = (oldMatch!.startTime.getTime() - Date.now()) / 60000;
+                const deadlineMin = Math.max(60, club?.deadlineMinutesBeforeMatch ?? 60);
+                const tooLate = oldMatch!.status === 'LOCKED' && (
+                    minutesUntilStart < deadlineMin
+                    || ((oldMatch as any).recoveryWaveCount ?? 0) >= MAX_RECOVERY_WAVES
+                );
+
+                if (tooLate) {
+                    await prisma.match.update({
+                        where: { id: mp.matchId },
+                        data: { status: 'CANCELLED', cancelledAt: new Date(), cancelledReason: 'PLAYER_CANCELLED' },
+                    });
+                    await prisma.invitation.updateMany({
+                        where: { matchId: mp.matchId, status: 'PENDING' },
+                        data: { status: 'IGNORED' },
+                    });
+                    if ((oldMatch as any).groupId) {
+                        dissolveGroup(
+                            (oldMatch as any).groupId,
+                            `${leavingName} ha spostato la sua prenotazione e non c'è il tempo per trovare un sostituto: la partita di ${matchTimeStr} è annullata 😔 Vi scrivo in privato con le alternative.`,
+                            club?.id,
+                        ).catch(err => logger.warn({ err, matchId: mp.matchId }, 'dissolveGroup failed'));
+                    }
+                    if (remaining.length > 0 && club?.id) {
+                        const { redirectGroup } = await import('./redirect');
+                        redirectGroup({
+                            clubId: club.id,
+                            referentPhone: (remaining[0] as any).player.phoneNumber,
+                            referentJid: `${(remaining[0] as any).player.phoneNumber}@s.whatsapp.net`,
+                            playerPhones: remaining.map((r: any) => r.player.phoneNumber),
+                            playerCount: remaining.length,
+                            originalMatchId: mp.matchId,
+                            originalStartTime: oldMatch!.startTime,
+                            originalSkillLevel: (oldMatch as any).skillLevel ?? 0,
+                            originalCourtIsCovered: null,
+                            reason: 'CANCELLATION',
+                            intent: 'MATCHMAKING',
+                        }).catch(err => logger.error({ err, matchId: mp.matchId }, 'RESCHEDULE last-minute redirectGroup failed'));
+                    }
+                    const { notifyAdmin } = await import('../utils/notify-admin');
+                    notifyAdmin(
+                        `❌ Spostamento last-minute di ${leavingName}: partita di ${matchTimeStr} annullata (${remaining.length} giocatori reindirizzati).`,
+                        `lastminute-reschedule-${mp.matchId}`,
+                        undefined, undefined, 'matches',
+                    ).catch(() => {});
+                } else {
+                    const matchUpdate: any = {};
+                    if (oldMatch!.status === 'LOCKED') {
+                        matchUpdate.status = 'OPEN';
+                        matchUpdate.recoveryWaveCount = { increment: 1 };
+                    }
+                    if ((oldMatch as any).groupId) {
+                        dissolveGroup(
+                            (oldMatch as any).groupId,
+                            `${leavingName} non può più venire alla partita di ${matchTimeStr}. Sciogliamo il gruppo — appena troviamo un sostituto ve ne creo uno nuovo 🎾`,
+                            club?.id,
+                        ).catch(err => logger.warn({ err, matchId: mp.matchId }, 'dissolveGroup failed'));
+                        matchUpdate.groupId = null;
+                    }
+                    if (Object.keys(matchUpdate).length > 0) {
+                        await prisma.match.update({ where: { id: mp.matchId }, data: matchUpdate });
+                    }
+                    waveQueue.add('process-wave', {
+                        matchId: mp.matchId,
+                        waveNumber: 1,
+                        urgencyMultiplier: 2,
+                        scheduledAt: Date.now(),
+                    }, { delay: 0 }).catch(err => logger.warn({ err, matchId: mp.matchId }, 'Wave scheduling failed'));
+
+                    for (const rmp of remaining) {
+                        simulateTypingAndSend(`${(rmp as any).player.phoneNumber}@s.whatsapp.net`,
                             `${leavingName} non può più venire alla partita di ${matchTimeStr}. Tu resti dentro, al sostituto ci pensiamo noi — non devi fare nulla 🎾`
                         ).catch(() => {});
                     }

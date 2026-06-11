@@ -14,6 +14,15 @@ const maintenanceWorker = new Worker(
     async (job) => {
         logger.info(`Running maintenance job: ${job.name}`);
 
+        // ✅ FIX D (Staleness): job accumulati dopo un riavvio — se scheduledAt è nel payload
+        // ed è scaduto da > 15min, scarta PRIMA di eseguire qualsiasi job (a metà handler
+        // proteggeva solo i job dichiarati dopo il check).
+        if (job.data?.scheduledAt && Date.now() - job.data.scheduledAt > 15 * 60 * 1000) {
+            logger.warn({ jobName: job.name, delayedMs: Date.now() - job.data.scheduledAt },
+                'Stale maintenance job discarded');
+            return;
+        }
+
         if (job.name === 'daily-reset') {
             const result = await prisma.player.updateMany({
                 data: { dailyMessagesCount: 0, morningContactsToday: 0, afternoonContactsToday: 0 },
@@ -74,14 +83,6 @@ const maintenanceWorker = new Worker(
             });
 
             logger.info(`Cleanup: deleted ${deleted.count} old messages, ${deletedStates.count} stale states`);
-        }
-
-        // ✅ FIX D (Staleness): i job "daily-reset" possono accumularsi dopo un riavvio.
-        //    Se scheduledAt è nel payload e scaduto da > 15min, scartiamo.
-        if (job.data?.scheduledAt && Date.now() - job.data.scheduledAt > 15 * 60 * 1000) {
-            logger.warn({ jobName: job.name, delayedMs: Date.now() - job.data.scheduledAt },
-                'Stale maintenance job discarded');
-            return;
         }
 
         // ✅ FIX F (N+1): job mensile che archivia match completati > 30 giorni

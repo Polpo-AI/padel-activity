@@ -11,6 +11,7 @@ import { prisma } from './db';
 import { simulateTypingAndSend } from './whatsapp';
 import { notifyAdmin } from '../utils/notify-admin';
 import { formatMatchSlot } from '../utils/format-match';
+import { runWithContext } from '../utils/request-context';
 import pino from 'pino';
 
 const logger = pino({ level: 'info' });
@@ -22,6 +23,15 @@ const randomInt = (min: number, max: number) => Math.floor(Math.random() * (max 
 // ─────────────────────────────────────────────
 
 export async function handleMatchUnfillable(matchId: string, forceCancel: boolean = false): Promise<void> {
+    // Contesto club: chiamata anche dal maintenance worker (check-timeouts) SENZA contesto —
+    // senza clubId tutti i messaggi a valle partirebbero dal socket WA del primo club connesso.
+    const matchClub = await prisma.match.findUnique({ where: { id: matchId }, select: { clubId: true } });
+    await runWithContext({ correlationId: `unfillable-${matchId}`, clubId: matchClub?.clubId ?? undefined }, () =>
+        _handleMatchUnfillableInner(matchId, forceCancel)
+    );
+}
+
+async function _handleMatchUnfillableInner(matchId: string, forceCancel: boolean = false): Promise<void> {
     const match = await prisma.match.findUnique({
         where: { id: matchId },
         include: {
@@ -220,11 +230,13 @@ export async function checkMatchTimeouts(): Promise<void> {
                 ];
                 const msg = ultCallVariants[Math.floor(Math.random() * ultCallVariants.length)];
                 
-                // Notifica referenti
+                // Notifica referenti — col socket WA del club giusto (job maintenance: nessun contesto)
                 const referents = match.MatchPlayer.filter(mp => !mp.leftAt);
-                for (const rp of referents) {
-                    await simulateTypingAndSend(rp.player.phoneNumber, msg);
-                }
+                await runWithContext({ correlationId: `timeout-warn-${match.id}`, clubId: match.clubId ?? undefined }, async () => {
+                    for (const rp of referents) {
+                        await simulateTypingAndSend(rp.player.phoneNumber, msg);
+                    }
+                });
                 
                 await redis.set(warningKey, 'sent', 'EX', 60 * 60); // Scade dopo 1h
                 logger.info({ matchId: match.id }, 'Pre-timeout warning sent');
