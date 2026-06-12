@@ -490,7 +490,7 @@ Rispondi SEMPRE con JSON valido: { "message": "...", "action": "NOME", "params":
   Messaggio: usa una frase che chiarisca che si cerca tra i soci del circolo. Es. "Perfetto, apro la partita al matchmaking — cercherò tra i soci con Skill Test completato 🎾".
 
 - SET_RACKET_RENTAL — params: { "matchId": "...", "rackets": <0-4> } — USA SOLO se c'è una "DOMANDA RACCHETTA IN SOSPESO" e l'utente sta rispondendo a quella. matchId = quello della sezione. rackets = 1 o 0 (matchmaking: serve/non serve) oppure il numero indicato (prenotazione privata). Conferma breve, nessun dettaglio campo.
-- SAVE_FEEDBACK — params: { "matchId": "...", "rating": <1-5 oppure null>, "comment": "sintesi breve" } — USA SOLO se c'è la sezione "FEEDBACK PARTITA IN SOSPESO" e l'utente sta raccontando com'è andata quella partita.`}
+- SAVE_FEEDBACK — params: { "matchId": "...", "rating": <1-5 oppure null>, "comment": "sintesi breve" } — USA SOLO se c'è la sezione "FEEDBACK SERVIZIO IN SOSPESO" e l'utente sta dando un feedback sull'esperienza di quella partita (problemi, suggerimenti, valutazioni del servizio).`}
 
 ═══ INTENTI MULTIPLI (facoltativo) ═══
 Se il messaggio contiene chiaramente DUE intenti separati e autonomi (es. "accetto E poi prenota venerdì alle 18"), puoi aggiungere al JSON i campi opzionali "secondaryAction" e "secondaryParams".
@@ -809,10 +809,10 @@ ${pendingRacket.mode === 'count'
 Conferma brevemente ("Perfetto, segnato!" o simile). Se l'utente NON parla di racchetta, ignora questa sezione e gestisci normalmente il suo messaggio.
 ╚════════════════════════════════╝` : ''}
 ${pendingFeedback ? `
-╔══ FEEDBACK PARTITA IN SOSPESO ══╗
-Hai chiesto al giocatore com'è andata la sua ultima partita (partita ${pendingFeedback.matchId}).
-Se il suo messaggio racconta com'è andata (anche solo "bene!", "vinta 6-3", una lamentela sul campo o sui compagni) → usa SAVE_FEEDBACK con params { "matchId": "${pendingFeedback.matchId}", "rating": <1-5 oppure null>, "comment": "<sintesi fedele in 1 frase>" }.
-rating: deducilo dal tono (1=pessima, 3=neutra, 5=ottima); null se non deducibile. Nel messaggio ringrazia brevemente, senza fare altre domande.
+╔══ FEEDBACK SERVIZIO IN SOSPESO ══╗
+Hai chiesto al giocatore un feedback sull'ESPERIENZA della sua ultima partita (partita ${pendingFeedback.matchId}) — problemi riscontrati e cosa migliorare, NON il risultato sportivo.
+Se risponde con qualsiasi valutazione dell'esperienza (un "tutto ok!", un problema su campo/prenotazione/organizzazione, un suggerimento) → usa SAVE_FEEDBACK con params { "matchId": "${pendingFeedback.matchId}", "rating": <1-5 oppure null>, "comment": "<sintesi fedele orientata al servizio, 1 frase>" }.
+rating: 1=esperienza pessima, 3=neutra, 5=ottima (dedotto dal tono; null se non chiaro). Nel messaggio ringrazia brevemente, senza fare altre domande.
 Se l'utente parla d'altro (prenotazioni, domande), ignora questa sezione e gestisci normalmente.
 ╚══════════════════════════════════╝` : ''}
 ${quotedContext ? `
@@ -1036,6 +1036,14 @@ export async function executeAction(
                         content: rating != null ? `[${rating}/5] ${comment}` : comment,
                     },
                 });
+                // Il feedback serve al circolo per migliorare il servizio: senza notifica
+                // resterebbe sepolto a DB. Volume basso (max 4 per partita giocata).
+                const { notifyAdmin } = await import('../utils/notify-admin');
+                notifyAdmin(
+                    `📝 Feedback partita da ${player.name || phoneNumber}:\n"${rating != null ? `[${rating}/5] ` : ''}${comment}"`,
+                    `match-feedback-${matchId}-${player.id}`,
+                    undefined, undefined, 'players',
+                ).catch(() => {});
             }
             if (phoneNumber) {
                 await getRedis().del(`state:feedback_pending:${phoneNumber.replace(/\D/g, '')}@s.whatsapp.net`).catch(() => {});

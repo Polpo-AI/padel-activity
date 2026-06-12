@@ -441,43 +441,23 @@ Messaggio del giocatore: "${text}"`,
 export async function generateFeedbackRequest(
     playerName: string,
     courtName: string,
-    timeStr: string,
+    _timeStr: string,
 ): Promise<string> {
-    const fallback = `Com'è andata la partita${timeStr ? ` delle ${timeStr}` : ''}? Raccontami! 🎾`;
-
-    return claudeCircuitBreaker.call(
-        async () => {
-            const result = await withRetry(
-                () => anthropic.messages.create({
-                    model: 'claude-haiku-4-5-20251001',
-                    max_tokens: 100,
-                    temperature: 0.9,
-                    system: 'Sei il bot di un circolo padel. Scrivi messaggi brevi e colloquiali in italiano.',
-                    messages: [{
-                        role: 'user',
-                        content: loadPrompt('generate_feedback_request', {
-                            playerName,
-                            courtName,
-                            timeStr,
-                        })
-                    }],
-                }),
-                {
-                    maxAttempts: 2,
-                    baseDelayMs: 1000,
-                    shouldRetry: isTransientNetworkError,
-                    context: 'generateFeedbackRequest',
-                }
-            );
-            const content = result.content[0];
-            if (content.type === 'text') return content.text.trim();
-            return fallback;
-        },
-        () => {
-            logger.warn({ playerName }, 'generateFeedbackRequest: circuit open — fallback text');
-            return fallback;
-        }
-    );
+    // Template senza AI (come gli inviti wave): costo zero e niente formulazioni strane —
+    // l'AI arrivava a citare il nome del destinatario in terza persona ("la partita con
+    // Davide" detto a Davide). Richiesta orientata al SERVIZIO: problemi riscontrati e
+    // cosa migliorare, non il risultato sportivo (scelta di prodotto).
+    const firstName = (playerName || '').split(' ')[0];
+    const hi = firstName ? `Ciao ${firstName}! ` : 'Ciao! ';
+    const court = courtName ? ` al ${courtName}` : '';
+    const variants = [
+        `${hi}Com'è andata oggi${court}? Se qualcosa non ha funzionato o si può migliorare, scrivimelo pure qui 🎾`,
+        `${hi}Com'è stata l'esperienza di oggi${court}? Ogni segnalazione o idea per migliorare il servizio è preziosa!`,
+        `${hi}Tutto bene oggi${court}? Se hai notato problemi o hai suggerimenti per migliorare la tua esperienza, sono tutta orecchie 🎾`,
+        `${hi}Posso chiederti com'è andata${court}? C'è qualcosa da segnalare o che possiamo migliorare?`,
+        `${hi}Com'è andata la partita${court}? Un tuo feedback ci aiuta a migliorare: problemi, idee, qualsiasi cosa!`,
+    ];
+    return variants[Math.floor(Math.random() * variants.length)];
 }
 
 export async function inferGender(name: string): Promise<'MALE' | 'FEMALE' | 'UNKNOWN'> {

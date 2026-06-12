@@ -115,7 +115,7 @@ Wave per match di club X:
 | `src/workers/reminder.worker.ts` | Promemoria partite ai giocatori confermati |
 
 ### Prompts AI
-In `src/prompts/*.md` solo i prompt minori (classify_intent, generate_feedback_request). Il prompt principale del brain è hardcoded in `src/services/brain.ts` (buildStaticRules + systemPrompt, con prompt caching); gli inviti wave sono template senza AI in `invitation-templates.ts`.
+In `src/prompts/*.md` solo classify_intent è ancora usato (gli altri .md sono orfani storici). Il prompt principale del brain è hardcoded in `src/services/brain.ts` (buildStaticRules + systemPrompt, con prompt caching); inviti wave e richiesta feedback post-partita sono template senza AI (`invitation-templates.ts`, `ai.ts`).
 
 ---
 
