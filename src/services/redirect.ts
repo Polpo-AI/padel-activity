@@ -26,6 +26,7 @@
 import { prisma } from './db';
 import { getRedis } from './queue';
 import { simulateTypingAndSend, sendMessage } from './whatsapp';
+import { isMatchGenderCompatible } from './brain';
 import { formatMatchSlot } from '../utils/format-match';
 import pino from 'pino';
 
@@ -118,6 +119,18 @@ export async function redirectGroup(group: RedirectGroup): Promise<void> {
         return;
     }
 
+    // Generi del gruppo reindirizzato: servono per NON proporre partite in cui il
+    // join verrebbe comunque rifiutato (stessa regola di joinExistingMatch).
+    // Best-effort: senza dati (lookup fallito) non si filtra.
+    let groupGenders: string[] = [];
+    try {
+        const groupPlayers = await prisma.player.findMany({
+            where: { phoneNumber: { in: group.playerPhones }, clubId: group.clubId },
+            select: { gender: true },
+        });
+        groupGenders = groupPlayers.map((p: any) => p.gender ?? 'UNKNOWN');
+    } catch { /* nessun filtro */ }
+
     const options = await findRedirectOptions(
         group.playerCount,
         group.originalStartTime,
@@ -126,6 +139,7 @@ export async function redirectGroup(group: RedirectGroup): Promise<void> {
         group.originalSkillLevel,
         group.originalCourtIsCovered,
         group.intent,
+        groupGenders,
     );
 
     const message = buildRedirectMessage(group, options);
@@ -165,6 +179,7 @@ export async function findRedirectOptions(
     originalSkillLevel: number = 0,
     originalCourtIsCovered: boolean | null = null,
     intent?: 'BOOK_FIELD' | 'MATCHMAKING',
+    groupGenders: string[] = [],
 ): Promise<RedirectOption[]> {
     // Determina l'intent effettivo: se non esplicito, usa la logica precedente
     // (MATCHMAKING se skill>0, BOOK_FIELD altrimenti)
@@ -174,8 +189,32 @@ export async function findRedirectOptions(
     if (effectiveIntent === 'BOOK_FIELD') {
         return findRedirectOptionsBookField(referenceTime, excludeMatchId, clubId, originalCourtIsCovered);
     } else {
-        return findRedirectOptionsMatchmaking(playerCount, referenceTime, excludeMatchId, clubId, originalSkillLevel);
+        return findRedirectOptionsMatchmaking(playerCount, referenceTime, excludeMatchId, clubId, originalSkillLevel, groupGenders);
     }
+}
+
+/**
+ * Compatibilità di genere di un'INTERA comitiva con un match candidato.
+ * Stessa regola del join (isMatchGenderCompatible, brain.ts) — il filtro può quindi
+ * nascondere SOLO opzioni che, se scelte, verrebbero comunque rifiutate all'ingresso.
+ * - misto: tutto il gruppo deve stare nelle quote residue 2M+2F (UNKNOWN non entra nei misti)
+ * - non misto: ogni membro deve passare il check individuale (UNKNOWN passa, come al join)
+ * - senza dati sui generi: non si filtra (best-effort)
+ */
+function isMatchCompatibleForGroup(
+    match: { isMixed: boolean; targetGender?: string | null; MatchPlayer: { player?: { gender?: string | null } | null }[] },
+    groupGenders: string[],
+): boolean {
+    if (groupGenders.length === 0) return true;
+    if (match.isMixed) {
+        const gM = groupGenders.filter(g => g === 'MALE').length;
+        const gF = groupGenders.filter(g => g === 'FEMALE').length;
+        if (gM + gF < groupGenders.length) return false; // UNKNOWN nel gruppo: non può entrare in un misto
+        const inM = match.MatchPlayer.filter(mp => mp.player?.gender === 'MALE').length;
+        const inF = match.MatchPlayer.filter(mp => mp.player?.gender === 'FEMALE').length;
+        return (2 - inM) >= gM && (2 - inF) >= gF;
+    }
+    return groupGenders.every(g => isMatchGenderCompatible(match, g));
 }
 
 /**
@@ -383,6 +422,7 @@ async function findRedirectOptionsMatchmaking(
     excludeMatchId: string,
     clubId: string,
     originalSkillLevel: number,
+    groupGenders: string[] = [],
 ): Promise<RedirectOption[]> {
     const options: RedirectOption[] = [];
 
@@ -414,15 +454,17 @@ async function findRedirectOptionsMatchmaking(
             skillLevel: { gte: skillMin, lte: skillMax },
         },
         include: {
-            MatchPlayer: { where: { leftAt: null } },
+            MatchPlayer: { where: { leftAt: null }, include: { player: { select: { gender: true } } } },
             court: true,
         },
         orderBy: { startTime: 'asc' },
     });
 
-    // Filtra per posti disponibili sufficienti
+    // Filtra per posti disponibili sufficienti E compatibilità di genere del gruppo:
+    // mai proporre una partita in cui il join verrebbe poi rifiutato (es. "solo uomini" a una donna)
     const sameDayEligible = sameDayMatches.filter(m =>
         (m.playersNeeded - m.MatchPlayer.length) >= playerCount
+        && isMatchCompatibleForGroup(m as any, groupGenders)
     );
 
     // Match più vicino PRIMA di T
@@ -486,7 +528,7 @@ async function findRedirectOptionsMatchmaking(
                 skillLevel: { gte: skillMin, lte: skillMax },
             },
             include: {
-                MatchPlayer: { where: { leftAt: null } },
+                MatchPlayer: { where: { leftAt: null }, include: { player: { select: { gender: true } } } },
                 court: true,
             },
             take: 1,
@@ -495,6 +537,7 @@ async function findRedirectOptionsMatchmaking(
         for (const m of futureMatches) {
             const spotsLeft = m.playersNeeded - m.MatchPlayer.length;
             if (spotsLeft < playerCount) continue;
+            if (!isMatchCompatibleForGroup(m as any, groupGenders)) continue;
             options.push({
                 priority: 2,
                 matchId: m.id,

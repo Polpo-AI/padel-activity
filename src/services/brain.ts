@@ -1864,7 +1864,7 @@ async function findPlayerFuzzy(name: string, clubId: string): Promise<{ player: 
  * - isMixed=false: targetGender esplicito o inferito dai partecipanti deve coincidere
  * - genere UNKNOWN: nessun filtro sui non-misti (compatibile per default)
  */
-function isMatchGenderCompatible(
+export function isMatchGenderCompatible(
     match: { isMixed: boolean; targetGender?: string | null; MatchPlayer: { player?: { gender?: string | null } | null }[] },
     playerGender: string
 ): boolean {

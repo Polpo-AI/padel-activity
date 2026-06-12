@@ -53,9 +53,12 @@ vi.mock('../services/conversation-state', () => ({
     getState: vi.fn(async (..._a: any[]) => null),
     clearState: vi.fn(async (..._a: any[]) => undefined),
 }));
-vi.mock('../services/brain', () => ({ joinExistingMatch: vi.fn() }));
+vi.mock('../services/brain', async (importOriginal) => {
+    const real: any = await importOriginal();
+    return { ...real, joinExistingMatch: vi.fn() };
+});
 
-import { confirmRedirectChoice, redirectGroup } from '../services/redirect';
+import { confirmRedirectChoice, redirectGroup, findRedirectOptions } from '../services/redirect';
 
 // 16:00 UTC del 12 giugno = 18:00 Europe/Rome (CEST, UTC+2)
 const SLOT_UTC = '2026-06-12T16:00:00.000Z';
@@ -174,5 +177,56 @@ describe('L3 — dedup redirect per-orario (race e richieste ravvicinate)', () =
         await redirectGroup(baseGroup(t) as any); // stesso jid+matchId+reason+orario → NX nega
 
         expect(H.mockSend).toHaveBeenCalledTimes(1);
+    });
+});
+
+describe('L3 — filtro genere sulle opzioni matchmaking del redirect', () => {
+    const REF = new Date('2026-06-13T15:00:00.000Z'); // 17:00 Rome
+
+    const maleOnly = {
+        id: 'm-male', playersNeeded: 4, startTime: new Date('2026-06-13T16:00:00.000Z'),
+        courtId: 'c1', court: { name: 'Campo 1', isCovered: false },
+        isMixed: false, targetGender: 'MALE',
+        MatchPlayer: [{ player: { gender: 'MALE' } }, { player: { gender: 'MALE' } }, { player: { gender: 'MALE' } }],
+    };
+    const mixedOneFemaleSpot = {
+        id: 'm-mixed', playersNeeded: 4, startTime: new Date('2026-06-13T13:00:00.000Z'),
+        courtId: 'c2', court: { name: 'Campo 2', isCovered: true },
+        isMixed: true, targetGender: 'ANY',
+        MatchPlayer: [{ player: { gender: 'MALE' } }, { player: { gender: 'MALE' } }, { player: { gender: 'FEMALE' } }],
+    };
+
+    it('a una donna NON viene proposta la partita solo-uomini (resta solo la mista con posto donna)', async () => {
+        H.prisma.match.findMany.mockResolvedValueOnce([maleOnly, mixedOneFemaleSpot] as any);
+        const options = await findRedirectOptions(1, REF, 'none', 'club-1', 3, null, 'MATCHMAKING', ['FEMALE']);
+        expect(options.map(o => o.matchId)).toEqual(['m-mixed']);
+    });
+
+    it('a un uomo NON viene proposta la mista con quota uomini piena (resta la solo-uomini)', async () => {
+        H.prisma.match.findMany.mockResolvedValueOnce([maleOnly, mixedOneFemaleSpot] as any);
+        const options = await findRedirectOptions(1, REF, 'none', 'club-1', 3, null, 'MATCHMAKING', ['MALE']);
+        expect(options.map(o => o.matchId)).toEqual(['m-male']);
+    });
+
+    it('gruppo 2M+1F: passa solo la mista con quote residue sufficienti (2 posti uomo + 1 donna)', async () => {
+        const mixedTight = { ...mixedOneFemaleSpot, id: 'm-tight', MatchPlayer: [{ player: { gender: 'MALE' } }] };   // liberi: 1M+2F → i 2 uomini non ci stanno
+        const mixedRoomy = { ...mixedOneFemaleSpot, id: 'm-roomy', MatchPlayer: [{ player: { gender: 'FEMALE' } }] }; // liberi: 2M+1F → perfetto
+        H.prisma.match.findMany.mockResolvedValueOnce([mixedTight, mixedRoomy] as any);
+        const options = await findRedirectOptions(3, REF, 'none', 'club-1', 3, null, 'MATCHMAKING', ['MALE', 'MALE', 'FEMALE']);
+        expect(options.map(o => o.matchId)).toEqual(['m-roomy']);
+    });
+
+    it('tutte le partite incompatibili → fallback automatico sugli slot liberi (mai opzioni-trappola)', async () => {
+        H.prisma.match.findMany.mockResolvedValueOnce([maleOnly] as any);
+        const options = await findRedirectOptions(1, REF, 'none', 'club-1', 3, null, 'MATCHMAKING', ['FEMALE']);
+        // Nessuna partita proponibile → si passa alla ricerca campi liberi (qui courts=[] → 0 opzioni)
+        expect(options).toHaveLength(0);
+        expect(H.prisma.court.findMany).toHaveBeenCalled(); // prova che il fallback BOOK_FIELD è scattato
+    });
+
+    it('senza dati sui generi non si filtra (best-effort, comportamento precedente)', async () => {
+        H.prisma.match.findMany.mockResolvedValueOnce([maleOnly, mixedOneFemaleSpot] as any);
+        const options = await findRedirectOptions(1, REF, 'none', 'club-1', 3, null, 'MATCHMAKING', []);
+        expect(options).toHaveLength(2);
     });
 });
