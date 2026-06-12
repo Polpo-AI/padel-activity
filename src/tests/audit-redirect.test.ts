@@ -224,6 +224,19 @@ describe('L3 — filtro genere sulle opzioni matchmaking del redirect', () => {
         expect(H.prisma.court.findMany).toHaveBeenCalled(); // prova che il fallback BOOK_FIELD è scattato
     });
 
+    it('giorno futuro con DUE partite nella stessa finestra: l\'incompatibile cede il posto alla compatibile', async () => {
+        // Stesso giorno: nulla. Giorno dopo, stessa ora: prima una solo-uomini, poi una mista con posto donna.
+        // Col vecchio take:1 la solo-uomini "consumava" il giorno e la mista non veniva mai vista.
+        const nextDay = (h: number, m = 0) => new Date(Date.UTC(2026, 5, 14, h, m));
+        const maleOnlyNext = { ...maleOnly, id: 'm-male-next', startTime: nextDay(15) };
+        const mixedNext = { ...mixedOneFemaleSpot, id: 'm-mixed-next', startTime: nextDay(15, 15) };
+        H.prisma.match.findMany
+            .mockResolvedValueOnce([])                            // stesso giorno: vuoto
+            .mockResolvedValueOnce([maleOnlyNext, mixedNext] as any); // giorno +1: entrambe in finestra
+        const options = await findRedirectOptions(1, REF, 'none', 'club-1', 3, null, 'MATCHMAKING', ['FEMALE']);
+        expect(options.map(o => o.matchId)).toEqual(['m-mixed-next']);
+    });
+
     it('senza dati sui generi non si filtra (best-effort, comportamento precedente)', async () => {
         H.prisma.match.findMany.mockResolvedValueOnce([maleOnly, mixedOneFemaleSpot] as any);
         const options = await findRedirectOptions(1, REF, 'none', 'club-1', 3, null, 'MATCHMAKING', []);

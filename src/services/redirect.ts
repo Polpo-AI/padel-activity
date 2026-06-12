@@ -531,7 +531,11 @@ async function findRedirectOptionsMatchmaking(
                 MatchPlayer: { where: { leftAt: null }, include: { player: { select: { gender: true } } } },
                 court: true,
             },
-            take: 1,
+            // take 5 + ordine deterministico: con take 1 una partita incompatibile (genere o posti)
+            // pescata a caso "consumava" il giorno anche se nella finestra esisteva una compatibile.
+            // 5 = massimo fisico realistico nella finestra di 30min (numero campi).
+            orderBy: { startTime: 'asc' },
+            take: 5,
         });
 
         for (const m of futureMatches) {
