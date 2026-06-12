@@ -174,8 +174,8 @@ await waveQueue.add('process-wave', { matchId }, { delay });
 
 ### WhatsApp / Baileys
 
-#### MAI importare `whatsapp.ts` con dynamic import in route handler
-Crea istanza isolata del modulo → `sock = null`, `connectionStatus = 'connecting'` sempre. Solo import statici in cima al file. Dynamic import ok solo per moduli senza stato singleton.
+#### MAI importare `whatsapp.ts` con dynamic import — OVUNQUE, non solo nei route handler
+Crea istanza isolata del modulo → `sock = null`, `connectionStatus = 'connecting'` sempre. Vale anche in services/utils: 7 violazioni trovate il 12/6 (scoring, match-notifications, redirect, messageHandler, notify-admin, dashboard) — il feedback post-partita non è MAI partito per questo. Solo import statici in cima al file. Dynamic import ok solo per moduli senza stato singleton.
 
 #### Messaggi `append` persi nella finestra dopo reconnect
 `append` (offline recovery) arrivano immediatamente dopo il connect — raccolti sempre, indipendentemente da `isResyncing`. Pipeline `append` e `notify` indipendenti. `syncTimer` (15s debounce) processa tutto dopo l'ultimo `append`.
