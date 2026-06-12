@@ -172,11 +172,13 @@ const maintenanceWorker = new Worker(
         }
 
         if (job.name === 'process-match-outcomes') {
-            // Finestra: partite terminate nelle ultime 3 ore (copre gap tra run).
-            // processMatchOutcomes è idempotente: salta invitation già in stato finale.
-            // Usiamo 3h invece di 2h per assorbire eventuali delay del job precedente.
-            const windowStart = new Date(Date.now() - 3 * 60 * 60 * 1000);
-            const windowEnd = new Date(Date.now() - 5 * 60 * 1000); // non toccare partite ancora in corso
+            // Finestra 48h→2h. Prima era 3h→5min: (a) bastava un riavvio/downtime nelle
+            // ~2,5h utili perché una partita sfuggisse PER SEMPRE — successo davvero: nessuna
+            // richiesta feedback mai inviata; (b) a start+5min la partita è ancora in corso
+            // → feedback a metà partita. L'idempotenza (marker Redis 30g + stati finali
+            // invitation) rende sicura la finestra larga: ogni run ritenta ciò che manca.
+            const windowStart = new Date(Date.now() - 48 * 60 * 60 * 1000);
+            const windowEnd = new Date(Date.now() - 2 * 60 * 60 * 1000); // 90min di gioco → finita da ≥30min
 
             const recentMatches = await prisma.match.findMany({
                 where: {

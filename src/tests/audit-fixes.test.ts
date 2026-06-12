@@ -620,6 +620,17 @@ describe('L3 — maintenance worker: staleness e tempistiche wave', () => {
         expect(H.mockCheckMatchTimeouts).toHaveBeenCalledTimes(1);
     });
 
+    it('process-match-outcomes: finestra di recupero 48h→2h (downtime-proof, niente feedback mid-partita)', async () => {
+        await processor()({ name: 'process-match-outcomes', data: {} });
+        const args: any = H.prisma.match.findMany.mock.calls.at(-1)?.[0];
+        const ageGte = Date.now() - args.where.startTime.gte.getTime();
+        const ageLte = Date.now() - args.where.startTime.lte.getTime();
+        expect(ageGte).toBeGreaterThan(47.9 * 3600_000);  // ~48h indietro: i riavvii non perdono partite
+        expect(ageGte).toBeLessThan(48.1 * 3600_000);
+        expect(ageLte).toBeGreaterThan(1.9 * 3600_000);   // ~2h: mai feedback a partita in corso
+        expect(ageLte).toBeLessThan(2.1 * 3600_000);
+    });
+
     it('computeNextWaveDelayMs: tutte le soglie temporali corrette, stop sotto i 60min', () => {
         expect(computeNextWaveDelayMs(1441)).toBe(3 * 60 * 60 * 1000);
         expect(computeNextWaveDelayMs(721)).toBe(2 * 60 * 60 * 1000);

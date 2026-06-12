@@ -85,7 +85,10 @@ export async function processMatchOutcomes(matchId: string): Promise<void> {
 
         // ACCEPTED+presente: l'outcome ACCEPTED è già taggato all'accept → qui solo il feedback.
         // ─── TRIGGER FEEDBACK ───
-        if (showed) {
+        // Solo partite recenti: con la finestra di recupero a 48h, chiedere "com'è andata?"
+        // due giorni dopo sarebbe fuori luogo. Outcome/reliability si processano comunque.
+        const recentEnough = match.startTime.getTime() > Date.now() - 24 * 60 * 60 * 1000;
+        if (showed && recentEnough) {
             const { getRedis } = await import('./queue');
             const redis = getRedis();
             const redisKey = `feedback_requested:${matchId}:${inv.playerId}`;
