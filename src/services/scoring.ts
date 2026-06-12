@@ -9,6 +9,9 @@
  */
 
 import { prisma } from './db';
+// Import STATICO obbligatorio (lesson CLAUDE.md): il dynamic import di whatsapp.ts crea
+// un'istanza isolata del modulo con clubSockets vuota → sock=null → invii sempre falliti.
+import { simulateTypingAndSend } from './whatsapp';
 import pino from 'pino';
 
 const logger = pino({ level: 'info' });
@@ -53,6 +56,7 @@ export async function processMatchOutcomes(matchId: string): Promise<void> {
     );
 
     const touched = new Set<string>();
+    let feedbackSendFailed = false;
     for (const inv of unprocessed) {
         const mp = match.MatchPlayer.find(mp => mp.playerId === inv.playerId && !mp.leftAt);
         const showed = !!mp && !mp.noShow;
@@ -102,7 +106,6 @@ export async function processMatchOutcomes(matchId: string): Promise<void> {
             if (!alreadyAsked) {
                 const player = match.MatchPlayer.find(mp => mp.playerId === inv.playerId)?.player;
                 if (player && player.phoneNumber && !player.phoneNumber.startsWith('FRIEND_')) {
-                    const { simulateTypingAndSend } = await import('./whatsapp');
                     const { generateFeedbackRequest } = await import('./ai');
                     const jid = `${player.phoneNumber}@s.whatsapp.net`;
                     const timeStr = match.startTime
@@ -125,6 +128,7 @@ export async function processMatchOutcomes(matchId: string): Promise<void> {
                         // Stato per il brain (48h): riconosce la risposta e la salva con SAVE_FEEDBACK
                         await redis.set(`state:feedback_pending:${jid}`, JSON.stringify({ matchId, playerId: inv.playerId }), 'EX', 48 * 3600).catch(() => {});
                     } catch (err) {
+                        feedbackSendFailed = true;
                         logger.error({ err, playerId: inv.playerId }, 'Error sending feedback request');
                     }
                 }
@@ -136,7 +140,14 @@ export async function processMatchOutcomes(matchId: string): Promise<void> {
     for (const pid of touched) await recomputeReliability(pid);
 
     // Marca la partita come processata (TTL 30g) → i run successivi escono subito.
-    try { await _redis.set(_procKey, '1', 'EX', 30 * 24 * 60 * 60); } catch { /* best-effort */ }
+    // MA se un invio feedback è fallito (es. socket WA giù) NON marcare: il prossimo run
+    // ritenta. Doppio invio impossibile: feedback_requested:{matchId}:{playerId} (24h) viene
+    // scritto solo a invio riuscito, e gli outcome invitation sono già in stato finale.
+    if (feedbackSendFailed) {
+        logger.warn(`processMatchOutcomes ${matchId}: feedback non inviati — marker NON scritto, retry al prossimo run`);
+    } else {
+        try { await _redis.set(_procKey, '1', 'EX', 30 * 24 * 60 * 60); } catch { /* best-effort */ }
+    }
 
     logger.info(`processMatchOutcomes ${matchId}: ${match.invitations.length} invitations processed`);
 }

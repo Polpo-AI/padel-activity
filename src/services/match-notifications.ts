@@ -13,7 +13,7 @@
  */
 
 import { prisma } from './db';
-import { simulateTypingAndSend } from './whatsapp';
+import { simulateTypingAndSend, dissolveGroup } from './whatsapp';
 import { redirectGroup } from './redirect';
 import pino from 'pino';
 
@@ -60,7 +60,6 @@ export async function notifyMatchCancelled(matchId: string, clubId: string): Pro
     // Gruppo WA: messaggio finale + scioglimento. Prima si mandava solo un messaggio e il
     // gruppo restava orfano per sempre (bot incluso) anche a partita cancellata.
     if (match.groupId) {
-        const { dissolveGroup } = await import('./whatsapp');
         await dissolveGroup(
             match.groupId,
             `Purtroppo la partita del ${fmtTime(match.startTime)} è stata annullata dal circolo. Vi scrivo in privato con le alternative!`,

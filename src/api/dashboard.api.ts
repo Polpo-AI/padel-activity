@@ -22,6 +22,7 @@ import { calculateCostFromPrices } from '../services/pricing';
 import { waveQueue } from '../services/queue';
 import { sendMessage } from '../services/whatsapp';
 import { runWithContext } from '../utils/request-context';
+import { simulateTypingAndSend as waSend, getBotJid as waGetBotJid } from '../services/whatsapp';
 import * as jwt from 'jsonwebtoken';
 import * as bcrypt from 'bcrypt';
 import pino from 'pino';
@@ -1569,7 +1570,7 @@ router.post('/faqs/:id/answer', authMiddleware, async (req: Request, res: Respon
         // Notify player via WhatsApp if requested
         if (notifyPlayer && faq.askedBy) {
             const askedBy = faq.askedBy;
-            const { simulateTypingAndSend } = await import('../services/whatsapp');
+            const simulateTypingAndSend = waSend;
             const { runWithContext } = await import('../utils/request-context');
             runWithContext({ clubId }, () =>
                 simulateTypingAndSend(
@@ -1680,7 +1681,7 @@ router.post('/test-notification', authMiddleware, async (req: Request, res: Resp
         // adminPhone se configurato, altrimenti self-chat del telefono del circolo
         let jid = club?.adminPhone ? `${club.adminPhone.replace(/\D/g, '')}@s.whatsapp.net` : null;
         if (!jid) {
-            const { getBotJid } = await import('../services/whatsapp');
+            const getBotJid = waGetBotJid;
             jid = await getBotJid(clubId);
         }
         if (!jid) return res.status(503).json({ error: 'Nessun canale disponibile: né adminPhone né bot connesso' });

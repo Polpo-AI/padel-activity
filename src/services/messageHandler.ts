@@ -819,7 +819,6 @@ export async function handleMatchFilled(matchId: string, startTime: Date): Promi
 
         // GAP #20: fallback — se la creazione gruppo WA fallisce, notifica i giocatori individualmente
         try {
-            const { simulateTypingAndSend } = await import('./whatsapp');
             const timeStr = startTime.toLocaleTimeString('it-IT', { timeZone: 'Europe/Rome', hour: '2-digit', minute: '2-digit' });
             const dateStr = startTime.toLocaleDateString('it-IT', { timeZone: 'Europe/Rome', weekday: 'long', day: 'numeric', month: 'long' });
             const firstNames = confirmed.map(mp => (mp.player.name || 'Giocatore').split(' ')[0]).join(', ');

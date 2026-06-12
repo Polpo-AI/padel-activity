@@ -15,7 +15,7 @@
  */
 
 import pino from 'pino';
-import { sendMessage } from '../services/whatsapp';
+import { sendMessage, getBotJid } from '../services/whatsapp';
 const logger = pino({ level: 'info' });
 
 export type AdminNotifyCategory = 'system' | 'matches' | 'faq' | 'players';
@@ -88,10 +88,9 @@ export async function notifyAdmin(
 
     // Canale 1 (sempre): self-chat del telefono del circolo.
     try {
-        const { getBotJid, sendMessage: send } = await import('../services/whatsapp');
         const selfJid = await getBotJid(clubId);
         if (selfJid) {
-            await send(selfJid, `🔔 *${name ?? 'Padel Bot'} — Admin*\n\n${message}`);
+            await sendMessage(selfJid, `🔔 *${name ?? 'Padel Bot'} — Admin*\n\n${message}`);
             sentAny = true;
             logger.info({ key, category }, 'Admin notification sent to self-chat');
         }

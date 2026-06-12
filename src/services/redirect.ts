@@ -25,7 +25,7 @@
 
 import { prisma } from './db';
 import { getRedis } from './queue';
-import { simulateTypingAndSend, sendMessage } from './whatsapp';
+import { simulateTypingAndSend, sendMessage, getSock } from './whatsapp';
 import { isMatchGenderCompatible } from './brain';
 import { formatMatchSlot } from '../utils/format-match';
 import pino from 'pino';
@@ -826,7 +826,6 @@ async function addGroupToMatch(matchId: string, group: RedirectGroup): Promise<v
     if (nowLocked) {
         if (match.groupId) {
             // Gruppo già esistente: aggiungi i nuovi e dai il benvenuto
-            const { getSock } = await import('./whatsapp');
             const sock = getSock();
             if (sock) {
                 for (const phone of group.playerPhones) {
