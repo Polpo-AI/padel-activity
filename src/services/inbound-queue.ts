@@ -115,7 +115,6 @@ async function flush(jid: string): Promise<void> {
     if (!batch) return;
 
     pending.delete(jid);
-    await deleteFromRedis(jid).catch(() => {});
 
     if (!batchHandler) {
         logger.error('No batch handler registered');
@@ -128,6 +127,15 @@ async function flush(jid: string): Promise<void> {
         await batchHandler(jid, batch.messages);
     } catch (err) {
         logger.error({ err, jid }, 'Batch handler error');
+    }
+
+    // Cancella da Redis solo DOPO il processing: se il processo crasha a metà,
+    // il batch viene recuperato al restart (recoverPendingBatches ha già la
+    // protezione "bot already responded" contro le risposte doppie).
+    // Se nel frattempo sono arrivati nuovi messaggi per lo stesso jid, la chiave
+    // Redis ora contiene il NUOVO batch — non cancellarla.
+    if (!pending.has(jid)) {
+        await deleteFromRedis(jid).catch(() => {});
     }
 }
 
