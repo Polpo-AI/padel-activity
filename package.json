@@ -10,7 +10,9 @@
     "start": "npx tsx src/index.ts",
     "dev": "nodemon src/index.ts",
     "db:push": "npx prisma db push",
-    "worker": "npx tsx src/worker.ts"
+    "worker": "npx tsx src/worker.ts",
+    "test:integration": "npx tsx scripts/integration-booking.ts && npx tsx scripts/integration-dashboard-api.ts",
+    "db:local": "npx tsx scripts/local-pg.ts"
   },
   "repository": {
     "type": "git",
@@ -33,6 +35,7 @@
     "@types/qrcode-terminal": "^0.12.2",
     "@types/supertest": "^7.2.0",
     "@vitest/coverage-v8": "^4.1.0",
+    "embedded-postgres": "^18.4.0-beta.17",
     "nodemon": "^3.1.14",
     "supertest": "^7.2.2",
     "ts-node": "^10.9.2",
@@ -44,7 +47,7 @@
     "@anthropic-ai/sdk": "^0.78.0",
     "@prisma/adapter-pg": "^7.4.2",
     "@prisma/client": "^7.4.2",
-    "@whiskeysockets/baileys": "^7.0.0-rc.9",
+    "@whiskeysockets/baileys": "7.0.0-rc.9",
     "axios": "^1.13.6",
     "bcrypt": "^6.0.0",
     "bullmq": "^5.70.4",
