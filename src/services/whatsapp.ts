@@ -134,8 +134,10 @@ const jitteredSleep = (ms: number, jitterMs = 500) => {
 };
 
 const formatJid = (jid: string) => {
-    if (jid.includes('@lid')) return jid;
-    if (jid.includes('@s.whatsapp.net')) return jid;
+    // Qualsiasi JID già completo passa invariato: @s.whatsapp.net, @lid, @g.us (gruppi), @broadcast.
+    // NON strippare i gruppi: "123-456@g.us" → "123456@s.whatsapp.net" manderebbe il messaggio
+    // a un numero inesistente invece che al gruppo (bug notifiche cancellazione/spostamento).
+    if (jid.includes('@')) return jid;
     return `${jid.replace(/\D/g, '')}@s.whatsapp.net`;
 };
 
