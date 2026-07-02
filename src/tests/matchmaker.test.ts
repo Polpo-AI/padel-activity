@@ -61,7 +61,7 @@ describe('findOpenMatchForPlayer', () => {
 
     it('ritorna null se non ci sono match disponibili', async () => {
         (prisma.match.findMany as any).mockResolvedValue([]);
-        const result = await findOpenMatchForPlayer(3);
+        const result = await findOpenMatchForPlayer('club-1', 3);
         expect(result).toBeNull();
     });
 
@@ -71,7 +71,7 @@ describe('findOpenMatchForPlayer', () => {
         });
         (prisma.match.findMany as any).mockResolvedValue([match]);
 
-        const result = await findOpenMatchForPlayer(3);
+        const result = await findOpenMatchForPlayer('club-1', 3);
 
         expect(result).not.toBeNull();
         expect(result!.id).toBe('match-1');
@@ -90,7 +90,7 @@ describe('findOpenMatchForPlayer', () => {
         });
         (prisma.match.findMany as any).mockResolvedValue([fullMatch]);
 
-        const result = await findOpenMatchForPlayer(3);
+        const result = await findOpenMatchForPlayer('club-1', 3);
         expect(result).toBeNull();
     });
 
@@ -104,7 +104,7 @@ describe('findOpenMatchForPlayer', () => {
         });
         (prisma.match.findMany as any).mockResolvedValue([match]);
 
-        const result = await findOpenMatchForPlayer(3);
+        const result = await findOpenMatchForPlayer('club-1', 3);
         expect(result!.spotsLeft).toBe(3); // 4 - 1 attivo
     });
 
@@ -115,7 +115,7 @@ describe('findOpenMatchForPlayer', () => {
         (prisma.match.findMany as any).mockResolvedValue([farMatch]);
 
         const preferredTime = new Date(Date.now() + 1 * 60 * 60 * 1000); // tra 1h
-        const result = await findOpenMatchForPlayer(3, preferredTime);
+        const result = await findOpenMatchForPlayer('club-1', 3, preferredTime);
         expect(result).toBeNull(); // diff 5h > 2h → escluso
     });
 
@@ -126,7 +126,7 @@ describe('findOpenMatchForPlayer', () => {
         (prisma.match.findMany as any).mockResolvedValue([nearMatch]);
 
         const preferredTime = new Date(Date.now() + 1 * 60 * 60 * 1000); // tra 1h
-        const result = await findOpenMatchForPlayer(3, preferredTime);
+        const result = await findOpenMatchForPlayer('club-1', 3, preferredTime);
         expect(result).not.toBeNull(); // diff 1h ≤ 2h → incluso
     });
 
@@ -134,7 +134,7 @@ describe('findOpenMatchForPlayer', () => {
         const match = makeMatch({ court: null });
         (prisma.match.findMany as any).mockResolvedValue([match]);
 
-        const result = await findOpenMatchForPlayer(3);
+        const result = await findOpenMatchForPlayer('club-1', 3);
         expect(result!.courtName).toBe('Campo');
     });
 });

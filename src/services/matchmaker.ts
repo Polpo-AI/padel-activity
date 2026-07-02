@@ -323,10 +323,11 @@ async function _processWaveInner(matchId: string, waveNumber: number, urgencyMul
 
 // ─────────────────────────────────────────────
 // TROVA MATCH APERTO COMPATIBILE
-// skillLevel è Int — nessun cast
+// clubId obbligatorio: MAI proporre match di un altro circolo (multi-tenant)
 // ─────────────────────────────────────────────
 
 export async function findOpenMatchForPlayer(
+    clubId: string,
     skillLevel: number,
     preferredTime?: Date
 ): Promise<{ id: string; courtName: string; startTime: Date; spotsLeft: number } | null> {
@@ -334,7 +335,10 @@ export async function findOpenMatchForPlayer(
 
     const matches = await prisma.match.findMany({
         where: {
+            clubId,
             status: 'OPEN',
+            type: 'MATCH',
+            isPrivateBooking: false,
             skillLevel,
             startTime: { gt: now },
         },
