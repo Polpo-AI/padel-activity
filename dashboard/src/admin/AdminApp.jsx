@@ -138,7 +138,7 @@ export default function AdminApp() {
           {NAV.map(n => {
             const active = tab === n.id;
             return (
-              <button type="button" key={n.id} type="button" onClick={() => navigate(n.id)} aria-label={n.label} aria-current={active ? "page" : undefined} className={`nav-btn${active ? " active" : ""}`} style={{
+              <button type="button" key={n.id} onClick={() => navigate(n.id)} aria-label={n.label} aria-current={active ? "page" : undefined} className={`nav-btn${active ? " active" : ""}`} style={{
                 display: "flex", alignItems: "center", gap: 10,
                 padding: "11px 12px 11px 16px", borderRadius: 9, border: "none", cursor: "pointer",
                 background: active ? "rgba(6,182,212,0.10)" : "transparent",

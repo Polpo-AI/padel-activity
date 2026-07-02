@@ -27,8 +27,14 @@ const SIDEBAR_W = 224;
 export default function PadelDashboard() {
   const { C, btnGhost, mode } = useTheme();
   const dark = mode === "dark";
-  const [token, setToken] = useState(null);
-  const [club, setClub] = useState(null);
+  // Sessione persistita in sessionStorage: sopravvive al refresh, muore alla chiusura del tab.
+  // (Il token JWT scade comunque lato server dopo 24h.)
+  const [token, setToken] = useState(() => {
+    try { return sessionStorage.getItem("dash_token") || null; } catch { return null; }
+  });
+  const [club, setClub] = useState(() => {
+    try { const c = sessionStorage.getItem("dash_club"); return c ? JSON.parse(c) : null; } catch { return null; }
+  });
   const [tab, setTab] = useState("courts");
   const [impersonation, setImpersonation] = useState(null); // nome circolo se admin sta impersonando
   const isMobile = useMobile();
@@ -61,7 +67,28 @@ export default function PadelDashboard() {
     if (isMobile) setSidebarOpen(false);
   };
 
-  if (!token) return <LoginPage onLogin={(t, c) => { setToken(t); setClub(c); }} />;
+  const handleLogin = (t, c) => {
+    setToken(t); setClub(c);
+    try {
+      sessionStorage.setItem("dash_token", t);
+      if (c) sessionStorage.setItem("dash_club", JSON.stringify(c));
+    } catch {}
+  };
+
+  const handleLogout = () => {
+    setToken(null); setClub(null);
+    try {
+      sessionStorage.removeItem("dash_token");
+      sessionStorage.removeItem("dash_club");
+    } catch {}
+  };
+
+  const handleClubUpdate = (c) => {
+    setClub(c);
+    try { if (c) sessionStorage.setItem("dash_club", JSON.stringify(c)); } catch {}
+  };
+
+  if (!token) return <LoginPage onLogin={handleLogin} />;
 
   const current = NAV.find(n => n.id === tab);
 
@@ -202,7 +229,7 @@ export default function PadelDashboard() {
           {NAV.map(n => {
             const active = tab === n.id;
             return (
-              <button type="button" key={n.id} type="button" onClick={() => navigate(n.id)} aria-label={n.label} aria-current={active ? "page" : undefined}
+              <button type="button" key={n.id} onClick={() => navigate(n.id)} aria-label={n.label} aria-current={active ? "page" : undefined}
                 className={`nav-btn${active ? " active" : ""}`}
                 style={{
                   display: "flex", alignItems: "center", gap: 9,
@@ -234,7 +261,7 @@ export default function PadelDashboard() {
         <div style={{ padding: "14px 10px", borderTop: `1px solid ${C.sidebarSep}` }}>
           <button
             type="button"
-            onClick={() => { if (confirm("Vuoi uscire dalla dashboard?")) setToken(null); }}
+            onClick={() => { if (confirm("Vuoi uscire dalla dashboard?")) handleLogout(); }}
             style={{ ...btnGhost, width: "100%", fontSize: 11, borderRadius: 8, minHeight: 44 }}
           >
             Esci
@@ -264,14 +291,14 @@ export default function PadelDashboard() {
           {!isMobile && <div style={{ fontSize: 13, color: C.muted, lineHeight: 1.5 }}>{current?.desc}</div>}
         </div>
 
-        {tab === "courts"   && <CourtsView   token={token} onClubUpdate={setClub} />}
+        {tab === "courts"   && <CourtsView   token={token} onClubUpdate={handleClubUpdate} />}
         {tab === "prices"   && <PricesView   token={token} />}
         {tab === "players"  && <PlayersView  token={token} club={club} />}
         {tab === "stats"    && <StatsView    token={token} />}
         {tab === "revenue"  && <RevenueView  token={token} />}
         {tab === "faqs"     && <FaqsView     token={token} />}
         {tab === "system"   && <SystemView   token={token} />}
-        {tab === "settings" && <SettingsView token={token} club={club} onClubUpdate={setClub} />}
+        {tab === "settings" && <SettingsView token={token} club={club} onClubUpdate={handleClubUpdate} />}
       </div>
     </div>
   );

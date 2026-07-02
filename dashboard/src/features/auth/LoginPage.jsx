@@ -12,13 +12,17 @@ export default function LoginPage({ onLogin }) {
     if (!u || !p) return;
     setLoading(true); setErr("");
     try {
-      const d = await fetch(`${API}/login`, {
+      const r = await fetch(`${API}/login`, {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ username: u, password: p }),
-      }).then(r => r.json());
-      if (d.error) throw new Error(d.error);
+      });
+      // Risposta non-JSON (es. 502 dal proxy): non mostrare "Unexpected token" all'utente
+      let d;
+      try { d = await r.json(); }
+      catch { throw new Error(r.ok ? "Risposta non valida dal server" : `Server non raggiungibile (${r.status})`); }
+      if (!r.ok || d.error) throw new Error(d.error || `Errore ${r.status}`);
       onLogin(d.token, d.club);
-    } catch (e) { setErr(e.message); }
+    } catch (e) { setErr(e.message === "Failed to fetch" ? "Impossibile contattare il server" : e.message); }
     finally { setLoading(false); }
   };
 

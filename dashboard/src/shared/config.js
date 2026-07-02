@@ -254,8 +254,16 @@ export const api = async (path, token, opts = {}) => {
     ...opts,
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}`, ...(opts.headers || {}) },
   });
-  const d = await r.json();
-  if (!r.ok) throw new Error(d.error || "Errore");
+  // Risposta non-JSON (proxy 502, HTML di errore): non far esplodere r.json()
+  let d;
+  try { d = await r.json(); } catch { d = {}; }
+  // 401 = token scaduto/invalido → pulisci la sessione e torna al login
+  if (r.status === 401) {
+    try { sessionStorage.removeItem("dash_token"); sessionStorage.removeItem("dash_club"); } catch {}
+    window.location.reload();
+    throw new Error(d.error || "Sessione scaduta");
+  }
+  if (!r.ok) throw new Error(d.error || `Errore ${r.status}`);
   return d;
 };
 
