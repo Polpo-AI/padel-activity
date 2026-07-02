@@ -18,3 +18,10 @@ test-results-*.txt
 
 # Log locali
 *.log
+
+# Credenziali sessione WhatsApp — MAI committare (chiavi crittografiche reali)
+baileys_auth_info*/
+*.log
+
+# Postgres embedded usa-e-getta per test locali
+.pgdata-test/
