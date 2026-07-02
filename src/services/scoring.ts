@@ -9,6 +9,7 @@
  */
 
 import { prisma } from './db';
+import { buildRomeTime } from '../utils/booking-dates';
 // Import STATICO obbligatorio (lesson CLAUDE.md): il dynamic import di whatsapp.ts crea
 // un'istanza isolata del modulo con clubSockets vuota → sock=null → invii sempre falliti.
 import { simulateTypingAndSend } from './whatsapp';
@@ -459,13 +460,12 @@ export function msUntil8amRome(from: Date): number {
     const [y, mo, dd] = dateStr.split('-').map(Number);
     const targetDay = romeHour >= 22 ? dd + 1 : dd;
 
-    // Costruisci le 08:00 (wall-clock) del giorno target. Date.UTC normalizza l'overflow di
-    // giorno/mese (es. 32 maggio → 1 giugno), evitando il NaN che dava la stringa "2026-05-32T..."
-    // a fine mese — bug che faceva fallire la riprogrammazione notturna delle wave.
-    const wallClock = new Date(Date.UTC(y, mo - 1, targetDay, 8, 0, 0));
-    // Stima dell'offset Rome→UTC al momento del target (iterazione singola per DST)
-    const approxOffset = new Date(from.toLocaleString('en-US', { timeZone: 'Europe/Rome' })).getTime() - from.getTime();
-    const targetUtc = new Date(wallClock.getTime() - approxOffset);
+    // Ancora a mezzogiorno UTC del giorno-calendario Rome target. Date.UTC normalizza
+    // l'overflow di giorno/mese (es. 32 maggio → 1 giugno) — bug che bloccava le wave a fine mese.
+    const targetAnchor = new Date(Date.UTC(y, mo - 1, targetDay, 12, 0, 0));
+    // buildRomeTime è indipendente dal timezone della macchina: il vecchio calcolo con
+    // new Date(toLocaleString(...)) era corretto solo su server UTC (sballava su dev locale).
+    const targetUtc = buildRomeTime(targetAnchor, 8, 0);
 
     // Aggiunge jitter 0–15min per evitare che tutte le wave si sveglino alle 08:00:00 esatte
     const jitterMs = Math.floor(Math.random() * 15 * 60 * 1000);
